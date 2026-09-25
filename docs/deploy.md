@@ -112,7 +112,7 @@ azd up
 1. log in with OIDC (`azure/login` and `azd auth login --federated-credential-provider github`);
 2. `azd up`;
 3. poll `/healthz` on the new revision;
-4. run the **live evals** from `evals/cases.yaml` against the gateway. A behaviour regression fails the deploy.
+4. run the **quality gate**: `evals/cases.yaml` live against the gateway, 3 repetitions per case, LLM-judged rubric and groundedness scores, compared with `evals/baseline.json`. A regression or a failed critical case fails the deploy, and the results table appears on the run page (see [testing-and-evals.md](testing-and-evals.md#the-quality-gate-deploys)).
 
 One-time setup per repo and environment:
 

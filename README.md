@@ -17,7 +17,7 @@ cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model
 | `packages/agentkit-guardrails` | Prompt Shields input guard (Heuristic fallback), **tool-output injection shield**, PII redaction before the model, tool allow/deny/validators, per-session token budget |
 | `packages/agentkit-telemetry` | One-call OTel bootstrap (OTLP / App Insights), span processor that stamps user (pseudonymized), session, tenant and team on **every** MAF span, run metrics by outcome |
 | `packages/agentkit-tools` | `openapi_tools()` (OpenAPI → typed MAF tools, read-only by default), `ManagedIdentityAuth` / secretless `OnBehalfOfAuth`, `ApiClient` (safe retries, `Retry-After`, tracing, model-friendly errors), `Shaper`, `gateway_mcp_tool()`, `mock_api` for tests |
-| `packages/agentkit-testing` | `ScriptedChatClient` (real MAF layer stack, scripted model), span recorder, YAML eval cases that run offline in CI and live against the gateway, pytest plugin |
+| `packages/agentkit-testing` | `ScriptedChatClient` (real MAF layer stack, scripted model), span recorder, YAML eval cases that run offline in CI and live against the gateway, **LLM judge + `agentkit-gate` quality gate** (repetitions, baseline, run-page report), pytest plugin |
 | `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI and deploy callers, **`azure.yaml` + `infra/` (Bicep) for `azd up`**, `AGENTS.md`/`CLAUDE.md` |
 | `infra/platform/` | Shared platform, deployed once per environment: API Management AI gateway (Entra-only, per-identity token limits, chargeback metrics), Azure OpenAI behind a managed identity, Content Safety, Container Apps environment, registry, App Insights |
 | `examples/order-status-agent` | A generated service after a team customized it (see its git history for the diff a team writes) |
@@ -43,6 +43,7 @@ In the sample, the team-authored code is `tools.py` (3 tools + a refund policy),
 | Tracing | GenAI semconv spans from MAF + user/session/tenant/team on every span; content capture blocked in prod | `telemetry` |
 | Sessions | Serialized `AgentSession` in a TTL/LRU store behind a `SessionStore` protocol; owner-checked | `hosting.sessions`, `hosting.app` |
 | Tests | Scripted model, offline evals, HTTP contract tests, generated with the project | `testing`, `template/tests` |
+| Quality gate | Live evals 3x per deploy: judged rubric and groundedness, argument and budget checks, critical cases, baseline regressions block the deploy | `testing.gate`, `agent-deploy.yml` |
 | Scale-out | Sessions in Cosmos DB (managed identity), locked per conversation; 5 replicas | `hosting.sessions`, `template/infra` |
 | Human in the loop | Risky tools pause for approval; confirmation or separation of duties via Entra app roles; audit log; eval support | `hosting.approvals` |
 | Deploy | `azd up`: managed identity, least-privilege grants, Container App with Entra sign-in; OIDC pipeline with smoke check and live evals as a gate | `template/infra`, `agent-deploy.yml` |
@@ -61,4 +62,4 @@ make install     # editable installs of all packages + sample
 make test        # packages, sample, template (both modes), end-to-end smoke
 ```
 
-Status: **v0.3.0, milestone 3**: shared sessions (Cosmos DB / Redis, cross-replica locking, 5 replicas) and human approvals. Earlier: deploy (`azd up`, platform stack, OIDC pipeline with live evals) and connectors (`agentkit-tools`). Not yet included: scored evaluators in the eval gate, channel adapters (Teams, AG-UI web chat), and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.
+Status: **v0.4.0, milestone 4**: a quality gate for deploys: judged rubric and groundedness scores, tool-argument and budget checks, critical cases, repetitions and baseline comparison, with the results table on the run page. Earlier: shared sessions and human approvals (v0.3), deploy and connectors (v0.2). Not yet included: channel adapters (Teams, AG-UI web chat) and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.

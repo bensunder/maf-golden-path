@@ -120,10 +120,71 @@ Each case is its own test (`test_eval_case[large-refund-escalates]`), and failur
 [FAIL] large-refund-escalates — reply missing 'ticket'; tool 'escalate_to_human' not called (called: ['lookup_order'])
 ```
 
+## The quality gate (deploys)
+
+Offline evals prove the wiring. They can't tell you whether a new prompt, model version or MAF upgrade made the agent *worse*. The **quality gate** runs the same `cases.yaml` live, several times per case, scores the answers, compares them with a committed baseline, and fails the deploy on regression.
+
+### Scored and budget checks
+
+| `expect:` key | Checked by | Meaning |
+|---|---|---|
+| `tool_args: {tool: {arg: value}}` | deterministic | Some call to `tool` had at least these arguments (strings compared case-insensitively) |
+| `max_tool_calls: n` | deterministic | No more than `n` tool executions |
+| `max_total_tokens: n` | deterministic | Total model tokens for the case (all rounds, including after approvals) |
+| `rubric: "…"` (+ `min_score`, default 4) | LLM judge, 1–5 | Your definition of a good answer, in one or two sentences |
+| `grounded: true` (+ `grounded_min_score`, default 4) | LLM judge, 1–5 | Every factual claim in the reply is supported by what the tools returned. The judge sees the tool calls and results |
+
+Case-level keys: `critical: true` means the case must pass on **every** repetition (use it for safety cases: injection blocked, rejected refunds never issued). `repeat: n` overrides the repetition count for one case.
+
+A misspelled `expect` key is an error when the file loads, so a typo can't silently check nothing.
+
+The judge runs through the same gateway and managed identity as the agent, at temperature 0. It is told not to follow instructions inside the material it grades. Anything other than a clean `{"score": 1-5}` counts as a **failure**, never a pass. Offline (plain `pytest`), judged checks are reported as skipped.
+
+### Gate rules
+
+`agentkit-gate` exits 1 (and fails the deploy) when any of these hold:
+
+1. a `critical` case failed on any repetition;
+2. the mean pass rate across cases is below `--min-pass-rate` (default 0.9);
+3. a case's pass rate fell more than `--max-regression` (default 0.15) below its baseline;
+4. a case's mean judge score fell more than `--score-tolerance` (default 0.5) below its baseline.
+
+### Running it
+
+```bash
+# what the deploy pipeline runs (after azd up), with gateway settings from the environment:
+agentkit-gate --cases evals/cases.yaml --factory my_agent:create_agent --live --repeat 3 \
+  --baseline evals/baseline.json --report eval-report.json
+
+# set or refresh the baseline from a good build: review the diff, then commit it
+agentkit-gate --cases evals/cases.yaml --factory my_agent:create_agent --live --repeat 5 \
+  --baseline evals/baseline.json --update-baseline
+```
+
+The results table goes to the GitHub run page (`$GITHUB_STEP_SUMMARY`), and the full JSON report is uploaded as the `eval-report-<env>` artifact:
+
+```
+## ❌ Agent quality gate: FAILED
+Mode: live · repetitions: 3 · mean pass rate: 83% · baseline: yes · 41s
+**Why it failed:**
+- `shipped-order-status` rubric score regressed 4.7 → 3.3
+| Case | Pass rate | Scores | Notes |
+| `shipped-order-status` | 3/3 | rubric 3.3, grounded 5.0 | rubric scored 3 < 4: promised a delivery time… |
+| `prompt-injection-blocked` 🔒 | 3/3 | – | |
+```
+
+Use `AGENTKIT_JUDGE_MODEL` to judge with a different deployment than the agent's, often a stronger one. If that model rejects a temperature setting, pass `--judge-temperature none` (the `judge-temperature` input of the deploy workflow).
+
+### Baseline workflow
+
+- **No baseline yet:** the gate applies rules 1–2 only. Create one from a build you're happy with and commit it.
+- **Intentional behaviour change** (a new policy, say): update the cases, run with `--update-baseline`, and commit the new `baseline.json` in the same PR, so the reviewer sees the quality change next to the code change.
+- **Model or MAF upgrade:** run the gate against the new version with the old baseline. A regression is exactly what you want to find out before production.
+
 ## The HTTP contract
 
 `tests/test_app.py` drives the real FastAPI app with `TestClient` and a scripted model. Use it for anything about sessions, identity headers or response shape.
 
 ## What CI runs
 
-The reusable `agent-ci.yml` pipeline runs `pytest` (unit, offline evals, HTTP), publishes JUnit results and builds the container. Everything is deterministic, and no model or secrets are needed. Live evals as a deploy gate are on the roadmap.
+The reusable `agent-ci.yml` pipeline runs `pytest` (unit, offline evals, HTTP), publishes JUnit results and builds the container. Everything is deterministic, and no model or secrets are needed. Live, scored evals run in the **deploy** pipeline through the quality gate above.

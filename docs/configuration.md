@@ -55,6 +55,7 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 |---|---|---|
 | `AGENTKIT_OTLP_ENDPOINT` | none | OTLP collector, e.g. the Aspire dashboard at `http://localhost:4317` |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` (or `AGENTKIT_APPINSIGHTS_CONNECTION_STRING`) | none | Sends traces, metrics and logs to Azure Monitor |
+| `AGENTKIT_JUDGE_MODEL` | agent's model | Deployment the quality gate's LLM judge uses (read by `agentkit-gate`; set it as a GitHub variable for the deploy pipeline) |
 | `AGENTKIT_CAPTURE_MESSAGE_CONTENT` | `false` | Record prompts and responses on spans. Local debugging only; forbidden in prod |
 
 ## HTTP host

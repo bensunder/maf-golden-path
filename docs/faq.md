@@ -47,5 +47,8 @@ Yes. `azd up` configures the Cosmos DB session store and `maxReplicas: 5`. Sessi
 ### Validator or human approval?
 Use a `TOOL_POLICY` validator for rules that are always true: "never refund more than the order total". Use `approval_mode="always_require"` plus `approve_if` rules for judgement calls: "refunds over $50 need a person". They combine, and validators still run after approval.
 
+### My deploy failed the quality gate. Now what?
+Open the run page. The gate's table lists each case's pass rate, judge scores and the first failure reasons, and the full JSON report is attached as an artifact. If the change was intentional, refresh the baseline in the same PR (`agentkit-gate … --update-baseline`). If it wasn't, the gate just caught a regression before your users did.
+
 ### Where do I ask for something the kit should do?
 Open an issue or PR on `maf-golden-path`. If two teams need it, it belongs in the kit.
