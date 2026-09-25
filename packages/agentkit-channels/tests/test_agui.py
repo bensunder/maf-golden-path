@@ -182,3 +182,17 @@ def test_guardrail_refusal_is_a_message_and_a_custom_event():
     blocked = next(e for e in evts if e["type"] == "CUSTOM")
     assert blocked["name"] == "agentkit.blocked" and blocked["value"]["reason"].startswith("prompt_injection")
     assert text_of(evts)  # the user sees the refusal text
+
+
+def test_citations_event_follows_the_answer(docs_tool):
+    client = ScriptedChatClient(script=[tool_call("search_docs", query="refunds"),
+                                        reply("Over $50 needs a lead [1].")])
+    s = AgentKitSettings(environment="test", guardrail_mode="heuristic", _env_file=None)
+    app = create_app(lambda s: build_agent(name="kb", instructions="x", tools=[docs_tool], settings=s, client=client),
+                     settings=s, configure_telemetry=False, channels=[AgUiChannel()])
+    with TestClient(app) as http:
+        evts = events(http.post("/v1/agui", json=run_input(text="refunds?"), headers=ANA))
+    (cites,) = [e for e in evts if e["type"] == "CUSTOM" and e["name"] == "agentkit.citations"]
+    message_id = next(e["messageId"] for e in evts if e["type"] == "TEXT_MESSAGE_START")
+    assert cites["value"]["messageId"] == message_id
+    assert [c["id"] for c in cites["value"]["citations"]] == ["refund-policy"]  # [2] retrieved, not cited

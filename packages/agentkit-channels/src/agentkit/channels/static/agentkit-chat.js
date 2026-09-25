@@ -21,6 +21,8 @@ header button { font: inherit; font-weight: 400; font-size: 13px; }
 .assistant { align-self: flex-start; background: var(--akc-agent, #f1f3f5); }
 .error { align-self: stretch; background: #fff1f0; color: #a4161a; }
 .tool { align-self: flex-start; font-size: 13px; color: #57606a; }
+.sources { align-self: flex-start; margin: -4px 0 0; padding-left: 28px; font-size: 13px; color: #57606a; }
+.sources a { color: inherit; }
 .tool::before { content: "⚙ "; }
 .approval { align-self: stretch; border: 1px solid #d4a72c; background: #fff8e5; border-radius: 10px; padding: 10px 12px; }
 .approval h4 { margin: 0 0 6px; font-size: 14px; }
@@ -190,6 +192,11 @@ class AgentkitChat extends HTMLElement {
         break;
       }
       case "RUN_ERROR": this.add("error", event.message || "Something went wrong."); break;
+      case "CUSTOM":
+        if (event.name === "agentkit.citations" && event.value) {
+          this.sources(bubbles.get(event.value.messageId), event.value.citations || []);
+        }
+        break;
       case "RUN_FINISHED":
         if (event.outcome && event.outcome.type === "interrupt") this.approval(event.outcome.interrupts || []);
         break;
@@ -213,6 +220,23 @@ class AgentkitChat extends HTMLElement {
         }
       } catch (_) { /* transient: try again next tick */ }
     }, Number(this.getAttribute("poll-ms")) || 5000);
+  }
+
+  sources(bubble, citations) {
+    if (!citations.length) return;
+    const list = el("ol", { class: "sources", "aria-label": "Sources" });
+    for (const c of citations) {
+      let link = null;
+      try {
+        const url = c.url ? new URL(c.url, location.href) : null;
+        if (url && (url.protocol === "https:" || url.protocol === "http:")) {
+          link = el("a", { href: url.href, target: "_blank", rel: "noopener noreferrer", text: c.title || c.id });
+        }
+      } catch (_) { /* not a URL: show the title as text */ }
+      list.append(el("li", { value: String(c.n) }, link || el("span", { text: c.title || c.id })));
+    }
+    if (bubble) bubble.after(list); else this.log.append(list);
+    this.log.scrollTop = this.log.scrollHeight;
   }
 
   approval(interrupts) {

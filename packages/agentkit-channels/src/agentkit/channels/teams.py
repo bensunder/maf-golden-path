@@ -209,6 +209,21 @@ def _channel_data(activity: Any) -> dict[str, Any]:
     return data.model_dump(by_alias=True, exclude_none=True) if hasattr(data, "model_dump") else dict(data)
 
 
+def _sources_markdown(citations: list[Any]) -> str:
+    """'Sources: [1] Title' with links for http(s) URLs only; titles escaped (they come from documents)."""
+    from .cards import plain
+
+    parts = []
+    for c in citations:
+        title = plain(c.title or c.id, 120)
+        url = c.url or ""
+        if url.startswith(("https://", "http://")) and not any(ch in url for ch in " ()<>"):
+            parts.append(f"[{c.n}] [{title}]({url})")
+        else:
+            parts.append(f"[{c.n}] {title}")
+    return "Sources: " + " · ".join(parts)
+
+
 class _NullStorage:
     """The SDK insists on a Storage for its turn state. agentkit keeps state in its own session store,
     so this reads nothing and writes nothing (a MemoryStorage would grow per user and per replica)."""
@@ -412,6 +427,8 @@ class TeamsChannel:
     async def _deliver(self, result: TurnResult, conversation: dict[str, Any], *, requested_by: str | None,
                        prefix: str = "") -> None:
         text = (prefix + result.reply).strip()
+        if text and result.citations:
+            text += "\n\n" + _sources_markdown(result.citations)
         if text:
             await self._send_text(conversation, text)
         if result.pending:

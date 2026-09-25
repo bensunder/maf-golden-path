@@ -258,3 +258,17 @@ def test_teams_from_env(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENTKIT_TEAMS_APP_ID", "00000000-0000-0000-0000-000000000001")
     (channel,) = teams_from_env()
     assert channel.teams.app_id == "00000000-0000-0000-0000-000000000001"
+
+
+async def test_reply_lists_cited_sources_with_safe_links(docs_tool):
+    client = ScriptedChatClient(script=[tool_call("search_docs", query="refunds"),
+                                        reply("Over $50 needs a lead [1]; see also [2].")])
+    settings = AgentKitSettings(environment="test", guardrail_mode="heuristic", _env_file=None)
+    channel = TeamsChannel(teams_test_settings())
+    app = create_app(lambda s: build_agent(name="kb", instructions="x", tools=[docs_tool], settings=s, client=client),
+                     settings=settings, session_store=InMemorySessionStore(), configure_telemetry=False,
+                     channels=[channel])
+    async with TeamsTestClient(app) as teams:
+        await teams.send("refunds?", user=ALICE)
+    text = teams.texts()[-1]
+    assert text.endswith("Sources: [1] [Refund policy](https://intranet.example/refunds) · [2] Click me")

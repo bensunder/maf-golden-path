@@ -213,6 +213,10 @@ class AgUiChannel:
                 yield sse(TextMessageEndEvent(message_id=message_id))
             if result.blocked:
                 yield sse(CustomEvent(name="agentkit.blocked", value={"reason": result.blocked}))
+            if result.citations:  # sources the answer cites as [n]
+                yield sse(CustomEvent(name="agentkit.citations",
+                                      value={"messageId": message_id,
+                                             "citations": [c.to_dict() for c in result.citations]}))
             outcome = (RunFinishedInterruptOutcome(interrupts=self._interrupts(result, caller)) if result.pending
                        else RunFinishedSuccessOutcome())
             yield sse(RunFinishedEvent(thread_id=thread_id, run_id=run_id, outcome=outcome))

@@ -33,11 +33,11 @@ def _reset():
     REFUNDS.clear()
 
 
-def make_app(client, **settings):
+def make_app(client, tools=None, **settings):
     s = AgentKitSettings(**{"environment": "test", "guardrail_mode": "heuristic", "_env_file": None,
                             "service_name": "Order Desk", **settings})
     return create_app(
-        lambda s: build_agent(name="orders", instructions="x", tools=[issue_refund], settings=s, client=client,
+        lambda s: build_agent(name="orders", instructions="x", tools=tools or [issue_refund], settings=s, client=client,
                               approval_rules=[approve_if("issue_refund", lambda a: a["amount"] <= 50)]),
         settings=s, configure_telemetry=False, channels=[AgUiChannel(), WebChat()],
     )
@@ -173,3 +173,19 @@ def test_separation_shows_waiting_for_approver(browser):
     assert REFUNDS == [("A1", 80.0)]
     # the only console error is the browser's own log of the expected 409
     assert all("status of 409" in e for e in errors), errors
+
+
+def test_cited_sources_are_listed_and_only_http_links_are_links(browser, docs_tool):
+    client = ScriptedChatClient(script=[tool_call("search_docs", query="refunds"),
+                                        reply("Over $50 needs a lead [1]; odd doc [2].")])
+    with Server(make_app(client, tools=[docs_tool])) as url:
+        page, errors = open_chat(browser, url)
+        say(page, "refunds?")
+        sources = page.locator("agentkit-chat .sources")
+        sources.wait_for()
+        link = sources.get_by_role("link", name="Refund policy")
+        assert link.get_attribute("href") == "https://intranet.example/refunds"
+        assert link.get_attribute("rel") == "noopener noreferrer"
+        assert sources.get_by_role("link").count() == 1  # javascript: URL shown as text, not a link
+        assert "Click me" in sources.inner_text()
+    assert errors == []
