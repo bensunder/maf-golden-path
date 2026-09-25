@@ -7,6 +7,8 @@ copier copy gh:bensunder/maf-golden-path my-agent     # new service in ~1 minute
 cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model needed
 ```
 
+**New here?** Read [docs/why-agentkit.md](docs/why-agentkit.md) (what it saves you), then [docs/getting-started.md](docs/getting-started.md) (your first agent in 15 minutes). Full docs: [docs/](docs/README.md).
+
 ## What's in the box
 
 | Path | What it is |
