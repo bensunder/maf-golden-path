@@ -26,9 +26,13 @@ def main(root: Path) -> int:
         yaml.safe_load(path.read_text())
     leftovers = [p for p in root.rglob("*") if p.is_file() and ("{{" in p.name or p.suffix == ".jinja")]
     errors += [f"unrendered file: {p}" for p in leftovers]
+    import re
+
+    jinja_leftover = re.compile(r"(?<!\$)\{\{|\{%")  # ${{ … }} is GitHub Actions syntax, not Jinja
     for path in root.rglob("*"):
-        if path.is_file() and path.suffix in {".py", ".md", ".toml", ".yml", ".yaml"} and "{{" in path.read_text():
-            errors.append(f"unrendered expression in {path}")
+        if path.is_file() and path.suffix in {".py", ".md", ".toml", ".yml", ".yaml", ".json", ".bicep"}:
+            if jinja_leftover.search(path.read_text()):
+                errors.append(f"unrendered expression in {path}")
     if "git" not in (root / "Dockerfile").read_text():
         errors.append("git-mode Dockerfile must install git")
     for e in errors:
