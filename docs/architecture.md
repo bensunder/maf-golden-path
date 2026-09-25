@@ -94,17 +94,19 @@ The Chat Completions API is the default because every APIM GenAI policy (token l
 
 ## Sessions
 
-- A session is MAF's `AgentSession`, serialized with `to_dict()` and restored with `from_dict()`. It carries conversation history and agentkit state, such as tokens used.
-- Records are stored with an **owner** (the caller's identity). Another user gets `403`, and an expired or unknown id gets `404`.
-- Requests for the same session are serialized with a per-session lock, which is released when the last request for that session finishes.
-- `InMemorySessionStore` is TTL + LRU bounded and suits a single replica. To scale out, implement the three-method `SessionStore` protocol (`get`, `put`, `delete`) on Redis or Cosmos DB and pass it to `create_app(..., session_store=...)`.
+- A session is MAF's `AgentSession` plus agentkit metadata (owner, pending approvals, approval audit log), stored with `to_dict()` and restored with `from_dict()`.
+- **Every request takes a per-session lock, then loads, runs and saves.** Two messages for one conversation never interleave, even across replicas. A request that can't get the lock in 30s gets `409`.
+- Records carry an owner. Another user gets `403`, an unknown or expired id gets `404`.
+- Stores: in-memory (single replica), **Cosmos DB with managed identity** (what `azd up` configures), or Redis. Details in [sessions-and-approvals.md](sessions-and-approvals.md).
 
 ## HTTP API
 
 | Method | Path | Body / response |
 |---|---|---|
-| `POST` | `/v1/chat` | `{message, session_id?}` → `{session_id, reply, blocked, usage}` |
-| `POST` | `/v1/chat/stream` | Same request → SSE: `data: {"delta": "…"}` … then `event: done` with `{session_id, blocked}` |
+| `POST` | `/v1/chat` | `{message, session_id?}` → `{session_id, status, reply, blocked, approvals, usage}`; `status` is `completed` or `approval_required`; 409 while an approval is pending |
+| `POST` | `/v1/chat/stream` | Same request → SSE: `data: {"delta": "…"}` …, `event: approval_required` if paused, then `event: done` with `{session_id, status, blocked}` |
+| `GET` | `/v1/sessions/{id}/approvals` | Pending approvals (owner, or holder of the approver role) |
+| `POST` | `/v1/sessions/{id}/approvals` | `{decisions: [{id, approved, comment?}]}` → resumes the run; same response shape as `/v1/chat` |
 | `DELETE` | `/v1/sessions/{id}` | 204; 403 if not the owner |
 | `GET` | `/healthz` | Liveness |
 | `GET` | `/readyz` | Readiness: agent name and version |

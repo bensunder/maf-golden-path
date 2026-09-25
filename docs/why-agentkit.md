@@ -1,6 +1,6 @@
 # Why agentkit: the boilerplate you don't write
 
-**Short version:** a production agent on Microsoft Agent Framework (MAF) needs about fifteen things that have nothing to do with what your agent does: gateway access, identity, injection defences, PII handling, tool-loop limits, cost caps, tracing, sessions, an HTTP API, a test double for the model, an eval harness, a container, cloud infrastructure, a deploy pipeline, and authenticated, resilient calls to the enterprise APIs its tools use. agentkit ships all of them, already tested against MAF 1.19. On agentkit, your service is your **tools, instructions and eval cases**, and `azd up`.
+**Short version:** a production agent on Microsoft Agent Framework (MAF) needs about fifteen things that have nothing to do with what your agent does: gateway access, identity, injection defences, PII handling, tool-loop limits, cost caps, tracing, sessions, an HTTP API, a test double for the model, an eval harness, a container, cloud infrastructure, a deploy pipeline, authenticated and resilient calls to the enterprise APIs its tools use, conversations that survive scale-out, and a human in the loop for risky actions. agentkit ships all of them, already tested against MAF 1.19. On agentkit, your service is your **tools, instructions and eval cases**, and `azd up`.
 
 ---
 
@@ -10,22 +10,22 @@ These are measured from this repository, not estimated.
 
 | | Lines of code* |
 |---|---|
-| agentkit packages (source): hosting, guardrails, telemetry, testing, tools | **2,049** |
-| agentkit package tests | **852** |
-| Service template, including its Bicep, azd config and deploy workflow (generated into every repo) | **628** |
-| Shared platform infrastructure (Bicep + AI gateway policy) | **289** |
-| CI workflows, infra validation, smoke test, tooling | **559** |
-| **Total the platform maintains once** | **~4,400** |
-| What the team wrote to turn the generated project into the order-status agent | **282** |
+| agentkit packages (source): hosting, guardrails, telemetry, testing, tools | **2,521** |
+| agentkit package tests | **1,273** |
+| Service template, including its Bicep, azd config and deploy workflow (generated into every repo) | **695** |
+| Shared platform infrastructure (Bicep + AI gateway policy) | **313** |
+| CI workflows, infra validation, multi-replica smoke test, tooling | **640** |
+| **Total the platform maintains once** | **~5,400** |
+| What the team wrote to turn the generated project into the order-status agent | **314** |
 
 \* Non-blank, non-comment lines.
 
-The sample team's 282 lines break down as:
-- three tools and a refund rule (62);
+The sample team's 314 lines break down as:
+- three tools, a refund rule, and **human approval for refunds over $50** (64);
 - the connector to a live carrier API, with managed-identity auth, retries and response shaping (**25**);
 - instructions (11);
-- seven eval cases (63);
-- domain tests (121).
+- eight eval cases, including approved and rejected refunds (78);
+- domain tests (136).
 
 None of it is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
 
@@ -50,7 +50,9 @@ These **are estimates**. They reflect what each piece took to build and debug he
 | Scaffold, container, CI | Project layout, Dockerfile (non-root, prod defaults), reusable pipeline | 1–2 |
 | Azure deployment | Managed identity, least-privilege role grants, Container App (probes, scale, secrets), Entra sign-in, azd wiring, OIDC deploy pipeline, post-deploy smoke and live evals | 3–6, plus waiting on the cloud team |
 | API connectors | Per downstream API: auth (managed identity or on-behalf-of), retries that don't double-write, timeouts, tracing, model-friendly errors, response trimming, test fakes | 1–3 **per API** |
-| **Total per team** | | **~20–32 engineer-days, plus 1–3 per API** |
+| Shared sessions | Session store with TTL, cross-replica locking (with crash recovery), serialization of MAF state, a scoped data-plane role | 2–4 |
+| Human approvals | Pause/resume across requests and replicas, id validation, confirmation vs. separation of duties with Entra roles, audit trail, streaming, eval support | 3–5 |
+| **Total per team** | | **~25–41 engineer-days, plus 1–3 per API** |
 
 The shared AI gateway (API Management policy, per-identity token limits, chargeback metrics, Azure OpenAI behind a managed identity) is a one-time platform cost, typically another 5–10 days. agentkit ships it as `infra/platform/`.
 
@@ -143,6 +145,8 @@ Everything in the table in section 1 is attached by `build_agent`, `create_app`,
 | `ManagedIdentityAuth` / `OnBehalfOfAuth` (secretless, via federated credential) | Implement OAuth on-behalf-of and store client secrets | [connectors.md](connectors.md) |
 | `ApiClient`: safe retries, `Retry-After`, timeouts, trace propagation, one-line errors; `Shaper` for field selection and budgets; `mock_api` for tests | Rebuild HTTP plumbing in every tool | [connectors.md](connectors.md) |
 | `gateway_mcp_tool()`: MCP with per-request tokens and an allow-list | Find out your MCP token expired after an hour | [connectors.md](connectors.md#mcp-servers) |
+| Cosmos DB (managed identity) or Redis sessions, locked per conversation; 5 replicas out of the box | Design session storage and distributed locking | [sessions-and-approvals.md](sessions-and-approvals.md) |
+| `approval_mode="always_require"` + `approve_if` rules; approvals API with confirmation or separation-of-duties modes; audit log; `approve:` in eval cases | Build pause/resume, authorization and audit for risky actions | [sessions-and-approvals.md](sessions-and-approvals.md#human-approvals) |
 
 ---
 
@@ -164,6 +168,11 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 12. **The per-dimension token metrics need an App Insights setting missing from Bicep's types** (`CustomMetricsOptedInType`). Without it the gateway's chargeback dimensions silently don't appear. The platform Bicep sets it with the warning suppressed on that one line.
 13. **Bicep's `@secure()` can't decorate array parameters**, so the obvious way to pass a Container App's secrets fails to compile. The template passes a secure string and builds the secret inside the module.
 14. **azd's JSON schema accepts any `host:` value.** A typo only fails at deploy time. agentkit's infra check adds explicit assertions.
+15. **MAF's `ToolApprovalMiddleware` raises without a session.** Once you add auto-approval rules, every plain `agent.run("...")` (workers, tests) crashes. `build_agent` puts a middleware in front that supplies a throwaway session.
+16. **With auto-approval rules, MAF surfaces parallel approvals one at a time; without them, all at once.** A host that assumes either shape breaks on the other. agentkit's approval endpoint handles both, and a decision can return `approval_required` again.
+17. **MAF 1.19 logs "did not match the active approval occurrence identity" on every correct resume.** It's internal double-binding, confirmed with the real OpenAI client, and the call still runs once. Suppressing it blindly would also hide real mismatches, so agentkit validates approval ids against the session's pending list *first* and only then demotes the message.
+18. **Loading a session before taking its lock loses updates.** Two concurrent messages both read the old state, and the second write wins. agentkit v0.2's own host had this; v0.3 locks, then loads, runs and saves. It matters most once there are several replicas.
+19. **Saving an already-expired session to Redis with a minimum TTL makes it readable for a second.** The Redis store now checks expiry on read and deletes instead of writing.
 
 ---
 
@@ -172,7 +181,7 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 Being honest about scope saves you time too.
 
 - **The infrastructure hasn't been deployed to a real subscription by this repo's CI.** Every Bicep file compiles and lints clean, and names are contract-checked across platform and service (see [deploy.md](deploy.md#whats-validated-without-azure)). Run `what-if` in your subscription before first use.
-- **The session store is in-memory only**, so the generated Container App is capped at one replica. Add a Redis or Cosmos store (the three-method `SessionStore` protocol), then raise `maxReplicas`.
+- **No channel adapters yet.** Teams and M365 Copilot publishing, and an AG-UI web chat component, are on the roadmap. Today callers use the HTTP API.
 - **Scored evaluators (groundedness, LLM-as-judge) aren't in the eval gate yet.** Live evals use the deterministic expectations in `cases.yaml`.
 - **No HTTP endpoint for human approval** of `approval_mode="always_require"` tools. Use `TOOL_POLICY` validators for now.
 - **Python only.** A .NET track is planned.

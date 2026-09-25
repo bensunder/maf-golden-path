@@ -40,6 +40,7 @@ flowchart LR
 | Content Safety | Prompt Shields for every service. Entra ID only |
 | Container Apps environment, container registry (no admin user) | Where services run and where images live |
 | Log Analytics + App Insights | App Insights with custom-metric dimensions on, for per-team token metrics |
+| Cosmos DB (serverless, `disableLocalAuth`) + database `agentkit` | Session storage for every service; Entra-only |
 
 ### What the gateway policy enforces
 
@@ -77,7 +78,8 @@ The template generates `azure.yaml`, `infra/main.bicep` (and modules), `infra/ma
 | Resource group `rg-<azd env name>` | One per service per environment |
 | User-assigned managed identity | The service's only credential |
 | Role grants on the platform | `AcrPull` on the registry, `Cognitive Services User` on Content Safety. Nothing else |
-| Container App | Probes on `/healthz` and `/readyz`, one replica (in-memory sessions; raise `maxReplicas` once a shared session store is configured), App Insights connection string as a secret, all `AGENTKIT_*` settings wired, `AGENTKIT_REQUIRE_USER=true` |
+| Session container `<service>-<env>-sessions` | In the platform's Cosmos DB, with a data-plane role for the service identity **scoped to this container only**, so no service can read another's conversations |
+| Container App | Probes on `/healthz` and `/readyz`, 1–5 replicas (sessions in Cosmos DB, locked per conversation), App Insights connection string as a secret, all `AGENTKIT_*` settings wired, `AGENTKIT_REQUIRE_USER=true` |
 | Easy Auth (when `AGENTKIT_AUTH_CLIENT_ID` is set) | Validates Entra tokens, returns 401 for anonymous calls (except probes), and injects `X-MS-CLIENT-PRINCIPAL-NAME`, the header agentkit reads the caller from |
 
 ### One-time: an Entra app registration for the API (Easy Auth)
@@ -97,6 +99,7 @@ azd auth login
 azd env new orders-dev
 python <kit>/scripts/platform_env.py --resource-group rg-agentkit-dev | sh    # sets AGENTKIT_* platform values
 azd env set AGENTKIT_AUTH_CLIENT_ID "$APP_ID"
+azd env set AGENTKIT_APPROVER_ROLE Refunds.Approve     # optional: separation of duties for approvals
 azd up
 ```
 
@@ -165,3 +168,5 @@ What still needs a real subscription: `az deployment ... what-if`, quota for the
 | Container stuck pulling the image | `AcrPull` role assignment still propagating (first deploy), or the deploy identity lacked RBAC admin on the platform resource group |
 | Prompt Shields errors, every request refused | `Cognitive Services User` on Content Safety is missing. The service fails closed by design |
 | `preprovision` fails | Run `platform_env.py` for the platform resource group and pipe it to `sh` |
+| `403` from Cosmos DB in the service logs | The container-scoped data-plane role is still propagating (first deploy), or the container name changed. Re-run `azd provision` |
+| Approvers get `403` | They lack the app role in `AGENTKIT_APPROVER_ROLE` (check Enterprise applications → Users and groups), or they are the requester (separation of duties) |

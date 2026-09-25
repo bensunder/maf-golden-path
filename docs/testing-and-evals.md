@@ -96,6 +96,8 @@ cases:
 
 Script steps: `reply: <text>`, `tool: <name>` with `args`, or `tools: [{tool, args}, ...]` for parallel calls.
 
+For tools that need human approval, add `approve: true|false` to the case (decide every approval and continue), and `approval_required: [tool, ...]` under `expect` (these must have paused). `approval_required: []` asserts no pause happened. See [sessions-and-approvals.md](sessions-and-approvals.md#testing).
+
 **YAML gotcha:** quote any text containing ` #` or `: `, e.g. `reply: "Post in #support-urgent."`. Unquoted, everything after ` #` is a comment.
 
 ### Writing good cases

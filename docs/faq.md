@@ -42,7 +42,10 @@ Usually nothing. The platform team pins MAF, tests the upgrade against the kit a
 Use the user's identity (`OnBehalfOfAuth`) whenever results depend on who is asking: mail, files, CRM records with row-level security, anything a user could see only some of. Use the service's identity (`ManagedIdentityAuth`) for shared reference data. If in doubt, choose on-behalf-of: the agent then can't leak data the user couldn't already see. See [connectors.md](connectors.md#auth).
 
 ### Can I scale beyond one replica?
-Not with the default in-memory session store: a follow-up message could reach a replica that doesn't have the session. Implement `SessionStore` on Redis or Cosmos DB, pass it to `create_app(..., session_store=...)`, then raise `maxReplicas` in `infra/main.bicep`.
+Yes. `azd up` configures the Cosmos DB session store and `maxReplicas: 5`. Sessions are locked per conversation, so any replica can serve any request, including approving an action another replica paused. Locally, set `AGENTKIT_SESSION_STORE=redis` to try it. See [sessions-and-approvals.md](sessions-and-approvals.md).
+
+### Validator or human approval?
+Use a `TOOL_POLICY` validator for rules that are always true: "never refund more than the order total". Use `approval_mode="always_require"` plus `approve_if` rules for judgement calls: "refunds over $50 need a person". They combine, and validators still run after approval.
 
 ### Where do I ask for something the kit should do?
 Open an issue or PR on `maf-golden-path`. If two teams need it, it belongs in the kit.

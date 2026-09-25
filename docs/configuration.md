@@ -66,9 +66,25 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | `AGENTKIT_REQUIRE_USER` | `false` | Reject requests without the user header (`401`) |
 | `AGENTKIT_USER_TOKEN_HEADER` | `authorization` | Header with the caller's own bearer token. It's passed privately to on-behalf-of tools (`agentkit.tools.OnBehalfOfAuth`) and never logged. Set to empty to disable |
 
+## Sessions
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AGENTKIT_SESSION_STORE` | `memory` | `memory`, `cosmos` (managed identity) or `redis`. `azd up` sets `cosmos` |
+| `AGENTKIT_COSMOS_ENDPOINT` / `AGENTKIT_COSMOS_DATABASE` / `AGENTKIT_COSMOS_CONTAINER` | none / `agentkit` / none | Cosmos DB location of this service's sessions (set by the deploy) |
+| `AGENTKIT_REDIS_URL` | none | `rediss://:<key>@<name>.redis.cache.windows.net:6380/0`. Keep it in Key Vault |
+
+## Human approvals
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AGENTKIT_APPROVER_ROLE` | empty | Entra app role required to approve. Empty means the requester confirms their own actions |
+| `AGENTKIT_APPROVAL_SEPARATION` | `true` | With a role set, forbid approving your own request |
+| `AGENTKIT_PRINCIPAL_CLAIMS_HEADER` | `x-ms-client-principal` | Easy Auth header carrying the caller's claims (roles) |
+
 ## Set by the deploy (you don't set these)
 
-The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
+The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_SESSION_STORE=cosmos` with the `AGENTKIT_COSMOS_*` values, `AGENTKIT_APPROVER_ROLE` (from `azd env`), `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
 
 ## Prod policy
 
