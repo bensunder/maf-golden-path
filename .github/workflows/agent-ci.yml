@@ -20,7 +20,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to 26 on 2026-10-19; upgrade deliberately
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -46,7 +46,7 @@ jobs:
   image:
     if: ${{ inputs.build-image }}
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to 26 on 2026-10-19; upgrade deliberately
     steps:
       - uses: actions/checkout@v7
       - name: Build container

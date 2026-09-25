@@ -18,9 +18,10 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
    - approvals: `AgentResponse.user_input_requests`, `Content.to_function_approval_response()`, `ToolApprovalMiddleware(auto_approval_rules=)` (rule receives the function call; requires a session; surfaces queued approvals one at a time), and the pending-approval state MAF keeps in `session.state["tool_approval"]`. Also check whether the spurious "did not match the active approval occurrence" warning (demoted by `agentkit.hosting.approvals`) is fixed upstream.
    - knowledge: `azure-search-documents` (`SearchClient.search(filter=, vector_queries=[VectorizedQuery], vector_filter_mode=, query_type=, semantic_configuration_name=)`, `SearchIndex` models); `packages/agentkit-knowledge/tests/test_search_wire.py` pins the request body on the wire.
    - channels: `microsoft-agents-hosting-*` (pinned `<2`): `AgentApplication(ApplicationOptions(storage=…))`, `adaptive_card.action_execute`, `CloudAdapter(connection_manager=, host_validator=)`, `continue_conversation_with_claims`, `Conversation.store_item_to_json/from_json_to_store_item`, `jwt_authorization_decorator`; `ag-ui-protocol` (pinned `<0.2`): `RunAgentInput.resume`, `RunFinishedEvent.outcome` interrupts. The Teams and AG-UI tests exercise all of these offline.
-4. **Infra drift.** Bump `BICEP_VERSION` in the Makefile deliberately. Azure API versions in the Bicep are pinned; `make test-infra` fails on any new linter warning, so review them on upgrade.
-5. **Release.** Tag `vX.Y.Z`; generated services move by bumping the tag in `pyproject.toml` (git mode) or the version range (feed mode). Template changes reach existing services with `copier update`.
-6. **Semver for teams.** Kit patch = no action. Kit minor = new defaults, may need `copier update`. Kit major = breaking API in `build_agent` / settings, with migration notes here.
+4. **Runner images.** CI and the reusable pipelines run on `ubuntu-24.04`, not `ubuntu-latest` (which moves to Ubuntu 26 on 2026-10-19). Move them deliberately: bump the label on a branch and let `make test` in CI prove Redis, Chromium and the tools still install.
+5. **Infra drift.** Bump `BICEP_VERSION` in the Makefile deliberately. Azure API versions in the Bicep are pinned; `make test-infra` fails on any new linter warning, so review them on upgrade.
+6. **Release.** Tag `vX.Y.Z`; generated services move by bumping the tag in `pyproject.toml` (git mode) or the version range (feed mode). Template changes reach existing services with `copier update`.
+7. **Semver for teams.** Kit patch = no action. Kit minor = new defaults, may need `copier update`. Kit major = breaking API in `build_agent` / settings, with migration notes here.
 
 
 ## Kit release notes for services
