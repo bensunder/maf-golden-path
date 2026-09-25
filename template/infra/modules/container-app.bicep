@@ -11,7 +11,7 @@ param env array
 param appInsightsConnectionString string
 param authClientId string = ''
 param minReplicas int = 1
-param maxReplicas int = 1
+param maxReplicas int = 5
 
 @description('Replaced by `azd deploy` with the built image.')
 param image string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'

@@ -42,3 +42,7 @@ TOOLS = [search_faq]
 
 # Deny or validate tool calls centrally (see agentkit.guardrails.ToolPolicyMiddleware).
 TOOL_POLICY: dict = {"denied": [], "validators": {}}
+
+# Tools marked @tool(approval_mode="always_require") pause for a human. Rules here auto-approve the
+# low-risk calls, e.g. approve_if("issue_refund", lambda a: a["amount"] <= 50). See docs/approvals.md.
+APPROVAL_RULES: list = []

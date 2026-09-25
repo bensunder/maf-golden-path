@@ -10,7 +10,7 @@ export PATH := $(TOOLS_DIR):$(PATH)
 
 install:            ## editable installs of all packages + the sample agent
 	$(PY) -m pip install -q copier jsonschema
-	$(foreach p,$(PACKAGES),$(PY) -m pip install -q -e packages/agentkit-$(p);)
+	$(foreach p,$(PACKAGES),$(PY) -m pip install -q -e "packages/agentkit-$(p)$(if $(filter hosting,$(p)),[redis,cosmos],)";)
 	$(PY) -m pip install -q -e "examples/order-status-agent[dev]"
 
 tools:              ## download bicep + actionlint into .tools/bin (offline infra validation)

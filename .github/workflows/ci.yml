@@ -20,6 +20,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+      - name: Redis for session-store and multi-replica tests
+        run: sudo apt-get install -y -qq redis-server
       - run: make install
       - name: Package tests
         run: make test-packages

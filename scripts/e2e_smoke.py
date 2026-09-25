@@ -2,6 +2,8 @@
 
 Starts the fake gateway and an agent service (``--app module:app``), then checks
 health, chat, session continuity, streaming, guardrail refusal and gateway headers.
+If ``redis-server`` is available, it also starts a second replica sharing a Redis session
+store and checks that a paused approval requested on replica A is decided on replica B.
 
     python scripts/e2e_smoke.py --app order_status_agent.app:app
 """
@@ -11,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -40,12 +43,25 @@ def _wait(url: str, timeout: float = 30) -> None:
     raise TimeoutError(url)
 
 
+def _wait_port(port: int, timeout: float = 10) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            return
+        except OSError:
+            time.sleep(0.05)
+    raise TimeoutError(port)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--app", required=True)
     args = parser.parse_args()
 
-    gw_port, app_port = _free_port(), _free_port()
+    gw_port, app_port, app2_port = _free_port(), _free_port(), _free_port()
+    redis_bin = shutil.which("redis-server")
+    redis_port = _free_port()
     env_gw = {**os.environ, "PYTHONPATH": str(ROOT)}
     env_app = {
         **os.environ,
@@ -59,12 +75,21 @@ def main() -> int:
         "AGENTKIT_GUARDRAIL_MODE": "heuristic",
         "AGENTKIT_REQUIRE_USER": "true",
     }
+    if redis_bin:
+        env_app.update({"AGENTKIT_SESSION_STORE": "redis", "AGENTKIT_REDIS_URL": f"redis://127.0.0.1:{redis_port}/0"})
     procs = [
         subprocess.Popen([sys.executable, "-m", "uvicorn", "scripts.fake_gateway:app", "--port", str(gw_port)],
                          cwd=ROOT, env=env_gw, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT),
-        subprocess.Popen([sys.executable, "-m", "uvicorn", args.app, "--port", str(app_port)],
-                         env=env_app, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True),
     ]
+    if redis_bin:
+        procs.append(subprocess.Popen([redis_bin, "--port", str(redis_port), "--save", "", "--appendonly", "no"],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT))
+        _wait_port(redis_port)
+    procs.append(subprocess.Popen([sys.executable, "-m", "uvicorn", args.app, "--port", str(app_port)],
+                                  env=env_app, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+    if redis_bin:
+        procs.append(subprocess.Popen([sys.executable, "-m", "uvicorn", args.app, "--port", str(app2_port)],
+                                      env=env_app, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
     base = f"http://127.0.0.1:{app_port}"
     user = {"x-ms-client-principal-name": "smoke-user"}
     try:
@@ -96,6 +121,27 @@ def main() -> int:
         seen = httpx.get(f"http://127.0.0.1:{gw_port}/_seen").json()
         headers = seen[0]["headers"]
         checks.append(("gateway saw 3 model calls (not the blocked one)", len(seen) == 3))
+
+        small = httpx.post(f"{base}/v1/chat", json={"message": "refund A1001 $10"}, headers=user, timeout=30).json()
+        checks.append(("small refund auto-approved", small["status"] == "completed" and "Refunded $10.00" in small["reply"]))
+        big = httpx.post(f"{base}/v1/chat", json={"message": "refund A1002 $129"}, headers=user, timeout=30).json()
+        checks.append(("large refund pauses for approval",
+                       big["status"] == "approval_required" and big["approvals"][0]["tool"] == "issue_refund"))
+        paused = httpx.post(f"{base}/v1/chat", json={"message": "hello?", "session_id": big["session_id"]},
+                            headers=user, timeout=30)
+        checks.append(("paused session refuses new messages (409)", paused.status_code == 409))
+        if redis_bin:
+            base_b = f"http://127.0.0.1:{app2_port}"
+            _wait(f"{base_b}/healthz")
+            decided = httpx.post(f"{base_b}/v1/sessions/{big['session_id']}/approvals", headers=user, timeout=30,
+                                 json={"decisions": [{"id": big["approvals"][0]["id"], "approved": True}]}).json()
+            checks.append(("approval decided on replica B (shared Redis)",
+                           decided["status"] == "completed" and "Refunded $129.00" in decided["reply"]))
+            after = httpx.post(f"{base}/v1/chat", json={"message": "thanks", "session_id": big["session_id"]},
+                               headers=user, timeout=30).json()
+            checks.append(("conversation continues back on replica A", after.get("reply") == "echo: thanks"))
+        else:
+            print("SKIP multi-replica approval checks (redis-server not installed)")
         checks.append(("api key header", headers.get("api-key") == "smoke-key"))
         checks.append(("apim subscription header", headers.get("ocp-apim-subscription-key") == "sub-smoke"))
         checks.append(("team header", headers.get("x-agentkit-team") == "smoke-team"))

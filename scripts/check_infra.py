@@ -102,7 +102,7 @@ def check_contract(service: Path | None) -> list[str]:
     if service:
         params_text = (service / "infra" / "main.parameters.json").read_text()
         referenced = set(re.findall(r"\$\{(AGENTKIT_[A-Z_]+)", params_text))
-        optional = {"AGENTKIT_ENVIRONMENT", "AGENTKIT_AUTH_CLIENT_ID"}
+        optional = {"AGENTKIT_ENVIRONMENT", "AGENTKIT_AUTH_CLIENT_ID", "AGENTKIT_APPROVER_ROLE"}
         for name in sorted(referenced - optional - set(KEYS)):
             problems.append(f"main.parameters.json uses ${{{name}}}, which the platform does not output")
         hook = (service / "scripts" / "check_platform_env.py").read_text()

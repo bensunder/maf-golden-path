@@ -11,7 +11,7 @@ from importlib.resources import files
 from agent_framework import Agent, SupportsChatGetResponse
 from agentkit.hosting import AgentKitSettings, build_agent, load_instructions
 
-from .tools import TOOL_POLICY, TOOLS
+from .tools import APPROVAL_RULES, TOOL_POLICY, TOOLS
 
 AGENT_NAME = "{{ agent_name }}"
 DESCRIPTION = "{{ description }}"
@@ -27,6 +27,7 @@ def create_agent(settings: AgentKitSettings | None = None, client: SupportsChatG
         instructions=load_instructions(INSTRUCTIONS),
         tools=TOOLS,
         tool_policy=TOOL_POLICY,
+        approval_rules=APPROVAL_RULES,
         settings=settings,
         client=client,
     )

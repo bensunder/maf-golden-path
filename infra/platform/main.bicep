@@ -112,6 +112,30 @@ resource contentSafety 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
 }
 
+// ---------------------------------------------------------------- sessions (Cosmos DB, serverless, Entra-only)
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
+  name: '${namePrefix}-cosmos-${suffix}'
+  location: location
+  tags: allTags
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    disableLocalAuth: true // services authenticate with their managed identity
+    capabilities: [{ name: 'EnableServerless' }]
+    consistencyPolicy: { defaultConsistencyLevel: 'Session' }
+    locations: [{ locationName: location, failoverPriority: 0 }]
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource sessionsDb 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
+  parent: cosmos
+  name: 'agentkit'
+  properties: {
+    resource: { id: 'agentkit' }
+  }
+}
+
 // ---------------------------------------------------------------- models
 resource openAI 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployOpenAI) {
   name: '${namePrefix}-aoai-${suffix}'
@@ -275,3 +299,6 @@ output AGENTKIT_CONTAINER_APPS_ENVIRONMENT_ID string = containerEnv.id
 output AGENTKIT_REGISTRY_NAME string = registry.name
 output AGENTKIT_REGISTRY_ENDPOINT string = registry.properties.loginServer
 output AGENTKIT_APPINSIGHTS_NAME string = appInsights.name
+output AGENTKIT_COSMOS_ACCOUNT_NAME string = cosmos.name
+output AGENTKIT_COSMOS_ENDPOINT string = cosmos.properties.documentEndpoint
+output AGENTKIT_COSMOS_DATABASE string = sessionsDb.name

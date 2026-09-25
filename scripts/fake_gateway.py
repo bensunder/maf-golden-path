@@ -9,6 +9,7 @@ smoke test can assert what the real gateway would receive. For local wiring chec
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from fastapi import FastAPI, Request
@@ -18,21 +19,50 @@ app = FastAPI()
 SEEN: list[dict] = []
 
 
-def _reply(body: dict) -> str:
-    user = next((m for m in reversed(body.get("messages", [])) if m.get("role") == "user"), {})
-    content = user.get("content")
+def _text(message: dict) -> str:
+    content = message.get("content")
     if isinstance(content, list):
         content = " ".join(part.get("text", "") for part in content if isinstance(part, dict))
-    return f"echo: {content}"
+    return content or ""
+
+
+def _reply(body: dict) -> str:
+    user = next((m for m in reversed(body.get("messages", [])) if m.get("role") == "user"), {})
+    return f"echo: {_text(user)}"
+
+
+_REFUND = re.compile(r"refund\s+([A-Za-z]\d{4})\s+\$?(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _tool_step(body: dict) -> dict | None:
+    """Deterministic 'model': 'refund A1002 $129' calls issue_refund when that tool is offered;
+    after a tool result, it reports the result. Lets the smoke test drive approvals end to end."""
+    messages = body.get("messages", [])
+    offered = {t.get("function", {}).get("name") for t in body.get("tools") or []}
+    last = messages[-1] if messages else {}
+    if last.get("role") == "tool":
+        return {"role": "assistant", "content": f"tool said: {_text(last)}"}
+    match = _REFUND.search(_text(last)) if last.get("role") == "user" else None
+    if match and "issue_refund" in offered:
+        args = {"order_id": match.group(1).upper(), "amount": float(match.group(2)), "reason": "smoke test"}
+        return {"role": "assistant", "content": None, "tool_calls": [
+            {"id": f"call_{len(messages)}", "type": "function",
+             "function": {"name": "issue_refund", "arguments": json.dumps(args)}}]}
+    return None
 
 
 @app.post("/openai/deployments/{deployment}/chat/completions")
 async def chat(deployment: str, request: Request):
     body = await request.json()
     SEEN.append({"deployment": deployment, "headers": dict(request.headers), "stream": bool(body.get("stream"))})
-    text = _reply(body)
     usage = {"prompt_tokens": 11, "completion_tokens": 3, "total_tokens": 14}
     base = {"id": "chatcmpl-fake", "created": int(time.time()), "model": deployment}
+    step = _tool_step(body)
+    if step is not None and not body.get("stream"):
+        finish = "tool_calls" if step.get("tool_calls") else "stop"
+        return JSONResponse({**base, "object": "chat.completion",
+                             "choices": [{"index": 0, "message": step, "finish_reason": finish}], "usage": usage})
+    text = _reply(body)
     if body.get("stream"):
 
         def chunks():

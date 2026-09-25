@@ -26,13 +26,18 @@ param contentSafetyName string
 param appInsightsName string
 param gatewayEndpoint string
 param model string
+param cosmosAccountName string
+param cosmosDatabase string = 'agentkit'
+
+@description('Entra app role an approver must hold for high-impact tools. Empty = the requester confirms.')
+param approverRole string = ''
 
 @description('Client id of the Entra app registration that protects this API (Easy Auth). Required for prod.')
 param authClientId string = ''
 
 param minReplicas int = 1
-@description('Keep at 1 while sessions use the in-memory store; raise after configuring a shared SessionStore (Redis/Cosmos).')
-param maxReplicas int = 1
+@description('Sessions live in Cosmos DB and are locked per conversation, so any replica can serve any request.')
+param maxReplicas int = 5
 
 var tags = { 'azd-env-name': environmentName, 'agentkit-team': team, 'agentkit-service': serviceName }
 
@@ -63,6 +68,17 @@ module platformAccess 'modules/platform-access.bicep' = {
   }
 }
 
+module sessions 'modules/sessions.bicep' = {
+  name: 'sessions-${serviceName}'
+  scope: resourceGroup(platformResourceGroup)
+  params: {
+    cosmosAccountName: cosmosAccountName
+    databaseName: cosmosDatabase
+    containerName: '${serviceName}-${agentEnvironment}-sessions'
+    principalId: identity.outputs.principalId
+  }
+}
+
 module app 'modules/container-app.bicep' = {
   name: 'container-app'
   scope: rg
@@ -88,6 +104,11 @@ module app 'modules/container-app.bicep' = {
       { name: 'AZURE_CLIENT_ID', value: identity.outputs.clientId }
       { name: 'AGENTKIT_GUARDRAIL_MODE', value: 'prompt_shields' }
       { name: 'AGENTKIT_CONTENT_SAFETY_ENDPOINT', value: platformAccess.outputs.contentSafetyEndpoint }
+      { name: 'AGENTKIT_SESSION_STORE', value: 'cosmos' }
+      { name: 'AGENTKIT_COSMOS_ENDPOINT', value: sessions.outputs.endpoint }
+      { name: 'AGENTKIT_COSMOS_DATABASE', value: cosmosDatabase }
+      { name: 'AGENTKIT_COSMOS_CONTAINER', value: sessions.outputs.containerName }
+      { name: 'AGENTKIT_APPROVER_ROLE', value: approverRole }
       // Without Easy Auth there is no trusted user header, so every call is rejected (secure default).
       { name: 'AGENTKIT_REQUIRE_USER', value: 'true' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
