@@ -10,6 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
@@ -33,3 +34,6 @@ jobs:
         run: make test-infra
       - name: End-to-end smoke (real servers, fake gateway)
         run: make smoke
+      - name: Annotate failing tests
+        if: failure()
+        run: python scripts/junit_annotations.py .results/*.xml

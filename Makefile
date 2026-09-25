@@ -22,11 +22,15 @@ tools:              ## download bicep + actionlint into .tools/bin (offline infr
 
 test: test-packages test-example test-template test-infra smoke
 
+RESULTS_DIR ?= $(CURDIR)/.results
+
 test-packages:
-	$(PY) -m pytest packages -q
+	mkdir -p $(RESULTS_DIR)
+	$(PY) -m pytest packages -q --junitxml=$(RESULTS_DIR)/packages.xml
 
 test-example:
-	cd examples/order-status-agent && $(PY) -m pytest -q
+	mkdir -p $(RESULTS_DIR)
+	cd examples/order-status-agent && $(PY) -m pytest -q --junitxml=$(RESULTS_DIR)/example.xml
 
 test-template:      ## render in both modes; run the generated project's tests (feed mode uses local packages)
 	rm -rf $(GEN_DIR)
