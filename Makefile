@@ -1,5 +1,6 @@
 PY ?= python
 PACKAGES := testing telemetry guardrails tools hosting
+EXTRAS_hosting := [redis,cosmos]
 GEN_DIR ?= $(or $(TMPDIR),/tmp)/agentkit-template-check
 TOOLS_DIR := $(CURDIR)/.tools/bin
 BICEP_VERSION ?= v0.47.16
@@ -10,7 +11,7 @@ export PATH := $(TOOLS_DIR):$(PATH)
 
 install:            ## editable installs of all packages + the sample agent
 	$(PY) -m pip install -q copier jsonschema
-	$(foreach p,$(PACKAGES),$(PY) -m pip install -q -e "packages/agentkit-$(p)$(if $(filter hosting,$(p)),[redis,cosmos],)";)
+	$(foreach p,$(PACKAGES),$(PY) -m pip install -q -e "packages/agentkit-$(p)$(EXTRAS_$(p))";)
 	$(PY) -m pip install -q -e "examples/order-status-agent[dev]"
 
 tools:              ## download bicep + actionlint into .tools/bin (offline infra validation)
