@@ -17,8 +17,9 @@ permissions:
 jobs:
   deploy:
     # Owned by the platform team: azd provision + deploy, smoke check, live evals.
-    uses: bensunder/maf-golden-path/.github/workflows/agent-deploy.yml@v0.3.0
+    uses: bensunder/maf-golden-path/.github/workflows/agent-deploy.yml@v0.4.0
     with:
       environment: ${{ inputs.environment || 'dev' }}
       agent-environment: ${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
       python-version: "3.11"
+      agent-factory: "order_status_agent:create_agent"
