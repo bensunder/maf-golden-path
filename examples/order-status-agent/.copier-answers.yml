@@ -1,7 +1,9 @@
 # Changes here will be overwritten by Copier; do not edit manually.
-_commit: e5f6930
-_src_path: maf-golden-path
+_commit: v0.1.0-12-g1ea2c2c
+_src_path: gh:bensunder/maf-golden-path
 agent_name: order-status-agent
+agentkit_ref: v0.2.0
+agentkit_repo: bensunder/maf-golden-path
 agentkit_source: feed
 description: Answers order, shipping and small-refund questions for customer support
     staff.

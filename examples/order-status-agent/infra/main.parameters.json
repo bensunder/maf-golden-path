@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "${AZURE_ENV_NAME}" },
+    "location": { "value": "${AZURE_LOCATION}" },
+    "serviceName": { "value": "order-status-agent" },
+    "team": { "value": "commerce" },
+    "agentEnvironment": { "value": "${AGENTKIT_ENVIRONMENT=dev}" },
+    "platformResourceGroup": { "value": "${AGENTKIT_PLATFORM_RESOURCE_GROUP}" },
+    "containerAppsEnvironmentId": { "value": "${AGENTKIT_CONTAINER_APPS_ENVIRONMENT_ID}" },
+    "registryName": { "value": "${AGENTKIT_REGISTRY_NAME}" },
+    "contentSafetyName": { "value": "${AGENTKIT_CONTENT_SAFETY_NAME}" },
+    "appInsightsName": { "value": "${AGENTKIT_APPINSIGHTS_NAME}" },
+    "gatewayEndpoint": { "value": "${AGENTKIT_GATEWAY_ENDPOINT}" },
+    "model": { "value": "${AGENTKIT_MODEL}" },
+    "authClientId": { "value": "${AGENTKIT_AUTH_CLIENT_ID=}" }
+  }
+}

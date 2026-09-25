@@ -1,7 +1,7 @@
 """Order-status tools.
 
-The in-memory ``_ORDERS`` table stands in for the order API. In a real service these
-functions call the commerce API with the managed identity (e.g. via httpx + azure.identity).
+The in-memory ``_ORDERS`` table stands in for the order API. The carrier's live tracking API
+is generated from its OpenAPI spec in ``connectors.py``.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from typing import Annotated, Any
 
 from agent_framework import tool
 from pydantic import Field
+
+from .connectors import CARRIER_TOOLS
 
 _ORDERS: dict[str, dict[str, Any]] = {
     "A1001": {"status": "shipped", "carrier": "UPS", "tracking": "1Z999AA10123456784", "total": 42.50, "eta": "2026-09-26"},
@@ -69,7 +71,7 @@ def _refund_policy(args: dict[str, Any]) -> str | None:
     return None
 
 
-TOOLS = [lookup_order, issue_refund, escalate_to_human]
+TOOLS = [lookup_order, issue_refund, escalate_to_human, *CARRIER_TOOLS]
 
 # Central policy: enforced by agentkit before the tool runs, whatever the model decides.
 TOOL_POLICY: dict = {"denied": [], "validators": {"issue_refund": _refund_policy}}

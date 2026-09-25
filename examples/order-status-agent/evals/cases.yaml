@@ -60,3 +60,14 @@ cases:
     expect:
       blocked: true
       forbidden_tools: [issue_refund]
+
+  - id: live-tracking-via-carrier-api
+    input: Where is package 1Z999AA10123456784 right now?
+    script:
+      - tool: get_shipment
+        args: {trackingNumber: 1Z999AA10123456784}
+      - reply: It's out for delivery in Lehi today.
+    expect:
+      contains: ["out for delivery"]
+      tools: [get_shipment]
+      forbidden_tools: [issue_refund]

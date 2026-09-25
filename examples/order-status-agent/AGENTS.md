@@ -4,6 +4,9 @@ This repo was generated from the agentkit golden path (see `.copier-answers.yml`
 
 - The agent is defined in `src/order_status_agent/agent.py` via `agentkit.hosting.build_agent`. Do not construct `agent_framework.Agent` or chat clients directly. `build_agent` adds the gateway client, Entra auth, guardrails, telemetry and run limits.
 - Add capabilities as `@tool` functions in `src/order_status_agent/tools.py` and register them in `TOOLS`. State-changing tools need `approval_mode="always_require"` or a validator in `TOOL_POLICY`.
+- Calls to existing APIs: generate tools with `agentkit.tools.openapi_tools` from the API's OpenAPI spec (put the spec under `src/order_status_agent/specs/`). Use `ManagedIdentityAuth` for app access, or `OnBehalfOfAuth` when results must respect the user's permissions. Don't hand-write HTTP calls, retries or auth. Expose write operations only via `allow_writes`, and add a `TOOL_POLICY` validator for them.
+- In tests, fake downstream APIs with `agentkit.tools.testing.mock_api`. Never call real APIs from unit tests.
+- Deploy with `azd up` (infra in `infra/`). Don't create Azure resources by hand. Platform values come from `azd env` (see `scripts/check_platform_env.py`).
 - Behaviour changes go in `src/order_status_agent/instructions/system.md`, plus a case in `evals/cases.yaml`.
 - Tests never call a real model: use `agentkit.testing.ScriptedChatClient` with `reply(...)` / `tool_call(...)`.
 - Configuration is `AGENTKIT_*` environment variables (`AgentKitSettings`). Never hard-code endpoints or keys.

@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: order-status-agent
+metadata:
+  template: agentkit-service
+services:
+  api:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+infra:
+  provider: bicep
+  path: infra
+hooks:
+  preprovision:
+    shell: sh
+    run: python scripts/check_platform_env.py
+    continueOnError: false

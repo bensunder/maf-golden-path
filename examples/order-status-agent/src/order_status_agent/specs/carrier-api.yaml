@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: Carrier Tracking API
+  version: "1.0"
+servers:
+  - url: https://carrier.example.com/v1
+paths:
+  /shipments/{trackingNumber}:
+    parameters:
+      - name: trackingNumber
+        in: path
+        required: true
+        description: Carrier tracking number
+        schema: {type: string}
+    get:
+      operationId: getShipment
+      summary: Get a shipment's current status and location
+      parameters:
+        - name: include
+          in: query
+          description: Extra sections to include
+          schema: {type: string, enum: [events, dimensions]}
+        - name: X-Request-Source
+          in: header
+          schema: {type: string}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Shipment"}
+  /shipments:
+    get:
+      operationId: listShipments
+      summary: List shipments for an account
+      parameters:
+        - name: account
+          in: query
+          required: true
+          schema: {type: string}
+        - name: top
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        "200": {description: ok}
+  /shipments/{trackingNumber}/redirect:
+    post:
+      operationId: redirectShipment
+      summary: Redirect a shipment to a new address
+      parameters:
+        - name: trackingNumber
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Address"}
+      responses:
+        "202": {description: accepted}
+components:
+  schemas:
+    Address:
+      type: object
+      required: [line1, city, postalCode]
+      properties:
+        id: {type: string, readOnly: true}
+        line1: {type: string}
+        city: {type: string}
+        postalCode: {type: string, example: "84043"}
+    Shipment:
+      type: object
+      properties:
+        trackingNumber: {type: string}
+        status: {type: string}
+        destination: {$ref: "#/components/schemas/Address"}
