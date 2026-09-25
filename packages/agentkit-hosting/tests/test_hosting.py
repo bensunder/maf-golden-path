@@ -228,13 +228,13 @@ def test_session_locks_are_released(app_env):
     for _ in range(5):
         client.enqueue(reply("x"))
         http.post("/v1/chat", json={"message": "hi"})
-    assert len(http.app.state.session_locks) == 0
+    assert http.app.state.session_store.active_locks == 0
 
 
 async def test_same_session_requests_are_serialized():
     import asyncio
 
-    from agentkit.hosting.app import _KeyedLocks
+    from agentkit.hosting.sessions import _KeyedLocks
 
     locks, order = _KeyedLocks(), []
 

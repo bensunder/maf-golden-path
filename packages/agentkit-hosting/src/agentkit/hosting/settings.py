@@ -69,6 +69,21 @@ class AgentKitSettings(BaseSettings):
     #: (agentkit.tools.OnBehalfOfAuth). Easy Auth validates it before it reaches the app.
     user_token_header: str = "authorization"
 
+    # sessions (shared stores allow more than one replica)
+    session_store: Literal["memory", "redis", "cosmos"] = "memory"
+    redis_url: SecretStr | None = None
+    cosmos_endpoint: str | None = None
+    cosmos_database: str = "agentkit"
+    cosmos_container: str | None = None
+
+    # human approvals
+    #: Entra app role an approver must hold. Empty = the requesting user confirms their own actions.
+    approver_role: str | None = None
+    #: With an approver role, forbid approving your own request (separation of duties).
+    approval_separation: bool = True
+    #: Easy Auth header with the caller's claims (base64 JSON), used to read app roles.
+    principal_claims_header: str = "x-ms-client-principal"
+
     @model_validator(mode="after")
     def _enforce_environment_policy(self) -> AgentKitSettings:
         problems: list[str] = []
@@ -87,6 +102,10 @@ class AgentKitSettings(BaseSettings):
             problems.append("guardrail_mode 'prompt_shields' needs content_safety_endpoint")
         if self.auth_mode == "api_key" and not self.api_key:
             problems.append("auth_mode 'api_key' needs api_key")
+        if self.session_store == "redis" and not self.redis_url:
+            problems.append("session_store 'redis' needs redis_url")
+        if self.session_store == "cosmos" and not (self.cosmos_endpoint and self.cosmos_container):
+            problems.append("session_store 'cosmos' needs cosmos_endpoint and cosmos_container")
         if problems:
             raise ValueError("; ".join(problems))
         return self

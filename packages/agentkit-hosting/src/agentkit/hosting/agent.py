@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from agent_framework import Agent, SupportsChatGetResponse
+from agent_framework import Agent, SupportsChatGetResponse, ToolApprovalMiddleware
 
 from agentkit.guardrails import (
     HeuristicInjectionDetector,
@@ -20,6 +20,7 @@ from agentkit.guardrails import (
 )
 from agentkit.telemetry import AgentRunMetricsMiddleware
 
+from .approvals import EnsureSessionMiddleware
 from .clients import create_chat_client, token_provider
 from .settings import AgentKitSettings
 
@@ -52,6 +53,7 @@ def default_middleware(
     agent_name: str,
     detector: InjectionDetector | None = None,
     tool_policy: ToolPolicyMiddleware | None = None,
+    approval_rules: Sequence[Callable[..., Any]] = (),
 ) -> list[Any]:
     """The paved-road middleware stack, outermost first."""
     detector = detector if detector is not None else default_detector(settings)
@@ -59,6 +61,10 @@ def default_middleware(
     if detector is not None:
         stack.append(InputGuardMiddleware(detector, max_input_chars=settings.max_input_chars))
     stack.append(SessionTokenBudgetMiddleware(settings.session_token_budget))
+    if approval_rules:
+        # Auto-approves low-risk calls to approval_mode="always_require" tools; the rest wait for a human.
+        stack.append(EnsureSessionMiddleware())  # MAF's approval middleware requires a session
+        stack.append(ToolApprovalMiddleware(auto_approval_rules=list(approval_rules)))
     if settings.redact_pii:
         stack.append(PiiRedactionMiddleware())
     if tool_policy is not None:
@@ -78,6 +84,7 @@ def build_agent(
     detector: InjectionDetector | None = None,
     tool_policy: ToolPolicyMiddleware | Mapping[str, Any] | None = None,
     extra_middleware: Sequence[Any] = (),
+    approval_rules: Sequence[Callable[..., Any]] = (),
     description: str | None = None,
     **agent_kwargs: Any,
 ) -> Agent:
@@ -85,14 +92,16 @@ def build_agent(
 
     ``client`` is injected in tests (``ScriptedChatClient``); in services it is created from
     settings and bound to the AI gateway. ``tool_policy`` may be a ``ToolPolicyMiddleware`` or
-    its keyword arguments (``{"denied": [...], "validators": {...}}``).
+    its keyword arguments (``{"denied": [...], "validators": {...}}``). ``approval_rules`` auto-approve
+    matching calls to ``approval_mode="always_require"`` tools (see ``agentkit.hosting.approve_if``).
     """
     settings = settings or AgentKitSettings()
     if isinstance(tool_policy, Mapping):
         tool_policy = ToolPolicyMiddleware(**tool_policy)
     client = client or create_chat_client(settings, agent_name=name)
     middleware = [
-        *default_middleware(settings, agent_name=name, detector=detector, tool_policy=tool_policy),
+        *default_middleware(settings, agent_name=name, detector=detector, tool_policy=tool_policy,
+                            approval_rules=approval_rules),
         *extra_middleware,
     ]
     return Agent(

@@ -19,6 +19,19 @@ Case file format::
           not_contains: [refund]
           tools: [lookup_order]       # tools that must have been called
           blocked: false              # whether a guardrail must have refused
+
+Human approvals (tools with ``approval_mode="always_require"``)::
+
+      - id: big-refund-needs-approval
+        input: Refund $500 on A1002.
+        approve: true                 # decide every approval request (true/false); omit to stop at the pause
+        script:
+          - tool: issue_refund
+            args: {order_id: A1002, amount: 500}
+          - reply: Refunded $500.
+        expect:
+          approval_required: [issue_refund]   # these tools must have paused for a human
+          tools: [issue_refund]               # and (after approval) actually run
 """
 
 from __future__ import annotations
@@ -29,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from agent_framework import AgentResponse, FunctionMiddleware, SupportsAgentRun
+from agent_framework import AgentResponse, FunctionMiddleware, Message, SupportsAgentRun
 
 from .scripted_client import ScriptedChatClient, ToolCall, Turn
 
@@ -45,6 +58,7 @@ class EvalCase:
     input: str
     expect: dict[str, Any] = field(default_factory=dict)
     script: list[Any] = field(default_factory=list)
+    approve: bool | None = None
 
     def scripted_turns(self) -> list[Turn]:
         turns: list[Turn] = []
@@ -88,6 +102,7 @@ def load_eval_cases(path: str | Path) -> list[EvalCase]:
             input=str(raw["input"]),
             expect=dict(raw.get("expect") or {}),
             script=list(raw.get("script") or []),
+            approve=raw.get("approve"),
         )
         if case.id in ids:
             raise ValueError(f"duplicate eval case id: {case.id}")
@@ -115,8 +130,20 @@ async def run_case(agent_factory: AgentFactory, case: EvalCase, *, live: bool = 
     recorder = _ToolRecorder()
     failures: list[str] = []
     response: AgentResponse | None = None
+    paused_for: list[str] = []
     try:
-        response = await agent.run(case.input, middleware=[recorder])
+        session = agent.create_session() if hasattr(agent, "create_session") else None
+        response = await agent.run(case.input, middleware=[recorder], session=session)
+        rounds = 0
+        while response.user_input_requests and rounds < 10:
+            requests = [r for r in response.user_input_requests if r.type == "function_approval_request"]
+            paused_for += [r.function_call.name for r in requests if r.function_call is not None]
+            if case.approve is None or not requests:
+                break
+            decision = Message(role="user", contents=[r.to_function_approval_response(approved=bool(case.approve))
+                                                      for r in requests])
+            response = await agent.run(decision, middleware=[recorder], session=session)
+            rounds += 1
     except Exception as exc:  # surface as a failed case, not a crashed suite
         failures.append(f"run raised {type(exc).__name__}: {exc}")
         return CaseResult(case, None, recorder.names, failures)
@@ -135,11 +162,17 @@ async def run_case(agent_factory: AgentFactory, case: EvalCase, *, live: bool = 
     for tool_name in expect.get("forbidden_tools", []):
         if tool_name in recorder.names:
             failures.append(f"forbidden tool {tool_name!r} was called")
+    for tool_name in expect.get("approval_required", []):
+        if tool_name not in paused_for:
+            failures.append(f"tool {tool_name!r} did not pause for approval (paused: {paused_for})")
+    if expect.get("approval_required") == [] and paused_for:
+        failures.append(f"unexpected approval pause for {paused_for}")
     if "blocked" in expect:
         blocked = bool((response.additional_properties or {}).get(BLOCKED_KEY))
         if blocked != bool(expect["blocked"]):
             failures.append(f"expected blocked={expect['blocked']} but was {blocked}")
-    if client is not None and not failures:
+    stopped_at_pause = bool(paused_for) and case.approve is None
+    if client is not None and not failures and not stopped_at_pause:
         try:
             client.assert_script_consumed()
         except AssertionError as exc:

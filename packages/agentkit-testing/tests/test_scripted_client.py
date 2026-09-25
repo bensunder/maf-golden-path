@@ -96,3 +96,57 @@ cases:
     assert not bad.passed
     assert any("shipped" in f for f in bad.failures)
     assert any("lookup_order" in f for f in bad.failures)
+
+
+async def test_eval_cases_with_approvals(tmp_path):
+    from agent_framework import tool as _tool
+
+    ran = []
+
+    @_tool(approval_mode="always_require")
+    def issue_refund(order_id: str, amount: float) -> str:
+        """Refund."""
+        ran.append(order_id)
+        return "refunded"
+
+    cases_file = tmp_path / "cases.yaml"
+    cases_file.write_text(
+        """
+cases:
+  - id: approved
+    input: refund A1
+    approve: true
+    script:
+      - tool: issue_refund
+        args: {order_id: A1, amount: 500}
+      - reply: Refunded.
+    expect: {approval_required: [issue_refund], tools: [issue_refund], contains: [refunded]}
+  - id: rejected
+    input: refund A2
+    approve: false
+    script:
+      - tool: issue_refund
+        args: {order_id: A2, amount: 500}
+      - reply: Not refunded.
+    expect: {approval_required: [issue_refund], forbidden_tools: [issue_refund]}
+  - id: stops-at-pause
+    input: refund A3
+    script:
+      - tool: issue_refund
+        args: {order_id: A3, amount: 500}
+    expect: {approval_required: [issue_refund]}
+  - id: missing-pause
+    input: hello
+    script:
+      - reply: hi
+    expect: {approval_required: [issue_refund]}
+"""
+    )
+    cases = {c.id: c for c in load_eval_cases(cases_file)}
+    factory = lambda client: Agent(client, tools=[issue_refund])  # noqa: E731
+    for case_id in ("approved", "rejected", "stops-at-pause"):
+        result = await run_case(factory, cases[case_id])
+        assert result.passed, result.summary()
+    assert ran == ["A1"]
+    missing = await run_case(factory, cases["missing-pause"])
+    assert not missing.passed and "did not pause" in missing.summary()

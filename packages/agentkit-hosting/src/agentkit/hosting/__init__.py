@@ -1,12 +1,30 @@
 """agentkit.hosting — build and host MAF agents with company defaults."""
 
 from .agent import build_agent, default_detector, default_middleware, load_instructions
-from .app import ChatRequest, ChatResponseBody, create_app
+from .app import ApprovalDecision, ApprovalView, ChatRequest, ChatResponseBody, DecisionsRequest, create_app
+from .approvals import approve_if, roles_from_principal
 from .clients import create_chat_client, gateway_headers, get_credential, token_provider
-from .sessions import InMemorySessionStore, SessionRecord, SessionStore
+from .sessions import (
+    CosmosSessionStore,
+    InMemorySessionStore,
+    RedisSessionStore,
+    SessionLockTimeout,
+    SessionRecord,
+    SessionStore,
+    session_store_from_settings,
+)
 from .settings import AgentKitSettings
 
 __all__ = [
+    "ApprovalDecision",
+    "ApprovalView",
+    "CosmosSessionStore",
+    "DecisionsRequest",
+    "RedisSessionStore",
+    "SessionLockTimeout",
+    "approve_if",
+    "roles_from_principal",
+    "session_store_from_settings",
     "AgentKitSettings",
     "ChatRequest",
     "ChatResponseBody",
