@@ -1,6 +1,7 @@
 """agentkit.testing — offline test doubles and eval runner for MAF agents."""
 
-from .evals import BLOCKED_KEY, CaseResult, EvalCase, load_eval_cases, run_case, run_suite
+from .evals import BLOCKED_KEY, CaseResult, EvalCase, RecordedToolCall, load_eval_cases, run_case, run_suite
+from .judge import GROUNDEDNESS_RUBRIC, Judge, JudgeScore
 from .scripted_client import (
     ScriptedChatClient,
     ScriptExhaustedError,
@@ -12,6 +13,10 @@ from .scripted_client import (
 from .spans import SpanRecorder, install_span_recorder
 
 __all__ = [
+    "GROUNDEDNESS_RUBRIC",
+    "Judge",
+    "JudgeScore",
+    "RecordedToolCall",
     "BLOCKED_KEY",
     "CaseResult",
     "EvalCase",
