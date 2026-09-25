@@ -43,6 +43,13 @@ agentkit-gate --cases evals/cases.yaml --factory order_status_agent:create_agent
 
 The caller's identity comes from the `x-ms-client-principal-name` header set by platform auth (Container Apps / App Service Easy Auth, or APIM). Sessions can only be used by the user who created them.
 
+## Where people use it
+
+- **Web chat:** `https://<your-app>/chat` (Entra sign-in). The AG-UI endpoint behind it is `POST /v1/agui`, usable from CopilotKit or any AG-UI client. Approvals show as Approve/Reject buttons.
+- **Microsoft Teams:** `azd up` creates the Azure Bot. Then `python scripts/package_teams_app.py` builds `build/teams-app.zip` to upload in Teams. Approvals are Adaptive Cards (sent to the approvers channel if `AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID` is set). Say `reset` to start over.
+
+Setup and options: the kit's `docs/channels.md`.
+
 ## Updating
 
 `copier update` pulls template improvements. Bump the kit version in `pyproject.toml` to take package fixes.

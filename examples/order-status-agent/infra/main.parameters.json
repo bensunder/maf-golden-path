@@ -17,6 +17,8 @@
     "cosmosAccountName": { "value": "${AGENTKIT_COSMOS_ACCOUNT_NAME}" },
     "cosmosDatabase": { "value": "${AGENTKIT_COSMOS_DATABASE}" },
     "approverRole": { "value": "${AGENTKIT_APPROVER_ROLE=}" },
-    "authClientId": { "value": "${AGENTKIT_AUTH_CLIENT_ID=}" }
+    "authClientId": { "value": "${AGENTKIT_AUTH_CLIENT_ID=}" },
+    "teamsApproverGroupId": { "value": "${AGENTKIT_TEAMS_APPROVER_GROUP_ID=}" },
+    "teamsApprovalsChannelId": { "value": "${AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID=}" }
   }
 }

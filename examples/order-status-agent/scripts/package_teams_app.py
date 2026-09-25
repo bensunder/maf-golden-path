@@ -1,0 +1,132 @@
+"""Build the Teams app package (manifest + icons) for this agent.
+
+    python scripts/package_teams_app.py                  # bot id and host from `azd env get-values`
+    python scripts/package_teams_app.py --bot-id <guid> --host ca-orders.azurecontainerapps.io
+
+Upload the zip in Teams (Apps > Manage your apps > Upload an app) or publish it through the Teams admin
+center for the organisation. The bot id is the service's managed identity client id (azd output
+TEAMS_BOT_APP_ID); re-run after a new environment is provisioned.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import struct
+import subprocess
+import sys
+import zipfile
+import zlib
+from pathlib import Path
+
+NAME = "Order Status Agent"
+DESCRIPTION = "Answers order, shipping and small-refund questions for customer support staff."
+DEVELOPER = "commerce"
+ACCENT = "#0B5CAD"
+MANIFEST_VERSION = "1.19"
+GUID = re.compile(r"^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
+
+
+def _png(size: int, pixel) -> bytes:
+    """A small RGBA PNG from a function (x, y) -> (r, g, b, a), no imaging library needed."""
+    rows = b"".join(b"\x00" + b"".join(bytes(pixel(x, y)) for x in range(size)) for y in range(size))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b"")
+
+
+def color_icon() -> bytes:
+    """192x192: accent background with a white chat bubble."""
+    accent = tuple(int(ACCENT[i:i + 2], 16) for i in (1, 3, 5))
+
+    def pixel(x, y):
+        inside = 48 <= x < 144 and 56 <= y < 120 or (64 <= x < 84 and 120 <= y < 140 and x - 64 < 140 - y)
+        return (255, 255, 255, 255) if inside else (*accent, 255)
+
+    return _png(192, pixel)
+
+
+def outline_icon() -> bytes:
+    """32x32: white outline on transparent, as Teams requires."""
+
+    def pixel(x, y):
+        box = (x in (6, 25) and 8 <= y <= 20) or (y == 8 and 6 <= x <= 25) or (y == 20 and 6 <= x <= 25
+                                                                                 and not 11 <= x <= 13)
+        tail = (x == 10 and 20 <= y <= 24) or (20 <= y <= 24 and x == 10 + (24 - y))  # speech-bubble tail
+        edge = box or tail
+        return (255, 255, 255, 255) if edge else (0, 0, 0, 0)
+
+    return _png(32, pixel)
+
+
+def manifest(bot_id: str, host: str) -> dict:
+    short = NAME[:30]
+    full = NAME[:100] if NAME[:100] != short else f"{NAME} agent"[:100]  # Teams wants them to differ
+    return {
+        "$schema": f"https://developer.microsoft.com/json-schemas/teams/v{MANIFEST_VERSION}/MicrosoftTeams.schema.json",
+        "manifestVersion": MANIFEST_VERSION,
+        "version": "1.0.0",
+        "id": bot_id,
+        "developer": {"name": DEVELOPER[:32], "websiteUrl": f"https://{host}/chat",
+                      "privacyUrl": f"https://{host}/chat", "termsOfUseUrl": f"https://{host}/chat"},
+        "name": {"short": short, "full": full},
+        "description": {"short": DESCRIPTION[:80], "full": DESCRIPTION[:4000]},
+        "icons": {"color": "color.png", "outline": "outline.png"},
+        "accentColor": ACCENT,
+        "bots": [{
+            "botId": bot_id,
+            "scopes": ["personal", "team", "groupChat"],
+            "isNotificationOnly": False,
+            "supportsFiles": False,
+            "commandLists": [{"scopes": ["personal"],
+                              "commands": [{"title": "reset", "description": "Start a new conversation"}]}],
+        }],
+        "permissions": ["identity", "messageTeamMembers"],
+        "validDomains": [host],
+    }
+
+
+def azd_values() -> dict[str, str]:
+    try:
+        out = subprocess.run(["azd", "env", "get-values"], capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    values = {}
+    for line in out.splitlines():
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip('"')
+    return values
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--bot-id", help="bot (managed identity) client id; default: azd TEAMS_BOT_APP_ID")
+    parser.add_argument("--host", help="public host of the service; default: from azd SERVICE_API_URI")
+    parser.add_argument("--out", type=Path, default=Path("build/teams-app.zip"))
+    args = parser.parse_args(argv)
+
+    values = {} if (args.bot_id and args.host) else azd_values()
+    bot_id = args.bot_id or values.get("TEAMS_BOT_APP_ID", "")
+    host = args.host or re.sub(r"^https?://", "", values.get("SERVICE_API_URI", "")).rstrip("/")
+    if not GUID.match(bot_id):
+        print(f"bot id must be a GUID (got {bot_id!r}); pass --bot-id or run after `azd provision`", file=sys.stderr)
+        return 2
+    if not host or "/" in host or ":" in host:
+        print(f"host must be a bare host name (got {host!r}); pass --host", file=sys.stderr)
+        return 2
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as package:
+        package.writestr("manifest.json", json.dumps(manifest(bot_id, host), indent=2))
+        package.writestr("color.png", color_icon())
+        package.writestr("outline.png", outline_icon())
+    print(f"wrote {args.out} (bot {bot_id}, host {host})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
