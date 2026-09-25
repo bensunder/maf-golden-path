@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentkit-guardrails"
+version = "0.1.0"
+description = "Guardrail middleware for Microsoft Agent Framework: Prompt Shields, tool-output injection scanning, PII redaction, tool policy and token budgets."
+requires-python = ">=3.10"
+dependencies = [
+    "agent-framework-core>=1.19,<1.20",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+azure = ["azure-identity>=1.19"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentkit"]

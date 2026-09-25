@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentkit-testing"
+version = "0.1.0"
+description = "Offline test doubles, span capture and eval-case runner for Microsoft Agent Framework agents."
+requires-python = ">=3.10"
+dependencies = [
+    "agent-framework-core>=1.19,<1.20",
+    "opentelemetry-sdk>=1.30",
+    "pyyaml>=6",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[project.entry-points.pytest11]
+agentkit = "agentkit.testing.plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentkit"]

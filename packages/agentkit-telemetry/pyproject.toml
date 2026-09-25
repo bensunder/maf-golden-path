@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentkit-telemetry"
+version = "0.1.0"
+description = "One-call OpenTelemetry bootstrap, request-context enrichment and run metrics for Microsoft Agent Framework agents."
+requires-python = ">=3.10"
+dependencies = [
+    "agent-framework-core>=1.19,<1.20",
+    "opentelemetry-api>=1.30",
+    "opentelemetry-sdk>=1.30",
+]
+
+[project.optional-dependencies]
+azure = ["azure-monitor-opentelemetry-exporter>=1.0.0b40"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentkit"]

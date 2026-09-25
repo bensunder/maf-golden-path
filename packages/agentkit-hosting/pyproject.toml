@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentkit-hosting"
+version = "0.1.0"
+description = "Company defaults for hosting Microsoft Agent Framework agents: gateway-bound clients, Entra credentials, default middleware stack, sessions and a FastAPI app."
+requires-python = ">=3.10"
+dependencies = [
+    "agent-framework-core>=1.19,<1.20",
+    "agent-framework-openai>=1.14,<1.15",
+    "agentkit-telemetry>=0.1,<0.2",
+    "agentkit-guardrails>=0.1,<0.2",
+    "azure-identity>=1.19",
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "pydantic-settings>=2.4",
+    "uvicorn>=0.30",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentkit"]
