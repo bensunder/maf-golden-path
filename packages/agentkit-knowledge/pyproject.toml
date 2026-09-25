@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentkit-knowledge"
+version = "0.6.0"
+description = "Answers from company documents for agentkit services: permission-trimmed Azure AI Search retrieval with citations, and an ingestion pipeline (Blob, Document Intelligence, chunking, embeddings through the AI gateway)."
+requires-python = ">=3.10"
+dependencies = [
+    "agentkit-hosting>=0.6,<0.7",
+    "agentkit-tools>=0.6,<0.7",
+    "azure-search-documents>=11.6",
+    "pydantic-settings>=2.4",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+blob = ["azure-storage-blob>=12.20"]
+
+[project.scripts]
+agentkit-ingest = "agentkit.knowledge.ingest:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentkit"]
