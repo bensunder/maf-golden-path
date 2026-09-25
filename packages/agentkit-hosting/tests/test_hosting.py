@@ -327,3 +327,16 @@ def test_async_azure_transport_is_installed():
     from azure.core.pipeline.transport import AioHttpTransport
 
     AioHttpTransport()
+
+
+def test_posts_must_be_json():
+    """Cookie-authenticated browsers can't be tricked into a cross-site form POST (CSRF)."""
+    client = ScriptedChatClient(script=[reply("hi")])
+    app = create_app(lambda s: build_agent(name="a", instructions="x", settings=s, client=client),
+                     settings=AgentKitSettings(**LOCAL), configure_telemetry=False)
+    with TestClient(app) as http:
+        form = http.post("/v1/chat", content='{"message": "hi"}', headers={"content-type": "text/plain"})
+        ok = http.post("/v1/chat", content='{"message": "hi"}',
+                       headers={"content-type": "application/json; charset=utf-8"})
+    assert form.status_code == 415 and ok.status_code == 200
+    assert len(client.calls) == 1
