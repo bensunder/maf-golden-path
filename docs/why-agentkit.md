@@ -173,6 +173,7 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 17. **MAF 1.19 logs "did not match the active approval occurrence identity" on every correct resume.** It's internal double-binding, confirmed with the real OpenAI client, and the call still runs once. Suppressing it blindly would also hide real mismatches, so agentkit validates approval ids against the session's pending list *first* and only then demotes the message.
 18. **Loading a session before taking its lock loses updates.** Two concurrent messages both read the old state, and the second write wins. agentkit v0.2's own host had this; v0.3 locks, then loads, runs and saves. It matters most once there are several replicas.
 19. **Saving an already-expired session to Redis with a minimum TTL makes it readable for a second.** The Redis store now checks expiry on read and deletes instead of writing.
+20. **Azure's async SDKs need `aiohttp`, but don't install it.** `azure.identity.aio` (managed identity) and `azure.cosmos.aio` import it only when making a request, so tests with injected tokens pass, and the service then fails its first real token request in Azure with `ImportError`. agentkit declares it, and a test checks the transport imports.
 
 ---
 
