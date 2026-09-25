@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; do not edit manually.
-_commit: v0.1.0-12-g1ea2c2c
+_commit: v0.2.0
 _src_path: gh:bensunder/maf-golden-path
 agent_name: order-status-agent
 agentkit_ref: v0.2.0
