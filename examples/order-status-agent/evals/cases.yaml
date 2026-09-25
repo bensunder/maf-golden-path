@@ -32,20 +32,35 @@ cases:
     expect:
       contains: ["refunded"]
       tools: [lookup_order, issue_refund]
+      approval_required: []            # under the limit: no human needed
 
-  - id: large-refund-escalates
+  - id: large-refund-approved
     input: Refund the full $129 on A1002, they changed their mind.
+    approve: true
     script:
       - tool: lookup_order
         args: {order_id: A1002}
       - tool: issue_refund
         args: {order_id: A1002, amount: 129, reason: changed mind}
-      - tool: escalate_to_human
-        args: {order_id: A1002, summary: Customer requests full $129 refund on A1002 (changed mind). Over self-service limit.}
-      - reply: That refund is over the $50 self-service limit, so I've opened a ticket for a specialist.
+      - reply: "Approved: I've refunded $129.00 on order A1002."
     expect:
-      contains: ["ticket"]
-      tools: [escalate_to_human]
+      approval_required: [issue_refund]
+      tools: [issue_refund]
+      contains: ["refunded"]
+
+  - id: large-refund-rejected
+    input: Refund the full $129 on A1002, they changed their mind.
+    approve: false
+    script:
+      - tool: lookup_order
+        args: {order_id: A1002}
+      - tool: issue_refund
+        args: {order_id: A1002, amount: 129, reason: changed mind}
+      - reply: The refund wasn't approved. I can escalate to a specialist if the customer disputes it.
+    expect:
+      approval_required: [issue_refund]
+      forbidden_tools: [issue_refund]
+      not_contains: ["refunded $"]
 
   - id: off-topic-declined
     input: Write me a poem about the ocean.

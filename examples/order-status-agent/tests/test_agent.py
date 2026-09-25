@@ -22,8 +22,17 @@ def test_lookup_order():
 def test_refund_policy():
     policy = t.TOOL_POLICY["validators"]["issue_refund"]
     assert policy({"order_id": "A1001", "amount": 10}) is None
-    assert "specialist" in policy({"order_id": "A1002", "amount": 129})
+    assert policy({"order_id": "A1002", "amount": 129}) is None  # large refunds are for approvers, not the policy
     assert "order total" in policy({"order_id": "A1003", "amount": 20})
+
+
+def test_approval_rule_threshold():
+    from agent_framework import Content
+
+    (rule,) = t.APPROVAL_RULES
+    call = lambda amount: Content.from_function_call(call_id="c", name="issue_refund",  # noqa: E731
+                                                     arguments={"order_id": "A1001", "amount": amount, "reason": "x"})
+    assert rule(call(50)) is True and rule(call(50.01)) is False
 
 
 async def test_small_refund_goes_through(settings):
@@ -39,19 +48,26 @@ async def test_small_refund_goes_through(settings):
     assert t.REFUNDS == [{"order_id": "A1001", "amount": 10.0, "reason": "dented box"}]
 
 
-async def test_policy_blocks_large_refund_even_if_model_tries(settings):
-    client = ScriptedChatClient(
-        script=[
-            tool_call("issue_refund", order_id="A1002", amount=129, reason="changed mind"),
-            tool_call("escalate_to_human", order_id="A1002", summary="Full refund requested, over limit"),
-            reply("I've opened a ticket for a specialist."),
-        ]
-    )
-    await create_agent(settings, client=client).run("Refund all of A1002")
-    assert t.REFUNDS == []  # the tool never ran
-    assert len(t.TICKETS) == 1
-    rejection = next(str(r) for r in client.tool_results().values() if "rejected" in str(r))
-    assert "specialist" in rejection
+async def test_large_refund_pauses_for_approval(settings):
+    client = ScriptedChatClient(script=[tool_call("issue_refund", order_id="A1002", amount=129, reason="changed mind")])
+    result = await create_agent(settings, client=client).run("Refund all of A1002")
+    assert [r.function_call.name for r in result.user_input_requests] == ["issue_refund"]
+    assert t.REFUNDS == []  # nothing happens until a human decides
+
+
+async def test_policy_still_applies_after_approval(settings):
+    """An approver can't authorise more than the order total: the policy runs when the tool does."""
+    from agent_framework import Message
+
+    client = ScriptedChatClient(script=[tool_call("issue_refund", order_id="A1003", amount=99, reason="x"),
+                                        reply("That amount is more than the order total.")])
+    agent = create_agent(settings, client=client)
+    session = agent.create_session()
+    paused = await agent.run("refund $99 on A1003", session=session)
+    approval = Message(role="user", contents=[paused.user_input_requests[0].to_function_approval_response(approved=True)])
+    await agent.run(approval, session=session)
+    assert t.REFUNDS == []
+    assert "order total" in str(list(client.tool_results().values())[-1])
 
 
 async def test_invalid_order_id_is_rejected_by_schema(settings):

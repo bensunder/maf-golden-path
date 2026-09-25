@@ -10,6 +10,7 @@ import uuid
 from typing import Annotated, Any
 
 from agent_framework import tool
+from agentkit.hosting import approve_if
 from pydantic import Field
 
 from .connectors import CARRIER_TOOLS
@@ -36,13 +37,13 @@ def lookup_order(order_id: OrderId) -> dict[str, Any] | str:
     return {"order_id": order_id.upper(), **order}
 
 
-@tool
+@tool(approval_mode="always_require")
 def issue_refund(
     order_id: OrderId,
     amount: Annotated[float, Field(description="Refund amount in USD", gt=0)],
     reason: Annotated[str, Field(description="Short reason given by the customer")],
 ) -> str:
-    """Refund part or all of an order, up to the self-service limit."""
+    """Refund part or all of an order. Refunds over the self-service limit wait for a human approver."""
     order = _ORDERS.get(order_id.upper())
     if order is None:
         return f"No order found with id {order_id}."
@@ -64,8 +65,6 @@ def escalate_to_human(
 def _refund_policy(args: dict[str, Any]) -> str | None:
     order = _ORDERS.get(str(args.get("order_id", "")).upper())
     amount = float(args.get("amount", 0))
-    if amount > REFUND_LIMIT:
-        return f"refunds over ${REFUND_LIMIT:.0f} need a specialist; use escalate_to_human instead"
     if order and amount > order["total"]:
         return f"amount exceeds the order total (${order['total']:.2f})"
     return None
@@ -73,5 +72,8 @@ def _refund_policy(args: dict[str, Any]) -> str | None:
 
 TOOLS = [lookup_order, issue_refund, escalate_to_human, *CARRIER_TOOLS]
 
-# Central policy: enforced by agentkit before the tool runs, whatever the model decides.
+# Central policy: enforced by agentkit when the tool runs, whatever the model decides (and even after approval).
 TOOL_POLICY: dict = {"denied": [], "validators": {"issue_refund": _refund_policy}}
+
+# Refunds pause for a human; up to the self-service limit they're approved automatically.
+APPROVAL_RULES: list = [approve_if("issue_refund", lambda a: float(a["amount"]) <= REFUND_LIMIT)]
