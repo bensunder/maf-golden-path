@@ -45,10 +45,23 @@ Quality checks (scored by an LLM judge in live runs; skipped offline)::
           rubric: States the order status and tracking number; no invented delivery date.
           min_score: 4                # 1-5, default 4
           grounded: true              # every claim supported by tool results (judge)
+
+Knowledge (documents searched as a user, with citations)::
+
+      - id: support-agent-cant-see-lead-playbook
+        input: Can I approve a $300 refund exception?
+        user: sam                     # run as this user: search is trimmed to what they may read
+        critical: true
+        expect:
+          cites: [refund-policy]      # the answer cites these documents (and no [n] that wasn't retrieved)
+          must_not_retrieve: [leads-playbook]   # never shown to this user, whatever the answer says
 """
 
 from __future__ import annotations
 
+import contextlib
+import re
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,6 +88,7 @@ class EvalCase:
     approve: bool | None = None
     critical: bool = False
     repeat: int | None = None
+    user: str | None = None
 
     def scripted_turns(self) -> list[Turn]:
         turns: list[Turn] = []
@@ -131,7 +145,8 @@ def load_eval_cases(path: str | Path) -> list[EvalCase]:
     cases = []
     ids: set[str] = set()
     known = {"contains", "not_contains", "tools", "forbidden_tools", "blocked", "approval_required", "tool_args",
-             "max_tool_calls", "max_total_tokens", "rubric", "min_score", "grounded", "grounded_min_score"}
+             "max_tool_calls", "max_total_tokens", "rubric", "min_score", "grounded", "grounded_min_score",
+             "cites", "must_not_retrieve"}
     for raw in data.get("cases", []):
         case = EvalCase(
             id=str(raw["id"]),
@@ -141,6 +156,7 @@ def load_eval_cases(path: str | Path) -> list[EvalCase]:
             approve=raw.get("approve"),
             critical=bool(raw.get("critical", False)),
             repeat=raw.get("repeat"),
+            user=str(raw["user"]) if raw.get("user") is not None else None,
         )
         unknown = set(case.expect) - known
         if unknown:  # typos in expectations would otherwise silently check nothing
@@ -164,6 +180,32 @@ class _ToolRecorder(FunctionMiddleware):
         if isinstance(result, list):
             result = "\n".join(getattr(r, "text", None) or str(getattr(r, "result", "") or r) for r in result)
         self.calls.append(RecordedToolCall(context.function.name, args, str(result)[:4000]))
+
+
+# Knowledge tool results use agentkit's shared source format (defined in agentkit.hosting.citations;
+# parsed again here so this package stays dependency-free). A test in agentkit-knowledge keeps them in step.
+_SOURCE_LINE = re.compile(r"^\[(\d+)\] id=(\S+) \u00b7 title=")
+_MARKER = re.compile(r"\[(\d+)\]")
+
+
+def _retrieved(calls: list[RecordedToolCall]) -> dict[int, str]:
+    """[n] -> document id, for every source any tool showed the model."""
+    found: dict[int, str] = {}
+    for call in calls:
+        for line in call.result.splitlines():
+            if m := _SOURCE_LINE.match(line.strip()):
+                found.setdefault(int(m.group(1)), m.group(2))
+    return found
+
+
+def _as_user(user: str | None, case_id: str):
+    if user is None:
+        return contextlib.nullcontext()
+    try:
+        from agentkit.telemetry import run_context
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("eval cases with 'user:' need agentkit-telemetry installed") from exc
+    return run_context(user_id=user, request_id=f"eval-{case_id}-{uuid.uuid4().hex[:8]}")
 
 
 def _same(actual: Any, expected: Any) -> bool:
@@ -197,6 +239,11 @@ async def run_case(
     paused_for: list[str] = []
     total_tokens = 0
     try:
+        user_scope = _as_user(case.user, case.id)
+        user_scope.__enter__()
+    except Exception as exc:
+        return CaseResult(case, None, [], [f"run raised {type(exc).__name__}: {exc}"])
+    try:
         session = agent.create_session() if hasattr(agent, "create_session") else None
         response = await agent.run(case.input, middleware=[recorder], session=session)
         total_tokens += _tokens(response)
@@ -214,6 +261,8 @@ async def run_case(
     except Exception as exc:  # surface as a failed case, not a crashed suite
         failures.append(f"run raised {type(exc).__name__}: {exc}")
         return CaseResult(case, None, recorder.calls, failures, total_tokens=total_tokens)
+    finally:
+        user_scope.__exit__(None, None, None)
 
     reply = response.text or ""
     text = reply.lower()
@@ -245,6 +294,20 @@ async def run_case(
             failures.append(f"tool {tool_name!r} did not pause for approval (paused: {paused_for})")
     if expect.get("approval_required") == [] and paused_for:
         failures.append(f"unexpected approval pause for {paused_for}")
+    retrieved = _retrieved(recorder.calls)
+    for doc_id in expect.get("must_not_retrieve", []):
+        leaked = sorted(n for n, d in retrieved.items() if d == doc_id)
+        if leaked:
+            failures.append(f"retrieved {doc_id!r}, which this user must not see (as [{leaked[0]}])")
+    if "cites" in expect:
+        numbers = [int(n) for n in _MARKER.findall(reply)]
+        bogus = sorted({n for n in numbers if n not in retrieved})
+        if bogus:
+            failures.append(f"cites {['[%d]' % n for n in bogus]} but no such source was retrieved")
+        cited_docs = {retrieved[n] for n in numbers if n in retrieved}
+        for doc_id in expect["cites"]:
+            if doc_id not in cited_docs:
+                failures.append(f"answer doesn't cite {doc_id!r} (cited: {sorted(cited_docs) or 'nothing'})")
     if "blocked" in expect:
         blocked = bool((response.additional_properties or {}).get(BLOCKED_KEY))
         if blocked != bool(expect["blocked"]):
