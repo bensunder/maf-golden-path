@@ -38,5 +38,11 @@ Run `copier update` in the service repo. Copier replays your saved answers again
 ### What does a MAF upgrade mean for my service?
 Usually nothing. The platform team pins MAF, tests the upgrade against the kit and the sample, and releases a new kit version. You bump one version. See [UPGRADING.md](UPGRADING.md).
 
+### Should my tool use the service's identity or the user's?
+Use the user's identity (`OnBehalfOfAuth`) whenever results depend on who is asking: mail, files, CRM records with row-level security, anything a user could see only some of. Use the service's identity (`ManagedIdentityAuth`) for shared reference data. If in doubt, choose on-behalf-of: the agent then can't leak data the user couldn't already see. See [connectors.md](connectors.md#auth).
+
+### Can I scale beyond one replica?
+Not with the default in-memory session store: a follow-up message could reach a replica that doesn't have the session. Implement `SessionStore` on Redis or Cosmos DB, pass it to `create_app(..., session_store=...)`, then raise `maxReplicas` in `infra/main.bicep`.
+
 ### Where do I ask for something the kit should do?
 Open an issue or PR on `maf-golden-path`. If two teams need it, it belongs in the kit.

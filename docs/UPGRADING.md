@@ -11,6 +11,10 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
    - `FunctionInvocationContext.arguments/result` (tool policy, tool-output shield);
    - `options["instructions"]` (testing `RecordedCall.instructions`);
    - `AgentSession.to_dict/from_dict` (session store);
-   - `FunctionInvocationConfiguration` keys (run limits).
-4. **Release.** Tag `vX.Y.Z`; generated services move by bumping the tag in `pyproject.toml` (git mode) or the version range (feed mode). Template changes reach existing services with `copier update`.
-5. **Semver for teams.** Kit patch = no action. Kit minor = new defaults, may need `copier update`. Kit major = breaking API in `build_agent` / settings, with migration notes here.
+   - `FunctionInvocationConfiguration` keys (run limits);
+   - `tool(func, name=, description=, schema=, additional_properties=)` with a `**kwargs` function (OpenAPI tools);
+   - `MCPStreamableHTTPTool(http_client=, allowed_tools=)` (gateway MCP helper);
+   - `azure.identity.aio.OnBehalfOfCredential(client_assertion_func=, user_assertion=)` (on-behalf-of auth).
+4. **Infra drift.** Bump `BICEP_VERSION` in the Makefile deliberately. Azure API versions in the Bicep are pinned; `make test-infra` fails on any new linter warning, so review them on upgrade.
+5. **Release.** Tag `vX.Y.Z`; generated services move by bumping the tag in `pyproject.toml` (git mode) or the version range (feed mode). Template changes reach existing services with `copier update`.
+6. **Semver for teams.** Kit patch = no action. Kit minor = new defaults, may need `copier update`. Kit major = breaking API in `build_agent` / settings, with migration notes here.

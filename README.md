@@ -16,16 +16,19 @@ cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model
 | `packages/agentkit-hosting` | `build_agent()`, gateway-bound client (APIM, Azure or OpenAI-v1 style), Entra credential per environment, `AgentKitSettings` with **prod policy enforcement**, session store, FastAPI host (JSON + SSE, session ownership, probes) |
 | `packages/agentkit-guardrails` | Prompt Shields input guard (Heuristic fallback), **tool-output injection shield**, PII redaction before the model, tool allow/deny/validators, per-session token budget |
 | `packages/agentkit-telemetry` | One-call OTel bootstrap (OTLP / App Insights), span processor that stamps user (pseudonymized), session, tenant and team on **every** MAF span, run metrics by outcome |
+| `packages/agentkit-tools` | `openapi_tools()` (OpenAPI → typed MAF tools, read-only by default), `ManagedIdentityAuth` / secretless `OnBehalfOfAuth`, `ApiClient` (safe retries, `Retry-After`, tracing, model-friendly errors), `Shaper`, `gateway_mcp_tool()`, `mock_api` for tests |
 | `packages/agentkit-testing` | `ScriptedChatClient` (real MAF layer stack, scripted model), span recorder, YAML eval cases that run offline in CI and live against the gateway, pytest plugin |
-| `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI caller, `AGENTS.md`/`CLAUDE.md` |
+| `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI and deploy callers, **`azure.yaml` + `infra/` (Bicep) for `azd up`**, `AGENTS.md`/`CLAUDE.md` |
+| `infra/platform/` | Shared platform, deployed once per environment: API Management AI gateway (Entra-only, per-identity token limits, chargeback metrics), Azure OpenAI behind a managed identity, Content Safety, Container Apps environment, registry, App Insights |
 | `examples/order-status-agent` | A generated service after a team customized it (see its git history for the diff a team writes) |
-| `.github/workflows/agent-ci.yml` | Reusable pipeline every generated service calls |
+| `.github/workflows/agent-ci.yml`, `agent-deploy.yml` | Reusable pipelines every generated service calls: test + build; OIDC `azd up` + smoke + live evals |
 | `skills/agentkit/SKILL.md` | Org skill so coding assistants write code the paved-road way |
 | `scripts/e2e_smoke.py` | Boots the sample and a fake gateway with uvicorn and checks the whole HTTP path |
+| `scripts/check_infra.py`, `platform_env.py` | Offline infra validation (Bicep, azd schema, actionlint, platform↔service contract); platform outputs → `azd env` / GitHub variables |
 
 ## What a team writes vs. what it gets
 
-In the sample, the team-authored code is `tools.py` (3 tools + a refund policy), `instructions/system.md` and `evals/cases.yaml`. Everything below is inherited:
+In the sample, the team-authored code is `tools.py` (3 tools + a refund policy), a 25-line `connectors.py` (live carrier API from its OpenAPI spec), `instructions/system.md` and `evals/cases.yaml`. Everything below is inherited:
 
 | Concern | How it's handled | Where |
 |---|---|---|
@@ -40,6 +43,9 @@ In the sample, the team-authored code is `tools.py` (3 tools + a refund policy),
 | Tracing | GenAI semconv spans from MAF + user/session/tenant/team on every span; content capture blocked in prod | `telemetry` |
 | Sessions | Serialized `AgentSession` in a TTL/LRU store behind a `SessionStore` protocol; owner-checked | `hosting.sessions`, `hosting.app` |
 | Tests | Scripted model, offline evals, HTTP contract tests, generated with the project | `testing`, `template/tests` |
+| Deploy | `azd up`: managed identity, least-privilege grants, Container App with Entra sign-in; OIDC pipeline with smoke check and live evals as a gate | `template/infra`, `agent-deploy.yml` |
+| Model access at org level | AI gateway: Entra-only, per-identity token limits, chargeback metrics, models behind a managed identity | `infra/platform` |
+| Calling enterprise APIs | Tools generated from OpenAPI; managed-identity or secretless on-behalf-of auth; safe retries, tracing, response shaping | `tools` |
 
 ## Prod policy (enforced at startup, not by review)
 
@@ -53,4 +59,4 @@ make install     # editable installs of all packages + sample
 make test        # packages, sample, template (both modes), end-to-end smoke
 ```
 
-Status: **v0.1.0, milestone 1** (packages + template + sample). Not yet included: azd/Bicep infra, APIM policy bundle, live eval gate in the pipeline, Redis/Cosmos session store, human-approval endpoint for `approval_mode="always_require"` tools, and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.
+Status: **v0.2.0, milestone 2**: deploy (`azd up`, platform stack, OIDC pipeline with live evals) and connectors (`agentkit-tools`). Not yet included: a Redis/Cosmos session store (services run as a single replica until then), a human-approval endpoint for `approval_mode="always_require"` tools, scored evaluators in the eval gate, channel adapters (Teams, AG-UI web chat), and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.

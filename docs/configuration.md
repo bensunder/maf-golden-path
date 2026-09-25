@@ -64,6 +64,11 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | `AGENTKIT_USER_HEADER` | `x-ms-client-principal-name` | Header carrying the authenticated caller (set by platform auth) |
 | `AGENTKIT_TENANT_HEADER` | `x-agentkit-tenant` | Header carrying the tenant id |
 | `AGENTKIT_REQUIRE_USER` | `false` | Reject requests without the user header (`401`) |
+| `AGENTKIT_USER_TOKEN_HEADER` | `authorization` | Header with the caller's own bearer token. It's passed privately to on-behalf-of tools (`agentkit.tools.OnBehalfOfAuth`) and never logged. Set to empty to disable |
+
+## Set by the deploy (you don't set these)
+
+The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
 
 ## Prod policy
 

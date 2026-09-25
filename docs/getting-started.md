@@ -170,8 +170,30 @@ AGENTKIT_LIVE_EVALS=1 pytest tests/test_evals.py    # same cases, real model
 
 ## 8. Ship it
 
-Push to GitHub. `.github/workflows/ci.yml` calls the platform's reusable pipeline, which runs the unit tests and offline evals and builds the container. The container defaults to `AGENTKIT_ENVIRONMENT=prod`, so it **will not start** until it is configured for managed identity, the gateway, Prompt Shields and authenticated users (see [configuration.md](configuration.md#prod-policy)).
+Push to GitHub. `.github/workflows/ci.yml` calls the platform's reusable pipeline, which runs the unit tests and offline evals and builds the container.
+
+To deploy, use the platform your platform team already runs (see [deploy.md](deploy.md)):
+
+```bash
+azd env new support-faq-dev
+python <kit>/scripts/platform_env.py --resource-group rg-agentkit-dev | sh   # platform values
+azd env set AGENTKIT_AUTH_CLIENT_ID <your API's Entra app id>
+azd up
+```
+
+This creates the service's managed identity, grants it exactly what it needs on the platform, and deploys a Container App with Entra sign-in in front. Merges to `main` then deploy through `.github/workflows/deploy.yml`, which also runs your eval cases **live against the gateway** after each deploy.
+
+The container defaults to `AGENTKIT_ENVIRONMENT=prod` rules, so it **will not start** with unsafe settings (see [configuration.md](configuration.md#prod-policy)).
+
+## 9. Call a real API (optional)
+
+If a tool needs an existing API with an OpenAPI spec, generate the tool instead of writing it. See [connectors.md](connectors.md):
+
+```python
+ORDERS = ApiClient("https://api.contoso.com/orders", auth=ManagedIdentityAuth("api://orders/.default"))
+TOOLS += openapi_tools("specs/orders.yaml", client=ORDERS, operations=["getOrder"])
+```
 
 ## What you did not write
 
-You didn't touch model clients, credentials, gateway headers, injection defences, PII handling, tool-loop limits, token budgets, OpenTelemetry, session storage, streaming, the HTTP API, the Dockerfile or CI. See [why-agentkit.md](why-agentkit.md) for what those would have cost.
+You didn't touch model clients, credentials, gateway headers, injection defences, PII handling, tool-loop limits, token budgets, OpenTelemetry, session storage, streaming, the HTTP API, the Dockerfile, CI, Azure infrastructure, role assignments or the deploy pipeline. See [why-agentkit.md](why-agentkit.md) for what those would have cost.

@@ -5,11 +5,13 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 | Start here | |
 |---|---|
 | [Why agentkit](why-agentkit.md) | What it saves you: measured code size, estimated engineering days, and the MAF pitfalls already handled |
-| [Getting started](getting-started.md) | Generate a service, add a tool and a business rule, write evals, run it locally: 15 minutes |
+| [Getting started](getting-started.md) | Generate a service, add a tool and a business rule, write evals, run it locally, deploy: 15 minutes |
 
 | Reference | |
 |---|---|
 | [Architecture](architecture.md) | Request flow, middleware order, gateway contract, sessions, HTTP API |
+| [Deploying](deploy.md) | Shared platform (AI gateway, models, safety), `azd up` per service, OIDC pipeline, offline validation, troubleshooting |
+| [Connectors](connectors.md) | OpenAPI → tools, managed identity and on-behalf-of auth, retries, response shaping, MCP, test fakes |
 | [Configuration](configuration.md) | Every `AGENTKIT_*` setting and the prod policy |
 | [Guardrails](guardrails.md) | Prompt Shields, indirect injection, PII, tool policy, token budgets, custom guardrails |
 | [Telemetry](telemetry.md) | Spans, attributes, metrics, destinations, KQL queries |
