@@ -13,6 +13,9 @@ Run `copier copy gh:bensunder/maf-golden-path <dest>`, then `pip install -e ".[d
 - Configuration comes from `AGENTKIT_*` env vars via `AgentKitSettings`. Never hard-code endpoints, keys, model names or limits.
 - Tools are `@tool` functions in `tools.py`, registered in `TOOLS`. Use `Annotated[type, Field(description=..., pattern/gt/...)]` for every parameter.
 - State-changing tools (refunds, emails, tickets, writes) need a validator in `TOOL_POLICY["validators"]`, and/or `@tool(approval_mode="always_require")` when a human-approval UI exists.
+- Calling an existing API: generate tools with `agentkit.tools.openapi_tools(spec, client=ApiClient(url, auth=...), operations=[...])`. Never hand-write httpx/requests calls, retries or token handling. Auth: `ManagedIdentityAuth(scope)` for app-level access, `OnBehalfOfAuth(scope, client_id=..., tenant_id=...)` when the user's permissions must apply. Writes need `allow_writes=[...]` plus a `TOOL_POLICY` validator. Trim responses with `Shaper(fields=[...])`.
+- MCP servers: `agentkit.tools.gateway_mcp_tool(name, url, auth=..., allowed_tools=[...])`, and always set `allowed_tools`.
+- Deploy: `azd up` using the generated `infra/`. Never create Azure resources by hand for a service.
 - Do not add custom prompt-injection, PII or logging code in services. If a guardrail is missing, change `agentkit-guardrails` instead.
 
 ## Changing behaviour
@@ -31,6 +34,7 @@ assert "Shipped" in result.text
 ```
 - `client.calls[i].instructions`, `.last_user_text`, `client.tool_results()`, `client.assert_script_consumed()`.
 - Unit-test a tool directly with `my_tool.func(...)`.
+- Fake downstream APIs: `with mock_api(CLIENT, {"GET /orders/A1": {...}}) as calls:` (from `agentkit.tools.testing`). Use an autouse fixture in `conftest.py` so offline evals never hit the network.
 - Refusals set `result.additional_properties["agentkit.blocked"]`.
 
 ## Don'ts

@@ -280,6 +280,27 @@ def test_streaming_sse(app_env):
     assert done["blocked"] is None and done["session_id"]
 
 
+def test_caller_token_reaches_tools_via_run_context():
+    from agentkit.telemetry import get_run_context
+
+    seen = {}
+
+    @tool
+    def whoami() -> str:
+        """Report the delegated token a downstream call would use."""
+        ctx = get_run_context()
+        seen["assertion"] = ctx.user_assertion if ctx else None
+        return "ok"
+
+    client = ScriptedChatClient(script=[tool_call("whoami"), reply("done")])
+    app = create_app(lambda s: build_agent(name="a", instructions="x", tools=[whoami], settings=s, client=client),
+                     settings=AgentKitSettings(**LOCAL), configure_telemetry=False)
+    with TestClient(app) as http:
+        body = http.post("/v1/chat", json={"message": "hi"}, headers={"Authorization": "Bearer user-jwt-9"}).json()
+    assert seen["assertion"] == "user-jwt-9"
+    assert "user-jwt-9" not in json.dumps(body)
+
+
 def test_require_user():
     settings = AgentKitSettings(**LOCAL, require_user=True)
     app = create_app(lambda s: build_agent(name="a", instructions="x", settings=s, client=ScriptedChatClient()),

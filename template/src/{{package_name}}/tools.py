@@ -7,6 +7,15 @@ Rules of the road:
 * anything that changes state (refunds, emails, tickets) gets ``@tool(approval_mode="always_require")``
   or a validator in ``TOOL_POLICY``;
 * call downstream APIs through the gateway or with the service's managed identity. Never embed secrets.
+
+Calling an existing API that has an OpenAPI spec? Don't hand-write the tool. Generate it:
+
+    from agentkit.tools import ApiClient, ManagedIdentityAuth, OnBehalfOfAuth, Shaper, openapi_tools
+    ORDERS = ApiClient("https://api.contoso.com/orders", auth=ManagedIdentityAuth("api://orders/.default"))
+    TOOLS += openapi_tools("specs/orders.yaml", client=ORDERS, operations=["getOrder"],
+                           shapers={"getOrder": Shaper(fields=["id", "status"])})
+
+See docs/connectors.md in the agentkit repo (auth, retries, write opt-in, response shaping, MCP).
 """
 
 from __future__ import annotations

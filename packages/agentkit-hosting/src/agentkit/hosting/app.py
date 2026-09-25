@@ -103,6 +103,12 @@ def create_app(
             raise HTTPException(401, f"missing {settings.user_header}")
         return user, request.headers.get(settings.tenant_header)
 
+    def _user_assertion(request: Request) -> str | None:
+        raw = request.headers.get(settings.user_token_header) if settings.user_token_header else None
+        if not raw:
+            return None
+        return raw[7:].strip() if raw.lower().startswith("bearer ") else raw.strip()
+
     async def _load(session_id: str | None, user: str | None) -> tuple[str, AgentSession]:
         agent = _agent()
         if session_id:
@@ -133,7 +139,8 @@ def create_app(
         user, tenant = _identity(request)
         session_id, session = await _load(body.session_id, user)
         async with locks.hold(session_id):
-            with run_context(user_id=user, session_id=session_id, tenant_id=tenant, request_id=str(uuid.uuid4())):
+            with run_context(user_id=user, session_id=session_id, tenant_id=tenant, request_id=str(uuid.uuid4()),
+                             user_assertion=_user_assertion(request)):
                 result = await _agent().run(body.message, session=session)
             await _save(session_id, session, user)
         return ChatResponseBody(
@@ -150,7 +157,8 @@ def create_app(
 
         async def events():
             async with locks.hold(session_id):
-                with run_context(user_id=user, session_id=session_id, tenant_id=tenant, request_id=str(uuid.uuid4())):
+                with run_context(user_id=user, session_id=session_id, tenant_id=tenant, request_id=str(uuid.uuid4()),
+                                 user_assertion=_user_assertion(request)):
                     stream = _agent().run(body.message, session=session, stream=True)
                     async for update in stream:
                         if update.text:

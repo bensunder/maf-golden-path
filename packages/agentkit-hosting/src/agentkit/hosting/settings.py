@@ -65,6 +65,9 @@ class AgentKitSettings(BaseSettings):
     user_header: str = "x-ms-client-principal-name"
     tenant_header: str = "x-agentkit-tenant"
     require_user: bool = False
+    #: Header carrying the caller's own access token, made available to on-behalf-of tools
+    #: (agentkit.tools.OnBehalfOfAuth). Easy Auth validates it before it reaches the app.
+    user_token_header: str = "authorization"
 
     @model_validator(mode="after")
     def _enforce_environment_policy(self) -> AgentKitSettings:

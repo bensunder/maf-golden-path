@@ -54,6 +54,15 @@ async def test_no_context_outside_block(enriched):
     assert all("session.id" not in s.attributes for s in enriched.spans())
 
 
+async def test_user_assertion_never_reaches_spans(enriched):
+    enriched.clear()
+    with run_context(user_id="u", user_assertion="eyJ.secret.token") as ctx:
+        await Agent(ScriptedChatClient(script=[reply("ok")]), name="tok").run("hi")
+    assert "secret" not in repr(ctx)
+    for span in enriched.spans():
+        assert all("secret" not in str(v) for v in span.attributes.values())
+
+
 def test_nested_context_merges():
     with run_context(user_id="u", tenant_id="t"):
         with run_context(session_id="s", step="2") as inner:
