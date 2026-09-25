@@ -38,6 +38,10 @@ on:
       python-version:
         type: string
         default: "3.11"
+      knowledge-source:
+        description: "Folder of documents to sync to the knowledge index after deploy (e.g. knowledge); empty = skip"
+        type: string
+        default: ""
 
 permissions:
   id-token: write
@@ -96,6 +100,8 @@ jobs:
             || azd env select "$AZURE_ENV_NAME"
           azd up --no-prompt
           azd env get-values > .azd.env
+          # Knowledge endpoints (when the service has them) for the ingest and eval steps.
+          grep '^AGENTKIT_KNOWLEDGE_' .azd.env | tr -d '"' >> "$GITHUB_ENV" || true
 
       - name: Smoke check
         run: |
@@ -105,6 +111,16 @@ jobs:
             sleep 10
           done
           echo "service did not become healthy: $uri" && exit 1
+
+      - name: Sync knowledge
+        if: ${{ inputs.knowledge-source != '' }}
+        env:
+          AGENTKIT_ENVIRONMENT: test
+          AGENTKIT_AUTH_MODE: azure_cli
+          KNOWLEDGE_SOURCE: ${{ inputs.knowledge-source }}
+        run: |
+          pip install -e .
+          agentkit-ingest --source "$KNOWLEDGE_SOURCE"
 
       - name: Quality gate (live evals vs. baseline)
         if: ${{ inputs.run-live-evals }}

@@ -1,7 +1,8 @@
 PY ?= python
-PACKAGES := testing telemetry guardrails tools hosting channels
+PACKAGES := testing telemetry guardrails tools hosting channels knowledge
 EXTRAS_hosting := [redis,cosmos]
 EXTRAS_channels := [teams]
+EXTRAS_knowledge := [blob]
 PLAYWRIGHT_VERSION ?= 1.56.0
 GEN_DIR ?= $(or $(TMPDIR),/tmp)/agentkit-template-check
 TOOLS_DIR := $(CURDIR)/.tools/bin
@@ -46,14 +47,14 @@ test-example:
 	mkdir -p $(RESULTS_DIR)
 	cd examples/order-status-agent && $(PY) -m pytest -q --junitxml=$(RESULTS_DIR)/example.xml
 
-TEAMS := --data enable_teams=true --data enable_web_chat=false
+TEAMS := --data enable_teams=true --data enable_web_chat=false --data enable_knowledge=true
 
 test-template:      ## render both install modes, with and without Teams; run the generated projects' tests
 	rm -rf $(GEN_DIR)
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=feed . $(GEN_DIR)/feed
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=git . $(GEN_DIR)/git
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Teams Check" --data agentkit_source=feed $(TEAMS) . $(GEN_DIR)/feed-teams
-	copier copy --defaults --vcs-ref HEAD -q --data project_name="Teams Check" --data agentkit_source=git --data enable_teams=true . $(GEN_DIR)/git-teams
+	copier copy --defaults --vcs-ref HEAD -q --data project_name="Teams Check" --data agentkit_source=git --data enable_teams=true --data enable_knowledge=true . $(GEN_DIR)/git-teams
 	$(PY) scripts/check_rendered.py $(GEN_DIR)/git
 	$(PY) scripts/check_rendered.py $(GEN_DIR)/git-teams
 	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed
