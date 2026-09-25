@@ -1,6 +1,6 @@
 # Why agentkit: the boilerplate you don't write
 
-**Short version:** a production agent on Microsoft Agent Framework (MAF) needs about fifteen things that have nothing to do with what your agent does: gateway access, identity, injection defences, PII handling, tool-loop limits, cost caps, tracing, sessions, an HTTP API, a test double for the model, an eval harness, a container, cloud infrastructure, a deploy pipeline, authenticated and resilient calls to the enterprise APIs its tools use, conversations that survive scale-out, a human in the loop for risky actions, and a quality gate that blocks a deploy when answers get worse. agentkit ships all of them, already tested against MAF 1.19. On agentkit, your service is your **tools, instructions and eval cases**, and `azd up`.
+**Short version:** a production agent on Microsoft Agent Framework (MAF) needs about fifteen things that have nothing to do with what your agent does: gateway access, identity, injection defences, PII handling, tool-loop limits, cost caps, tracing, sessions, an HTTP API, a test double for the model, an eval harness, a container, cloud infrastructure, a deploy pipeline, authenticated and resilient calls to the enterprise APIs its tools use, conversations that survive scale-out, a human in the loop for risky actions, a quality gate that blocks a deploy when answers get worse, and a way for people to actually reach the agent: Teams and a web chat. agentkit ships all of them, already tested against MAF 1.19. On agentkit, your service is your **tools, instructions and eval cases**, and `azd up`.
 
 ---
 
@@ -10,24 +10,24 @@ These are measured from this repository, not estimated.
 
 | | Lines of code* |
 |---|---|
-| agentkit packages (source): hosting, guardrails, telemetry, testing, tools | **2,909** |
-| agentkit package tests | **1,491** |
-| Service template, including its Bicep, azd config and deploy workflow (generated into every repo) | **707** |
+| agentkit packages (source): hosting, guardrails, telemetry, testing, tools, channels (incl. the web chat component) | **4,307** |
+| agentkit package tests (incl. Teams, AG-UI and headless-browser tests) | **2,010** |
+| Service template, including its Bicep, azd config, deploy workflow and Teams packaging (generated into every repo) | **979** |
 | Shared platform infrastructure (Bicep + AI gateway policy) | **313** |
-| CI workflows, infra validation, multi-replica and live-gate smoke test, tooling | **760** |
-| **Total the platform maintains once** | **~6,200** |
-| What the team wrote to turn the generated project into the order-status agent | **321** |
+| CI workflows, infra validation, multi-replica, channel and live-gate smoke test, tooling | **876** |
+| **Total the platform maintains once** | **~8,500** |
+| What the team wrote to turn the generated project into the order-status agent | **345** |
 
-\* Non-blank, non-comment lines.
+\* Non-blank lines, excluding comment-only lines, counted by one script across the repo at v0.5.0 (earlier versions of this page used a slightly different count).
 
-The sample team's 321 lines break down as:
-- three tools, a refund rule, and **human approval for refunds over $50** (64);
-- the connector to a live carrier API, with managed-identity auth, retries and response shaping (**25**);
-- instructions (11);
-- eight eval cases, which double as the deploy **quality gate**, with judged rubrics, groundedness and critical safety cases (85);
-- domain tests (136).
+The sample team's 345 lines break down as:
+- three tools, a refund rule, and **human approval for refunds over $50** (57);
+- the connector to a live carrier API, with managed-identity auth, retries and response shaping (**19**);
+- instructions (13);
+- eight eval cases, which double as the deploy **quality gate**, with judged rubrics, groundedness and critical safety cases (87);
+- domain tests (169), including a Teams test that a refunds lead, and never the requester, approves a large refund from a card.
 
-None of it is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
+Reaching the agent from **Teams and a web chat** took two copier answers and no code. None of the 345 lines is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
 
 ### Estimated engineering time per concern
 
@@ -54,6 +54,8 @@ These **are estimates**. They reflect what each piece took to build and debug he
 | Human approvals | Pause/resume across requests and replicas, id validation, confirmation vs. separation of duties with Entra roles, audit trail, streaming, eval support | 3–5 |
 | Quality gate | LLM judge (rubric, groundedness) that fails closed, argument and budget checks, repetitions, baseline comparison, run-page report, deploy wiring | 3–5 |
 | **Total per team** | | **~28–46 engineer-days, plus 1–3 per API** |
+| *If users reach it through Teams* | Bot endpoint with JWT validation, secretless bot registration, background turns and proactive replies, per-user sessions, app manifest; approval cards with approver checks, click-once updates, an approvals channel; offline test harness | 5–8 |
+| *If users reach it through a web page* | Streaming protocol with approvals and resume, server-held history, thread ownership, a chat UI that can't be XSS'd, CSP, browser sign-in, CSRF | 3–6 |
 
 The shared AI gateway (API Management policy, per-identity token limits, chargeback metrics, Azure OpenAI behind a managed identity) is a one-time platform cost, typically another 5–10 days. agentkit ships it as `infra/platform/`.
 
@@ -89,7 +91,7 @@ It is not a production service. It has:
 - traces that don't say which user, session or tenant they belong to;
 - no HTTP API, no sessions, no tests that run without a model.
 
-Closing those gaps is the 15–23 days above.
+Closing those gaps is most of the table above.
 
 ### With agentkit
 
@@ -109,10 +111,10 @@ def create_agent(settings=None, client=None):
     )
 ```
 
-And this is the HTTP service:
+And this is the HTTP service, reachable from Teams and a web chat as well as the JSON API:
 
 ```python
-app = create_app(create_agent)
+app = create_app(create_agent, channels=[AgUiChannel(), WebChat(), *teams_from_env()])
 ```
 
 And this is the deploy, to a Container App with its own managed identity, Entra sign-in, least-privilege grants and telemetry, behind the shared AI gateway:
@@ -121,7 +123,7 @@ And this is the deploy, to a Container App with its own managed identity, Entra 
 azd up
 ```
 
-Everything in the table in section 1 is attached by `build_agent`, `create_app`, `openapi_tools` and the generated `infra/`.
+Everything in the table in section 1 is attached by `build_agent`, `create_app`, the channels, `openapi_tools` and the generated `infra/`.
 
 ---
 
@@ -149,6 +151,8 @@ Everything in the table in section 1 is attached by `build_agent`, `create_app`,
 | Cosmos DB (managed identity) or Redis sessions, locked per conversation; 5 replicas out of the box | Design session storage and distributed locking | [sessions-and-approvals.md](sessions-and-approvals.md) |
 | Quality gate: `rubric`, `grounded`, `tool_args`, budgets and `critical` cases, run live 3x per deploy against a committed baseline; results on the run page | Build an LLM-judge harness, then argue about whether the new prompt is better | [testing-and-evals.md](testing-and-evals.md#the-quality-gate-deploys) |
 | `approval_mode="always_require"` + `approve_if` rules; approvals API with confirmation or separation-of-duties modes; audit log; `approve:` in eval cases | Build pause/resume, authorization and audit for risky actions | [sessions-and-approvals.md](sessions-and-approvals.md#human-approvals) |
+| Teams: bot endpoint, secretless Azure Bot, approvals as Adaptive Cards in an approvers channel, Entra-group approvers, app package script, offline `TeamsTestClient` | Learn the M365 Agents SDK, Bot Framework auth and Teams' timeouts | [channels.md](channels.md#microsoft-teams) |
+| Web chat at `/chat` and AG-UI at `/v1/agui`, with approvals as standard interrupts | Build and secure a chat UI and its streaming protocol | [channels.md](channels.md#web-chat) |
 
 ---
 
@@ -179,6 +183,15 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 21. **An LLM judge that defaults to "pass" when it can't parse its own output hides regressions.** Judges return prose, markdown fences or out-of-range numbers. agentkit's judge accepts only a clean 1–5 score. Anything else, including the judge call failing, counts as a failure.
 22. **A misspelled expectation checks nothing.** `contain:` instead of `contains:` silently passes forever. The case loader rejects unknown `expect` keys.
 23. **Evals running inside a prod deploy inherit prod policy.** The deploy job's `AGENTKIT_ENVIRONMENT=prod` made the eval step reject its own CI credentials, so live evals could never run in a production deploy. This affected agentkit's own v0.2–v0.3 pipeline. The eval step now runs as `test`; the prod policy applies to the deployed service.
+24. **Teams gives a bot about 15 seconds to answer, and agent runs with tools take longer.** The SDK's `long_running_messages` option still holds the request open until the run ends. agentkit acknowledges with 202 at once, runs the turn in the background and replies proactively.
+25. **Proactive replies are sent as replies to a message that doesn't exist.** The SDK gives each continuation a random activity id, and `send_activity` copies it into `replyToId`. agentkit clears it, so approval cards start a new post in the approvals channel. The fake Bot Connector in the tests caught this.
+26. **The SDK's `serviceUrl` allow-list is off by default.** A forged activity could make the bot send token-bearing calls to any host. agentkit turns it on (Microsoft hosts only, plus explicit test hosts), and a test proves a foreign host is refused before any call.
+27. **`AgentApplication` requires a Storage and writes conversation and user state on every turn.** With `MemoryStorage` that grows per user, per replica, and isn't shared. agentkit gives the SDK a no-op storage and keeps state in its own session store.
+28. **Easy Auth in front of the bot endpoint rejects every Teams message**, because the Bot Connector's token isn't for your app. The SDK's JWT middleware applied app-wide rejects every normal API call instead. agentkit validates Bot Framework tokens on `/api/messages` only, and the Bicep excludes that one path from Easy Auth.
+29. **Adaptive Cards render Markdown, and tool arguments come from the model.** An injected `[click here](https://…)` becomes a link in front of the approver. agentkit escapes every value on approval cards.
+30. **AG-UI clients send the whole conversation on every run.** Trusting it lets a browser rewrite what the agent said. MAF's own AG-UI endpoint also keeps approval state in process memory and doesn't tie a thread to a user. agentkit keeps history and approvals in the shared session store, owner-checked, and uses only the newest user message.
+31. **A cookie-authenticated chat page opens the API to CSRF** on FastAPI versions that parse `text/plain` bodies as JSON. agentkit rejects non-JSON POSTs app-wide (415), so a cross-site form can't act as the signed-in user.
+32. **`from __future__ import annotations` plus a locally imported FastAPI `Request`** makes FastAPI read the parameter as a required query field, and every call returns 422. It happened twice while building the channels. The endpoints now import at module level or register plain Starlette routes.
 
 ---
 
@@ -187,8 +200,7 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 Being honest about scope saves you time too.
 
 - **The infrastructure hasn't been deployed to a real subscription by this repo's CI.** Every Bicep file compiles and lints clean, and names are contract-checked across platform and service (see [deploy.md](deploy.md#whats-validated-without-azure)). Run `what-if` in your subscription before first use.
-- **No channel adapters yet.** Teams and M365 Copilot publishing, and an AG-UI web chat component, are on the roadmap. Today callers use the HTTP API.
-- **No HTTP endpoint for human approval** of `approval_mode="always_require"` tools. Use `TOOL_POLICY` validators for now.
+- **The Teams channel hasn't run in a real Teams tenant yet.** It's tested offline with real Bot Framework activities through the M365 Agents SDK, a fake Bot Connector, and a headless browser for the web chat. See [channels.md](channels.md#not-included-yet) for what that leaves open, including Teams SSO for on-behalf-of tools and Microsoft 365 Copilot publishing.
 - **Python only.** A .NET track is planned.
 
 ---

@@ -67,6 +67,7 @@ POST /v1/sessions/{session_id}/approvals
 - The response can be `approval_required` again: with auto-approval rules configured, MAF surfaces multiple pending calls one at a time.
 - `GET /v1/sessions/{session_id}/approvals` lists what's pending, for an approver's inbox.
 - Streaming (`/v1/chat/stream`) sends an `event: approval_required` before `event: done`.
+- **In Teams**, the same pause becomes an Adaptive Card with Approve and Reject, posted to an approvers channel under separation of duties. **In the web chat** (AG-UI), it's a standard interrupt with buttons. Both go through the same checks and audit as this endpoint. See [channels.md](channels.md#approvals-as-cards).
 
 ### 4. Who may approve
 
@@ -75,7 +76,7 @@ POST /v1/sessions/{session_id}/approvals
 | empty (default) | **Confirmation** | The user who made the request ("are you sure?") |
 | e.g. `Refunds.Approve` | **Separation of duties** | Anyone holding that Entra **app role**, *except* the requester (`AGENTKIT_APPROVAL_SEPARATION=false` allows self-approval) |
 
-Roles come from Easy Auth's `X-MS-CLIENT-PRINCIPAL` header, so only signed-in, validated callers count. Define the role on the service's app registration and assign it to people or groups:
+Roles come from Easy Auth's `X-MS-CLIENT-PRINCIPAL` header, so only signed-in, validated callers count. In Teams, Easy Auth roles don't apply; approvers come from an Entra group (`AGENTKIT_TEAMS_APPROVER_GROUP_ID`) instead, with the same not-your-own-request rule ([channels.md](channels.md#approvals-as-cards)). Define the role on the service's app registration and assign it to people or groups:
 
 ```bash
 az ad app update --id "$APP_ID" --app-roles '[{"allowedMemberTypes":["User"],"description":"Approve refunds",
@@ -88,7 +89,7 @@ When an approver resumes the run, the conversation stays attributed to its owner
 
 ### 5. Audit
 
-Every decision is appended to the session's `approval_log`: tool, arguments, approved or rejected, `decided_by`, `requested_by`, comment and timestamp. It's also counted in the `agentkit.approvals.requested` and `agentkit.approvals.decided` metrics (by tool and decision). For retention beyond the session TTL, ship the `agentkit.hosting.app` "approval … approved/rejected" log lines to your SIEM.
+Every decision is appended to the session's `approval_log`: tool, arguments, approved or rejected, `decided_by` (and `decided_by_name`), `requested_by`, `channel` (`http`, `agui` or `teams`), comment and timestamp. It's also counted in the `agentkit.approvals.requested` and `agentkit.approvals.decided` metrics (by tool and decision). For retention beyond the session TTL, ship the `agentkit.hosting.app` "approval … approved/rejected" log lines to your SIEM.
 
 ### 6. Policy still applies after approval
 

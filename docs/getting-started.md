@@ -159,6 +159,8 @@ curl -s localhost:8000/v1/chat -H 'content-type: application/json' \
 # {"…","reply":"I can't help with that request.","blocked":"prompt_injection:heuristic"}
 ```
 
+Open http://localhost:8000/chat for the web chat. Locally there's no sign-in, so the conversation belongs to an anonymous user.
+
 ## 7. Run it against the real gateway
 
 ```bash

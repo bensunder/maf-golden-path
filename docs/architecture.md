@@ -4,19 +4,27 @@
 
 ```mermaid
 flowchart LR
-    U[Caller<br/>Teams bot / web app / other agent] -->|Easy Auth or APIM<br/>sets x-ms-client-principal-name| H
+    U[Caller<br/>script / web app / other agent] -->|Easy Auth or APIM<br/>sets x-ms-client-principal-name| H
+    B[Browser<br/>/chat] -->|Easy Auth sign-in cookie| W
+    TM[Microsoft Teams] -->|Bot Connector JWT| TC
     subgraph svc[Your service: generated from the template]
-      H[agentkit.hosting<br/>FastAPI host] --> A[MAF Agent<br/>built by build_agent]
+      H[agentkit.hosting<br/>JSON API] --> CS2[ConversationService<br/>sessions · locks · approvals · audit]
+      W[AgUiChannel + WebChat] --> CS2
+      TC[TeamsChannel<br/>/api/messages] --> CS2
+      CS2 --> A[MAF Agent<br/>built by build_agent]
       A --> T[Your tools.py]
     end
     A -->|Entra token + x-agentkit-* headers| G[AI gateway<br/>APIM]
     G --> M[Model deployments]
     A -.->|Prompt Shields| CS[Azure AI Content Safety]
     H -.->|OTLP / Azure Monitor| O[Traces + metrics]
-    H <--> S[(Session store)]
+    CS2 <--> S[(Session store)]
+    TC -.->|replies, approval cards<br/>managed identity| TM
 ```
 
 Your code is the box labelled *Your tools.py*, plus `instructions/system.md` and `evals/`.
+
+Every way in (the JSON API, AG-UI web chat, Teams) goes through one `ConversationService`, so sessions, locking, owner checks, approvals and the audit log behave the same whichever channel a user picks. Channels only establish *who* is calling and render the result. See [channels.md](channels.md).
 
 ## One chat request, step by step
 
@@ -108,7 +116,10 @@ The Chat Completions API is the default because every APIM GenAI policy (token l
 | `GET` | `/v1/sessions/{id}/approvals` | Pending approvals (owner, or holder of the approver role) |
 | `POST` | `/v1/sessions/{id}/approvals` | `{decisions: [{id, approved, comment?}]}` → resumes the run; same response shape as `/v1/chat` |
 | `DELETE` | `/v1/sessions/{id}` | 204; 403 if not the owner |
+| `POST` | `/v1/agui` | AG-UI `RunAgentInput` → AG-UI event stream; approvals are interrupts (with `AgUiChannel`) |
+| `GET` | `/chat` | Chat page (with `WebChat`) |
+| `POST` | `/api/messages` | Microsoft Teams (Bot Framework), with `TeamsChannel`; Bot Connector JWT, not Easy Auth |
 | `GET` | `/healthz` | Liveness |
 | `GET` | `/readyz` | Readiness: agent name and version |
 
-Identity comes from `AGENTKIT_USER_HEADER` (default `x-ms-client-principal-name`, set by Container Apps / App Service authentication). Tenant comes from `AGENTKIT_TENANT_HEADER`. In prod, `require_user=true` is enforced, so anonymous calls get `401`.
+Identity comes from `AGENTKIT_USER_HEADER` (default `x-ms-client-principal-name`, set by Container Apps / App Service authentication). Tenant comes from `AGENTKIT_TENANT_HEADER`. In prod, `require_user=true` is enforced, so anonymous calls get `401`. Every `POST` must be `application/json` (else `415`), which keeps cookie-authenticated browsers safe from cross-site form posts.

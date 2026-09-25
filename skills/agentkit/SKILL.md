@@ -12,11 +12,13 @@ Run `copier copy gh:bensunder/maf-golden-path <dest>`, then `pip install -e ".[d
 - Build agents only with `agentkit.hosting.build_agent(...)` (see `src/<pkg>/agent.py`). Never instantiate `agent_framework.Agent`, `OpenAIChatClient`, `AzureOpenAI` or credentials directly. `build_agent` supplies the gateway client, Entra auth, guardrails, telemetry and run limits.
 - Configuration comes from `AGENTKIT_*` env vars via `AgentKitSettings`. Never hard-code endpoints, keys, model names or limits.
 - Tools are `@tool` functions in `tools.py`, registered in `TOOLS`. Use `Annotated[type, Field(description=..., pattern/gt/...)]` for every parameter.
-- State-changing tools (refunds, emails, tickets, writes) need a validator in `TOOL_POLICY["validators"]`, and/or `@tool(approval_mode="always_require")` when a human-approval UI exists.
+- State-changing tools (refunds, emails, tickets, writes) need a validator in `TOOL_POLICY["validators"]`, and/or `@tool(approval_mode="always_require")` (approvals work in the API, the web chat and Teams).
 - Calling an existing API: generate tools with `agentkit.tools.openapi_tools(spec, client=ApiClient(url, auth=...), operations=[...])`. Never hand-write httpx/requests calls, retries or token handling. Auth: `ManagedIdentityAuth(scope)` for app-level access, `OnBehalfOfAuth(scope, client_id=..., tenant_id=...)` when the user's permissions must apply. Writes need `allow_writes=[...]` plus a `TOOL_POLICY` validator. Trim responses with `Shaper(fields=[...])`.
 - High-impact actions (money, messages to customers, deletions): `@tool(approval_mode="always_require")`, plus `APPROVAL_RULES = [approve_if("tool", lambda args: ...)]` in `tools.py` for the low-risk cases. Keep hard limits in `TOOL_POLICY` validators; they still apply after approval. Add eval cases with `approve: true/false` and `expect.approval_required`.
 - MCP servers: `agentkit.tools.gateway_mcp_tool(name, url, auth=..., allowed_tools=[...])`, and always set `allowed_tools`.
 - Deploy: `azd up` using the generated `infra/`. Never create Azure resources by hand for a service.
+- Channels: users reach the agent through `create_app(create_agent, channels=[AgUiChannel(), WebChat(), *teams_from_env()])` (`agentkit.channels`). Don't write a bot, a chat UI or an approvals UI. Custom channels call `ConversationService.run_turn/decide` with a `Caller`, never `agent.run` directly, so ownership, approvals and audit apply.
+- Teams tests: `agentkit.channels.testing.TeamsTestClient` with `teams_test_settings()`; `await teams.send(text, user=TeamsTestUser("sam"))`, `teams.last_card()`, `await teams.click(card, "approve", user=...)`.
 - Do not add custom prompt-injection, PII or logging code in services. If a guardrail is missing, change `agentkit-guardrails` instead.
 
 ## Changing behaviour

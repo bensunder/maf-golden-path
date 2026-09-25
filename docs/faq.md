@@ -20,7 +20,10 @@ Pass any MAF chat client as `client=`. You keep the guardrails, telemetry and ho
 - **Replace the detector:** `detector=MyDetector()`.
 - **Remove:** `AGENTKIT_GUARDRAIL_MODE=off` works outside prod. Prod refuses it on purpose.
 
-### I don't want the FastAPI host (queue worker, Teams bot, function app).
+### Can users reach the agent from Slack, a portal or a voice front end?
+Yes: write a channel. Implement `install(app, service, settings)` and call `service.run_turn(Caller(...), text, session_id, create=True)` and `service.decide(...)`. Sessions, approvals, separation of duties and audit then work exactly as in Teams and the web chat. See [channels.md](channels.md#your-own-channel). Teams and an AG-UI web chat are built in.
+
+### I don't want the FastAPI host (queue worker, function app).
 Use `create_agent()` directly and wrap the call in `run_context(...)` so traces carry the user and session. Call `agentkit.telemetry.setup_telemetry(...)` once at startup. Sessions are yours to persist: `session.to_dict()` / `AgentSession.from_dict()`.
 
 ### Why Chat Completions and not the Responses API?

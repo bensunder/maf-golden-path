@@ -183,7 +183,11 @@ Use `AGENTKIT_JUDGE_MODEL` to judge with a different deployment than the agent's
 
 ## The HTTP contract
 
-`tests/test_app.py` drives the real FastAPI app with `TestClient` and a scripted model. Use it for anything about sessions, identity headers or response shape.
+`tests/test_app.py` drives the real FastAPI app with `TestClient` and a scripted model. Use it for anything about sessions, identity headers or response shape. It also runs a turn through the AG-UI endpoint when web chat is on.
+
+## Channels
+
+`agentkit.channels.testing.TeamsTestClient` sends real Bot Framework activities into your app and records what the agent posts back, through a fake Bot Connector, with no Teams and no network. You can click approval cards as different users, which is how you test separation of duties. See [channels.md](channels.md#testing-channels).
 
 ## What CI runs
 

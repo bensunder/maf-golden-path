@@ -16,6 +16,19 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
    - `MCPStreamableHTTPTool(http_client=, allowed_tools=)` (gateway MCP helper);
    - `azure.identity.aio.OnBehalfOfCredential(client_assertion_func=, user_assertion=)` (on-behalf-of auth);
    - approvals: `AgentResponse.user_input_requests`, `Content.to_function_approval_response()`, `ToolApprovalMiddleware(auto_approval_rules=)` (rule receives the function call; requires a session; surfaces queued approvals one at a time), and the pending-approval state MAF keeps in `session.state["tool_approval"]`. Also check whether the spurious "did not match the active approval occurrence" warning (demoted by `agentkit.hosting.approvals`) is fixed upstream.
+   - channels: `microsoft-agents-hosting-*` (pinned `<2`): `AgentApplication(ApplicationOptions(storage=…))`, `adaptive_card.action_execute`, `CloudAdapter(connection_manager=, host_validator=)`, `continue_conversation_with_claims`, `Conversation.store_item_to_json/from_json_to_store_item`, `jwt_authorization_decorator`; `ag-ui-protocol` (pinned `<0.2`): `RunAgentInput.resume`, `RunFinishedEvent.outcome` interrupts. The Teams and AG-UI tests exercise all of these offline.
 4. **Infra drift.** Bump `BICEP_VERSION` in the Makefile deliberately. Azure API versions in the Bicep are pinned; `make test-infra` fails on any new linter warning, so review them on upgrade.
 5. **Release.** Tag `vX.Y.Z`; generated services move by bumping the tag in `pyproject.toml` (git mode) or the version range (feed mode). Template changes reach existing services with `copier update`.
 6. **Semver for teams.** Kit patch = no action. Kit minor = new defaults, may need `copier update`. Kit major = breaking API in `build_agent` / settings, with migration notes here.
+
+
+## Kit release notes for services
+
+### 0.4 → 0.5 (channels)
+
+- `copier update` asks two new questions: `enable_web_chat` (default yes) and `enable_teams` (default no). See [channels.md](channels.md).
+- `create_app(..., channels=[...])` is new; existing calls without it behave as before.
+- The run and approval rules moved from the HTTP routes into `agentkit.hosting.ConversationService`. The HTTP API is unchanged (same paths, bodies, status codes).
+- **Behaviour change:** every `POST` must send `Content-Type: application/json`; anything else gets `415`. Clients sending JSON without that header need a one-line fix.
+- The audit log entries gain `decided_by_name` and `channel`.
+- With web chat on, the Bicep switches Easy Auth to redirect browsers to sign-in. Add the redirect URI and enable ID tokens on the app registration ([channels.md](channels.md#easy-auth-for-browsers)).

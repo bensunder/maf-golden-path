@@ -80,7 +80,8 @@ The template generates `azure.yaml`, `infra/main.bicep` (and modules), `infra/ma
 | Role grants on the platform | `AcrPull` on the registry, `Cognitive Services User` on Content Safety. Nothing else |
 | Session container `<service>-<env>-sessions` | In the platform's Cosmos DB, with a data-plane role for the service identity **scoped to this container only**, so no service can read another's conversations |
 | Container App | Probes on `/healthz` and `/readyz`, 1–5 replicas (sessions in Cosmos DB, locked per conversation), App Insights connection string as a secret, all `AGENTKIT_*` settings wired, `AGENTKIT_REQUIRE_USER=true` |
-| Easy Auth (when `AGENTKIT_AUTH_CLIENT_ID` is set) | Validates Entra tokens, returns 401 for anonymous calls (except probes), and injects `X-MS-CLIENT-PRINCIPAL-NAME`, the header agentkit reads the caller from |
+| Easy Auth (when `AGENTKIT_AUTH_CLIENT_ID` is set) | Validates Entra tokens and injects `X-MS-CLIENT-PRINCIPAL-NAME`, the header agentkit reads the caller from. Anonymous calls get 401, or a redirect to sign-in when web chat is on. Probes (and `/api/messages` with Teams) are let through |
+| Azure Bot + Teams channel (with `enable_teams`) | Identity = the service's managed identity (no secret), endpoint `https://<app>/api/messages`. See [channels.md](channels.md#deploy) for the app package and approver setup |
 
 ### One-time: an Entra app registration for the API (Easy Auth)
 
@@ -90,7 +91,7 @@ APP_ID=$(az ad app create --display-name "orders-agent-api" --sign-in-audience A
 az ad sp create --id "$APP_ID"
 ```
 
-Callers (a web app, Teams bot or another agent) request tokens for this app. Without it, the service deploys but rejects every request. That is the intended secure default, and the preprovision check refuses `prod` without it.
+Callers (a web app or another agent) request tokens for this app. With web chat on, also add the redirect URI `https://<app>/.auth/login/aad/callback` and enable ID tokens, so browsers can sign in ([channels.md](channels.md#easy-auth-for-browsers)). Without it, the service deploys but rejects every request. That is the intended secure default, and the preprovision check refuses `prod` without it.
 
 ### Deploy from your machine
 

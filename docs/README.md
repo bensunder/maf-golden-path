@@ -1,6 +1,6 @@
 # agentkit documentation
 
-agentkit is the paved road for building agents on Microsoft Agent Framework (Python). You write tools, instructions and eval cases. The kit handles model access, identity, guardrails, telemetry, sessions, the HTTP API, tests and CI.
+agentkit is the paved road for building agents on Microsoft Agent Framework (Python). You write tools, instructions and eval cases. The kit handles model access, identity, guardrails, telemetry, sessions, approvals, the HTTP API, Teams and web chat, tests and CI.
 
 | Start here | |
 |---|---|
@@ -11,6 +11,7 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 |---|---|
 | [Architecture](architecture.md) | Request flow, middleware order, gateway contract, sessions, HTTP API |
 | [Deploying](deploy.md) | Shared platform (AI gateway, models, safety), `azd up` per service, OIDC pipeline, offline validation, troubleshooting |
+| [Channels: Teams and web chat](channels.md) | Teams bot with approval cards in an approvers channel, AG-UI endpoint, drop-in web chat, offline Teams tests, your own channel |
 | [Sessions and approvals](sessions-and-approvals.md) | Cosmos/Redis sessions and cross-replica locking; human approval for high-impact tools (confirmation or separation of duties), audit, evals |
 | [Connectors](connectors.md) | OpenAPI → tools, managed identity and on-behalf-of auth, retries, response shaping, MCP, test fakes |
 | [Configuration](configuration.md) | Every `AGENTKIT_*` setting and the prod policy |

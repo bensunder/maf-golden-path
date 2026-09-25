@@ -83,9 +83,13 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | `AGENTKIT_APPROVAL_SEPARATION` | `true` | With a role set, forbid approving your own request |
 | `AGENTKIT_PRINCIPAL_CLAIMS_HEADER` | `x-ms-client-principal` | Easy Auth header carrying the caller's claims (roles) |
 
+## Channels
+
+Teams settings are `AGENTKIT_TEAMS_*` (bot identity, approver group, approvals channel, auth type). They're listed in [channels.md](channels.md#settings). The web chat and AG-UI endpoint have no settings of their own: they use the HTTP host's identity headers above.
+
 ## Set by the deploy (you don't set these)
 
-The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_SESSION_STORE=cosmos` with the `AGENTKIT_COSMOS_*` values, `AGENTKIT_APPROVER_ROLE` (from `azd env`), `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
+The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_SESSION_STORE=cosmos` with the `AGENTKIT_COSMOS_*` values, `AGENTKIT_APPROVER_ROLE` (from `azd env`), `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). With Teams enabled, also `AGENTKIT_TEAMS_APP_ID`, `AGENTKIT_TEAMS_TENANT_ID` and the `AGENTKIT_TEAMS_APPROVER_GROUP_ID` / `_APPROVALS_CHANNEL_ID` values from `azd env`. To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
 
 ## Prod policy
 
