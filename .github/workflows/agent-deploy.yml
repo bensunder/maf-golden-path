@@ -81,7 +81,7 @@ jobs:
       - name: Smoke check
         run: |
           uri=$(grep '^SERVICE_API_URI=' .azd.env | cut -d= -f2- | tr -d '"')
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' "$uri/healthz") && [ "$code" = "200" ] && echo "healthy: $uri" && exit 0
             sleep 10
           done

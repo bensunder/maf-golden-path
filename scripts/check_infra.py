@@ -121,6 +121,10 @@ def main(argv: list[str] | None = None) -> int:
         if not shutil.which(tool):
             print(f"FAIL: {tool} not on PATH (run `make tools`)")
             return 1
+    if not shutil.which("shellcheck"):
+        # GitHub's Ubuntu runners have shellcheck, and actionlint uses it for `run:` scripts.
+        print("WARNING: shellcheck not installed; `run:` scripts are not checked locally but will be in CI "
+              "(apt install shellcheck / brew install shellcheck)")
 
     problems: list[str] = []
     problems += check_bicep(ROOT / "infra" / "platform" / "main.bicep")
