@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": { "value": "akdev" },
+    "apimPublisherEmail": { "value": "platform-team@example.com" },
+    "apimSku": { "value": "BasicV2" },
+    "tokensPerMinutePerCaller": { "value": 20000 },
+    "tokenQuotaPerCaller": { "value": 5000000 },
+    "tokenQuotaPeriod": { "value": "Monthly" },
+    "deployOpenAI": { "value": true },
+    "openAIDeploymentName": { "value": "gpt-4.1-mini" },
+    "openAIModelName": { "value": "gpt-4.1-mini" },
+    "openAIModelVersion": { "value": "2025-04-14" },
+    "openAICapacity": { "value": 50 }
+  }
+}

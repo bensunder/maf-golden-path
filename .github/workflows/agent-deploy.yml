@@ -1,0 +1,98 @@
+# Reusable deploy for agent services: OIDC login → azd provision + deploy → smoke check → live evals.
+# Callers: `uses: <org>/maf-golden-path/.github/workflows/agent-deploy.yml@<kit tag>`
+#
+# One-time setup per service + environment (see docs/deploy.md):
+#   * GitHub environment with variables AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_LOCATION
+#     and the AGENTKIT_* platform values (scripts/platform_env.py prints them)
+#   * a federated credential on AZURE_CLIENT_ID for this repo + environment
+name: agent-deploy
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment (and azd environment suffix), e.g. dev or prod
+        type: string
+        required: true
+      agent-environment:
+        description: AGENTKIT_ENVIRONMENT for the service (dev, test, prod)
+        type: string
+        default: dev
+      run-live-evals:
+        type: boolean
+        default: true
+      python-version:
+        type: string
+        default: "3.11"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_ENV_NAME: ${{ github.event.repository.name }}-${{ inputs.environment }}
+      AGENTKIT_ENVIRONMENT: ${{ inputs.agent-environment }}
+      AGENTKIT_PLATFORM_RESOURCE_GROUP: ${{ vars.AGENTKIT_PLATFORM_RESOURCE_GROUP }}
+      AGENTKIT_CONTAINER_APPS_ENVIRONMENT_ID: ${{ vars.AGENTKIT_CONTAINER_APPS_ENVIRONMENT_ID }}
+      AGENTKIT_REGISTRY_NAME: ${{ vars.AGENTKIT_REGISTRY_NAME }}
+      AGENTKIT_CONTENT_SAFETY_NAME: ${{ vars.AGENTKIT_CONTENT_SAFETY_NAME }}
+      AGENTKIT_APPINSIGHTS_NAME: ${{ vars.AGENTKIT_APPINSIGHTS_NAME }}
+      AGENTKIT_GATEWAY_ENDPOINT: ${{ vars.AGENTKIT_GATEWAY_ENDPOINT }}
+      AGENTKIT_MODEL: ${{ vars.AGENTKIT_MODEL }}
+      AGENTKIT_AUTH_CLIENT_ID: ${{ vars.AGENTKIT_AUTH_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in (OIDC, no secrets)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: azd login
+        run: >
+          azd auth login
+          --client-id "$AZURE_CLIENT_ID"
+          --federated-credential-provider github
+          --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Provision and deploy
+        run: |
+          azd env new "$AZURE_ENV_NAME" --no-prompt --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION" \
+            || azd env select "$AZURE_ENV_NAME"
+          azd up --no-prompt
+          azd env get-values > .azd.env
+
+      - name: Smoke check
+        run: |
+          uri=$(grep '^SERVICE_API_URI=' .azd.env | cut -d= -f2- | tr -d '"')
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$uri/healthz") && [ "$code" = "200" ] && echo "healthy: $uri" && exit 0
+            sleep 10
+          done
+          echo "service did not become healthy: $uri" && exit 1
+
+      - name: Live evals against the gateway
+        if: ${{ inputs.run-live-evals }}
+        env:
+          AGENTKIT_LIVE_EVALS: "1"
+          AGENTKIT_AUTH_MODE: azure_cli
+          AGENTKIT_GUARDRAIL_MODE: heuristic
+        run: |
+          pip install -e ".[dev]"
+          pytest tests/test_evals.py -q

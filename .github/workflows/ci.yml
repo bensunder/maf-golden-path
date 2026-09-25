@@ -13,10 +13,10 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # copier needs history to render the template
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -27,5 +27,7 @@ jobs:
         run: make test-example
       - name: Template renders and generated project passes its tests
         run: make test-template
+      - name: Infrastructure and pipelines validate (Bicep, azure.yaml, actionlint, contracts)
+        run: make test-infra
       - name: End-to-end smoke (real servers, fake gateway)
         run: make smoke

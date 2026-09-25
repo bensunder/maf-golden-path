@@ -7,10 +7,6 @@ on:
 jobs:
   agent:
     # The reusable pipeline is owned by the platform team: unit tests, offline evals, image build.
-{%- if agentkit_source == 'git' %}
     uses: {{ agentkit_repo }}/.github/workflows/agent-ci.yml@{{ agentkit_ref }}
-{%- else %}
-    uses: <org>/maf-golden-path/.github/workflows/agent-ci.yml@v0.1.0
-{%- endif %}
     with:
       python-version: "{{ python_version }}"

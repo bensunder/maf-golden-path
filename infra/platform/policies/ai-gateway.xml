@@ -1,0 +1,40 @@
+<!--
+  agentkit AI gateway policy (applied to the "openai" API).
+  Placeholders replaced at deploy time by main.bicep: __TENANT_ID__, __TOKENS_PER_MINUTE__, __TOKEN_QUOTA__, __QUOTA_PERIOD__.
+
+  1. Only Entra-authenticated callers from this tenant (agent managed identities, or developers via az login).
+  2. The caller's token is swapped for the gateway's own managed identity: services never hold model credentials.
+  3. Token limits are keyed on the caller's object id (oid), which cannot be spoofed; team/agent headers are
+     used only for metrics dimensions (chargeback, dashboards).
+-->
+<policies>
+  <inbound>
+    <base />
+    <validate-azure-ad-token tenant-id="__TENANT_ID__" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized: Entra ID token required" output-token-variable-name="jwt">
+      <audiences>
+        <audience>https://cognitiveservices.azure.com</audience>
+      </audiences>
+    </validate-azure-ad-token>
+    <set-variable name="callerId" value="@(((Jwt)context.Variables[&quot;jwt&quot;]).Claims.GetValueOrDefault(&quot;oid&quot;, &quot;unknown&quot;))" />
+    <llm-token-limit counter-key="@((string)context.Variables[&quot;callerId&quot;])" tokens-per-minute="__TOKENS_PER_MINUTE__" token-quota="__TOKEN_QUOTA__" token-quota-period="__QUOTA_PERIOD__" estimate-prompt-tokens="false" remaining-tokens-header-name="x-agentkit-remaining-tokens" />
+    <llm-emit-token-metric namespace="agentkit">
+      <dimension name="Caller" value="@((string)context.Variables[&quot;callerId&quot;])" />
+      <dimension name="Team" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-agentkit-team&quot;, &quot;unknown&quot;))" />
+      <dimension name="Agent" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-agentkit-agent&quot;, &quot;unknown&quot;))" />
+      <dimension name="Environment" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-agentkit-env&quot;, &quot;unknown&quot;))" />
+    </llm-emit-token-metric>
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+    <set-backend-service backend-id="aoai" />
+  </inbound>
+  <backend>
+    <retry condition="@(context.Response.StatusCode == 429 || context.Response.StatusCode &gt;= 500)" count="2" interval="2" delta="2" max-interval="10" first-fast-retry="false">
+      <forward-request buffer-request-body="true" />
+    </retry>
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

@@ -1,0 +1,24 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    # Owned by the platform team: azd provision + deploy, smoke check, live evals.
+    uses: {{ agentkit_repo }}/.github/workflows/agent-deploy.yml@{{ agentkit_ref }}
+    with:
+      environment: {% raw %}${{ inputs.environment || 'dev' }}{% endraw %}
+      agent-environment: {% raw %}${{ inputs.environment == 'prod' && 'prod' || 'dev' }}{% endraw %}
+      python-version: "{{ python_version }}"
