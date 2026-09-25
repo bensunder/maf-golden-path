@@ -10,6 +10,10 @@ param env array
 @secure()
 param appInsightsConnectionString string
 param authClientId string = ''
+@description('Browsers are sent to Entra sign-in (web chat); API clients without a token then get a redirect, not a 401.')
+param browserSignIn bool = false
+@description('Paths Easy Auth lets through unauthenticated. The Teams bot endpoint validates Bot Connector JWTs itself.')
+param anonymousPaths array = []
 param minReplicas int = 1
 param maxReplicas int = 5
 
@@ -90,8 +94,9 @@ resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (!empty(
   properties: {
     platform: { enabled: true }
     globalValidation: {
-      unauthenticatedClientAction: 'Return401'
-      excludedPaths: ['/healthz', '/readyz']
+      unauthenticatedClientAction: browserSignIn ? 'RedirectToLoginPage' : 'Return401'
+      redirectToProvider: browserSignIn ? 'azureactivedirectory' : null
+      excludedPaths: concat(['/healthz', '/readyz'], anonymousPaths)
     }
     identityProviders: {
       azureActiveDirectory: {

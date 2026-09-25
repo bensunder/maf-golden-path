@@ -43,6 +43,16 @@ owner_email:
   help: Accountable owner for the agent charter
   default: owner@example.com
 
+enable_web_chat:
+  type: bool
+  help: Chat page at /chat and an AG-UI endpoint at /v1/agui (Entra sign-in via Easy Auth)
+  default: true
+
+enable_teams:
+  type: bool
+  help: Reach the agent from Microsoft Teams (Azure Bot, /api/messages, approvals as Adaptive Cards)
+  default: false
+
 python_version:
   type: str
   default: "3.11"
@@ -64,4 +74,4 @@ agentkit_repo:
 agentkit_ref:
   type: str
   help: Blessed kit version (git tag)
-  default: v0.4.0
+  default: v0.5.0

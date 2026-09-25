@@ -13,10 +13,16 @@ dependencies = [
     "agentkit-guardrails @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-guardrails",
     "agentkit-telemetry[azure] @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-telemetry",
     "agentkit-tools @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-tools",
+{%- if enable_web_chat or enable_teams %}
+    "agentkit-channels{% if enable_teams %}[teams]{% endif %} @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-channels",
+{%- endif %}
 {%- else %}
-    "agentkit-hosting[cosmos,redis]>=0.4,<0.5",
-    "agentkit-telemetry[azure]>=0.4,<0.5",
-    "agentkit-tools>=0.4,<0.5",
+    "agentkit-hosting[cosmos,redis]>=0.5,<0.6",
+    "agentkit-telemetry[azure]>=0.5,<0.6",
+    "agentkit-tools>=0.5,<0.6",
+{%- if enable_web_chat or enable_teams %}
+    "agentkit-channels{% if enable_teams %}[teams]{% endif %}>=0.5,<0.6",
+{%- endif %}
 {%- endif %}
 ]
 
@@ -25,7 +31,7 @@ dev = [
 {%- if agentkit_source == 'git' %}
     "agentkit-testing @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-testing",
 {%- else %}
-    "agentkit-testing>=0.4,<0.5",
+    "agentkit-testing>=0.5,<0.6",
 {%- endif %}
 ]
 

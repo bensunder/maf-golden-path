@@ -1,0 +1,37 @@
+"""HTTP entrypoint: ``uvicorn {{ package_name }}.app:app``.
+{%- if enable_web_chat %}
+
+Web: AG-UI at /v1/agui and a chat page at /chat, next to the JSON API (/v1/chat, approvals).
+{%- endif %}
+{%- if enable_teams %}
+
+Teams: the bot endpoint /api/messages is on once AGENTKIT_TEAMS_APP_ID is set (the Bicep sets it).
+{%- endif %}
+{%- if enable_web_chat or enable_teams %}
+"""
+{%- else %}"""
+{%- endif %}
+{% if enable_web_chat or enable_teams %}
+from agentkit.channels import {% if enable_web_chat %}AgUiChannel, WebChat{% endif %}{% if enable_web_chat and enable_teams %}, {% endif %}{% if enable_teams %}teams_from_env{% endif %}
+{%- endif %}
+from agentkit.hosting import create_app
+
+from .agent import create_agent
+{% if enable_web_chat or enable_teams %}
+
+def channels() -> list:
+    """Ways users reach the agent besides the JSON API; all share its sessions, approvals and audit log."""
+    result: list = []
+{%- if enable_web_chat %}
+    result += [AgUiChannel(), WebChat(title="{{ project_name }}")]
+{%- endif %}
+{%- if enable_teams %}
+    result += teams_from_env()
+{%- endif %}
+    return result
+
+
+app = create_app(create_agent, channels=channels())
+{%- else %}
+app = create_app(create_agent)
+{%- endif %}

@@ -7,6 +7,7 @@ This repo was generated from the agentkit golden path (see `.copier-answers.yml`
 - Calls to existing APIs: generate tools with `agentkit.tools.openapi_tools` from the API's OpenAPI spec (put the spec under `src/{{ package_name }}/specs/`). Use `ManagedIdentityAuth` for app access, or `OnBehalfOfAuth` when results must respect the user's permissions. Don't hand-write HTTP calls, retries or auth. Expose write operations only via `allow_writes`, and add a `TOOL_POLICY` validator for them.
 - High-impact tools (money, customer messages, deletions) use `@tool(approval_mode="always_require")`; auto-approve low-risk calls with `approve_if(...)` in `APPROVAL_RULES` (see `tools.py`). Hard limits stay in `TOOL_POLICY`.
 - In tests, fake downstream APIs with `agentkit.tools.testing.mock_api`. Never call real APIs from unit tests.
+- Users reach the agent through the channels in `src/{{ package_name }}/app.py` (web chat, Teams). Don't build a bot or chat UI; see the kit's `docs/channels.md`. Approvals work in every channel.
 - Deploy with `azd up` (infra in `infra/`). Don't create Azure resources by hand. Platform values come from `azd env` (see `scripts/check_platform_env.py`).
 - Eval cases are the quality contract: add `rubric:`/`grounded:`/`tool_args:` for answer quality and `critical: true` for safety cases. The deploy pipeline scores them live with `agentkit-gate` against `evals/baseline.json`.
 - Behaviour changes go in `src/{{ package_name }}/instructions/system.md`, plus a case in `evals/cases.yaml`.

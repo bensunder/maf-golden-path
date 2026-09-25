@@ -1,0 +1,46 @@
+"""Microsoft Teams, offline: real Bot Framework activities in, replies captured by a fake Bot Connector.
+
+See the kit's docs/channels.md for testing approvals (cards, clicks, separation of duties)."""
+
+from agentkit.channels import TeamsChannel
+from agentkit.channels.testing import TeamsTestClient, TeamsTestUser, teams_test_settings
+from agentkit.hosting import create_app
+from agentkit.testing import ScriptedChatClient, reply
+
+from {{ package_name }} import create_agent
+
+ALICE = TeamsTestUser("alice")
+
+
+async def test_teams_message_gets_a_reply(settings):
+    client = ScriptedChatClient(script=[reply("hello from Teams")])
+    app = create_app(lambda s: create_agent(s, client=client), settings=settings, configure_telemetry=False,
+                     channels=[TeamsChannel(teams_test_settings())])
+    async with TeamsTestClient(app) as teams:
+        response = await teams.send("hi", user=ALICE)
+    assert response.status_code == 202
+    assert teams.texts() == ["hello from Teams"]
+
+
+def test_teams_app_package(tmp_path):
+    """The package Teams admins upload: manifest pointing at the bot, icons of the required sizes."""
+    import json
+    import struct
+    import subprocess
+    import sys
+    import zipfile
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    out = tmp_path / "teams-app.zip"
+    bot_id = "00000000-0000-0000-0000-00000000abcd"
+    subprocess.run([sys.executable, "scripts/package_teams_app.py", "--bot-id", bot_id,
+                    "--host", "agent.example.com", "--out", str(out)], cwd=root, check=True)
+    with zipfile.ZipFile(out) as package:
+        manifest = json.loads(package.read("manifest.json"))
+        sizes = {name: struct.unpack(">II", package.read(name)[16:24]) for name in ("color.png", "outline.png")}
+    assert manifest["id"] == manifest["bots"][0]["botId"] == bot_id
+    assert manifest["name"]["short"] != manifest["name"]["full"]
+    assert len(manifest["name"]["short"]) <= 30 and len(manifest["description"]["short"]) <= 80
+    assert manifest["validDomains"] == ["agent.example.com"]
+    assert sizes == {"color.png": (192, 192), "outline.png": (32, 32)}
