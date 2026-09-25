@@ -319,3 +319,11 @@ async def test_session_store_ttl_and_lru():
     assert await store.get("b") is None and await store.get("a") is not None
     now[0] = 11
     assert await store.get("a") is None
+
+
+def test_async_azure_transport_is_installed():
+    """azure.identity.aio and azure.cosmos.aio need aiohttp at runtime, but azure-core doesn't depend on it.
+    Without it, every managed-identity token request fails in production with ImportError."""
+    from azure.core.pipeline.transport import AioHttpTransport
+
+    AioHttpTransport()

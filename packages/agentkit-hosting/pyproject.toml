@@ -13,6 +13,7 @@ dependencies = [
     "agentkit-telemetry>=0.3,<0.4",
     "agentkit-guardrails>=0.3,<0.4",
     "azure-identity>=1.19",
+    "aiohttp>=3.9",  # transport for azure.identity.aio / azure.cosmos.aio (not pulled in by azure-core)
     "fastapi>=0.115",
     "httpx>=0.27",
     "pydantic-settings>=2.4",

@@ -279,3 +279,11 @@ def _find_httpx_client(obj):
         if isinstance(value, httpx.AsyncClient):
             return value
     raise AssertionError("no httpx client found on MCP tool")
+
+
+def test_async_azure_transport_is_installed():
+    """azure.identity.aio and azure.cosmos.aio need aiohttp at runtime, but azure-core doesn't depend on it.
+    Without it, every managed-identity token request fails in production with ImportError."""
+    from azure.core.pipeline.transport import AioHttpTransport
+
+    AioHttpTransport()

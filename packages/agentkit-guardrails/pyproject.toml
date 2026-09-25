@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-azure = ["azure-identity>=1.19"]
+azure = ["azure-identity>=1.19", "aiohttp>=3.9"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentkit"]
