@@ -22,3 +22,4 @@ jobs:
       environment: {% raw %}${{ inputs.environment || 'dev' }}{% endraw %}
       agent-environment: {% raw %}${{ inputs.environment == 'prod' && 'prod' || 'dev' }}{% endraw %}
       python-version: "{{ python_version }}"
+      agent-factory: "{{ package_name }}:create_agent"

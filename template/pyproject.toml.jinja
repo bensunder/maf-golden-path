@@ -14,9 +14,9 @@ dependencies = [
     "agentkit-telemetry[azure] @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-telemetry",
     "agentkit-tools @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-tools",
 {%- else %}
-    "agentkit-hosting[cosmos,redis]>=0.3,<0.4",
-    "agentkit-telemetry[azure]>=0.3,<0.4",
-    "agentkit-tools>=0.3,<0.4",
+    "agentkit-hosting[cosmos,redis]>=0.4,<0.5",
+    "agentkit-telemetry[azure]>=0.4,<0.5",
+    "agentkit-tools>=0.4,<0.5",
 {%- endif %}
 ]
 
@@ -25,7 +25,7 @@ dev = [
 {%- if agentkit_source == 'git' %}
     "agentkit-testing @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-testing",
 {%- else %}
-    "agentkit-testing>=0.3,<0.4",
+    "agentkit-testing>=0.4,<0.5",
 {%- endif %}
 ]
 

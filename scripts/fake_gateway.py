@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
 SEEN: list[dict] = []
+JUDGED: list[bool] = []
 
 
 def _text(message: dict) -> str:
@@ -36,8 +37,15 @@ _REFUND = re.compile(r"refund\s+([A-Za-z]\d{4})\s+\$?(\d+(?:\.\d+)?)", re.IGNORE
 
 def _tool_step(body: dict) -> dict | None:
     """Deterministic 'model': 'refund A1002 $129' calls issue_refund when that tool is offered;
-    after a tool result, it reports the result. Lets the smoke test drive approvals end to end."""
+    after a tool result, it reports the result. Lets the smoke test drive approvals end to end.
+    Judge prompts (agentkit's [agentkit-judge] marker) get a score: 5 if the graded response
+    contains "Refunded" or "echo", else 2, so the smoke test can exercise the quality gate."""
     messages = body.get("messages", [])
+    if messages and "[agentkit-judge]" in _text(messages[0]):
+        graded = _text(messages[-1]).split("RESPONSE:", 1)[-1].split("TOOL RESULTS:", 1)[0]
+        good = "Refunded" in graded or "echo" in graded
+        JUDGED.append(good)
+        return {"role": "assistant", "content": json.dumps({"score": 5 if good else 2, "reason": "fake judge"})}
     offered = {t.get("function", {}).get("name") for t in body.get("tools") or []}
     last = messages[-1] if messages else {}
     if last.get("role") == "tool":
@@ -86,3 +94,8 @@ async def chat(deployment: str, request: Request):
 @app.get("/_seen")
 async def seen():
     return SEEN
+
+
+@app.get("/_judged")
+async def judged():
+    return JUDGED

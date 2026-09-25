@@ -7,6 +7,14 @@ BICEP_VERSION ?= v0.47.16
 ACTIONLINT_VERSION ?= 1.7.7
 export PATH := $(TOOLS_DIR):$(PATH)
 
+# Pick tool builds for this machine: Linux or macOS, x86-64 or ARM (Apple Silicon).
+UNAME_S ?= $(shell uname -s)
+UNAME_M ?= $(shell uname -m)
+BICEP_OS := $(if $(filter Darwin,$(UNAME_S)),osx,linux)
+BICEP_ARCH := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,x64)
+ACTIONLINT_OS := $(if $(filter Darwin,$(UNAME_S)),darwin,linux)
+ACTIONLINT_ARCH := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,amd64)
+
 .PHONY: install tools test test-packages test-example test-template test-infra smoke new-agent
 
 install:            ## editable installs of all packages + the sample agent
@@ -14,11 +22,11 @@ install:            ## editable installs of all packages + the sample agent
 	$(foreach p,$(PACKAGES),$(PY) -m pip install -q -e "packages/agentkit-$(p)$(EXTRAS_$(p))";)
 	$(PY) -m pip install -q -e "examples/order-status-agent[dev]"
 
-tools:              ## download bicep + actionlint into .tools/bin (offline infra validation)
+tools:              ## download bicep + actionlint for this OS/CPU into .tools/bin (offline infra validation)
 	mkdir -p $(TOOLS_DIR)
-	test -x $(TOOLS_DIR)/bicep || curl -sSL -o $(TOOLS_DIR)/bicep https://github.com/Azure/bicep/releases/download/$(BICEP_VERSION)/bicep-linux-x64
+	test -x $(TOOLS_DIR)/bicep || curl -fsSL -o $(TOOLS_DIR)/bicep https://github.com/Azure/bicep/releases/download/$(BICEP_VERSION)/bicep-$(BICEP_OS)-$(BICEP_ARCH)
 	chmod +x $(TOOLS_DIR)/bicep
-	test -x $(TOOLS_DIR)/actionlint || curl -sSL https://github.com/rhysd/actionlint/releases/download/v$(ACTIONLINT_VERSION)/actionlint_$(ACTIONLINT_VERSION)_linux_amd64.tar.gz | tar xz -C $(TOOLS_DIR) actionlint
+	test -x $(TOOLS_DIR)/actionlint || curl -fsSL https://github.com/rhysd/actionlint/releases/download/v$(ACTIONLINT_VERSION)/actionlint_$(ACTIONLINT_VERSION)_$(ACTIONLINT_OS)_$(ACTIONLINT_ARCH).tar.gz | tar xz -C $(TOOLS_DIR) actionlint
 
 test: test-packages test-example test-template test-infra smoke
 

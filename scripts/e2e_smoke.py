@@ -146,6 +146,24 @@ def main() -> int:
         checks.append(("apim subscription header", headers.get("ocp-apim-subscription-key") == "sub-smoke"))
         checks.append(("team header", headers.get("x-agentkit-team") == "smoke-team"))
 
+        # Live quality gate through the real client, gateway headers and judge (against the fake gateway).
+        report_path = Path(os.environ.get("TMPDIR", "/tmp")) / f"smoke-gate-{app_port}.json"
+        gate = subprocess.run(
+            [sys.executable, "-m", "agentkit.testing.gate", "--cases", str(ROOT / "scripts" / "smoke_cases.yaml"),
+             "--factory", args.app.split(".app:")[0] + ":create_agent", "--live", "--repeat", "2",
+             "--min-pass-rate", "1.0", "--report", str(report_path), "--summary", os.devnull],
+            env={**env_app, "AGENTKIT_SESSION_STORE": "memory"}, capture_output=True, text=True, timeout=120,
+        )
+        gate_report = json.loads(report_path.read_text()) if report_path.exists() else {}
+        judged = httpx.get(f"http://127.0.0.1:{gw_port}/_judged").json()
+        checks.append(("live quality gate passes (exit 0)", gate.returncode == 0 and gate_report.get("passed") is True))
+        checks.append(("gate repeated every case (3 cases x 2)",
+                       [c["runs"] for c in gate_report.get("cases", [])] == [2, 2, 2]))
+        checks.append(("judge scored rubric + groundedness through the gateway (4 calls)",
+                       len(judged) == 4 and all(judged)))
+        if gate.returncode != 0:
+            print(gate.stdout[-2000:], gate.stderr[-2000:])
+
         for name, ok in checks:
             print(("PASS " if ok else "FAIL ") + name)
         return 0 if all(ok for _, ok in checks) else 1

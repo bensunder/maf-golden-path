@@ -26,10 +26,19 @@ curl -s localhost:8000/v1/chat -H 'content-type: application/json' -d '{"message
 
 Live evals against the gateway: `AGENTKIT_LIVE_EVALS=1 pytest tests/test_evals.py`.
 
+Quality gate (what the deploy pipeline runs; scores answers with an LLM judge and compares with the baseline):
+
+```bash
+agentkit-gate --cases evals/cases.yaml --factory {{ package_name }}:create_agent --live --repeat 3 --baseline evals/baseline.json
+# after an intentional behaviour change, refresh and commit the baseline:
+agentkit-gate --cases evals/cases.yaml --factory {{ package_name }}:create_agent --live --repeat 5 --baseline evals/baseline.json --update-baseline
+```
+
 ## API
 
-- `POST /v1/chat` `{message, session_id?}` → `{session_id, reply, blocked, usage}`
-- `POST /v1/chat/stream` → Server-Sent Events (`data: {"delta": ...}`, then `event: done`)
+- `POST /v1/chat` `{message, session_id?}` → `{session_id, status, reply, blocked, approvals, usage}`; `status` is `completed` or `approval_required`
+- `POST /v1/chat/stream` → Server-Sent Events (`data: {"delta": ...}`, `event: approval_required` when paused, then `event: done`)
+- `GET` / `POST /v1/sessions/{id}/approvals`: list pending approvals, or decide them (`{decisions: [{id, approved, comment?}]}`)
 - `DELETE /v1/sessions/{id}`, `GET /healthz`, `GET /readyz`
 
 The caller's identity comes from the `x-ms-client-principal-name` header set by platform auth (Container Apps / App Service Easy Auth, or APIM). Sessions can only be used by the user who created them.

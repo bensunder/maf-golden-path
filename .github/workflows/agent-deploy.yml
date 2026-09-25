@@ -20,6 +20,21 @@ on:
       run-live-evals:
         type: boolean
         default: true
+      agent-factory:
+        description: "module:function that builds the agent, e.g. orders_agent:create_agent"
+        type: string
+        required: true
+      eval-repeat:
+        description: Repetitions per eval case (the model is nondeterministic)
+        type: number
+        default: 3
+      min-pass-rate:
+        type: number
+        default: 0.9
+      judge-temperature:
+        description: "'none' for judge models that reject a temperature"
+        type: string
+        default: "0"
       python-version:
         type: string
         default: "3.11"
@@ -50,6 +65,7 @@ jobs:
       AGENTKIT_COSMOS_ACCOUNT_NAME: ${{ vars.AGENTKIT_COSMOS_ACCOUNT_NAME }}
       AGENTKIT_COSMOS_DATABASE: ${{ vars.AGENTKIT_COSMOS_DATABASE }}
       AGENTKIT_APPROVER_ROLE: ${{ vars.AGENTKIT_APPROVER_ROLE }}
+      AGENTKIT_JUDGE_MODEL: ${{ vars.AGENTKIT_JUDGE_MODEL }}
     steps:
       - uses: actions/checkout@v7
 
@@ -90,12 +106,30 @@ jobs:
           done
           echo "service did not become healthy: $uri" && exit 1
 
-      - name: Live evals against the gateway
+      - name: Quality gate (live evals vs. baseline)
         if: ${{ inputs.run-live-evals }}
         env:
-          AGENTKIT_LIVE_EVALS: "1"
+          # The eval runner is not the production service: prod policy (managed identity, Prompt Shields,
+          # required user) applies to the deployed app, not to this step running on the CI runner.
+          AGENTKIT_ENVIRONMENT: test
           AGENTKIT_AUTH_MODE: azure_cli
           AGENTKIT_GUARDRAIL_MODE: heuristic
+          AGENT_FACTORY: ${{ inputs.agent-factory }}
+          EVAL_REPEAT: ${{ inputs.eval-repeat }}
+          MIN_PASS_RATE: ${{ inputs.min-pass-rate }}
+          JUDGE_TEMPERATURE: ${{ inputs.judge-temperature }}
         run: |
           pip install -e ".[dev]"
-          pytest tests/test_evals.py -q
+          baseline=()
+          if [ -f evals/baseline.json ]; then baseline=(--baseline evals/baseline.json); fi
+          agentkit-gate --cases evals/cases.yaml --factory "$AGENT_FACTORY" --live \
+            --repeat "$EVAL_REPEAT" --min-pass-rate "$MIN_PASS_RATE" --judge-temperature "$JUDGE_TEMPERATURE" \
+            "${baseline[@]}" --report eval-report.json
+
+      - name: Upload eval report
+        if: ${{ always() && inputs.run-live-evals }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-report-${{ inputs.environment }}
+          path: eval-report.json
+          if-no-files-found: ignore
