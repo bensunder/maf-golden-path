@@ -23,3 +23,4 @@ jobs:
       agent-environment: ${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
       python-version: "3.11"
       agent-factory: "order_status_agent:create_agent"
+      knowledge-source: knowledge

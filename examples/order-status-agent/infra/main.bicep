@@ -35,6 +35,15 @@ param approverRole string = ''
 @description('Client id of the Entra app registration that protects this API (Easy Auth). Required for prod.')
 param authClientId string = ''
 
+@description('Knowledge: identity that runs ingestion (azd sets AZURE_PRINCIPAL_ID to whoever runs azd: you, or the deploy pipeline).')
+param ingestPrincipalId string = ''
+
+@allowed(['basic', 'standard'])
+param searchSku string = 'basic'
+
+@description('Knowledge: embedding deployment behind the AI gateway.')
+param knowledgeEmbeddingModel string = 'text-embedding-3-small'
+
 @description('Teams: Entra group whose members may approve in Teams. The identity needs GroupMember.Read.All (docs/channels.md).')
 param teamsApproverGroupId string = ''
 
@@ -88,6 +97,19 @@ module sessions 'modules/sessions.bicep' = {
   }
 }
 
+module knowledge 'modules/knowledge.bicep' = {
+  name: 'knowledge'
+  scope: rg
+  params: {
+    namePrefix: take('${serviceName}-${agentEnvironment}', 30)
+    location: location
+    tags: tags
+    servicePrincipalId: identity.outputs.principalId
+    ingestPrincipalId: ingestPrincipalId
+    searchSku: searchSku
+  }
+}
+
 module app 'modules/container-app.bicep' = {
   name: 'container-app'
   scope: rg
@@ -120,6 +142,10 @@ module app 'modules/container-app.bicep' = {
       { name: 'AGENTKIT_COSMOS_DATABASE', value: cosmosDatabase }
       { name: 'AGENTKIT_COSMOS_CONTAINER', value: sessions.outputs.containerName }
       { name: 'AGENTKIT_APPROVER_ROLE', value: approverRole }
+      { name: 'AGENTKIT_KNOWLEDGE_SEARCH_ENDPOINT', value: knowledge.outputs.searchEndpoint }
+      { name: 'AGENTKIT_KNOWLEDGE_INDEX', value: 'knowledge' }
+      { name: 'AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL', value: knowledgeEmbeddingModel }
+      { name: 'AGENTKIT_KNOWLEDGE_DOCINTEL_ENDPOINT', value: knowledge.outputs.docintelEndpoint }
       { name: 'AGENTKIT_TEAMS_APP_ID', value: identity.outputs.clientId }
       { name: 'AGENTKIT_TEAMS_TENANT_ID', value: tenant().tenantId }
       { name: 'AGENTKIT_TEAMS_APPROVER_GROUP_ID', value: teamsApproverGroupId }
@@ -152,5 +178,8 @@ output SERVICE_API_NAME string = app.outputs.name
 output SERVICE_API_URI string = app.outputs.uri
 output SERVICE_API_IDENTITY_PRINCIPAL_ID string = identity.outputs.principalId
 output SERVICE_API_EASY_AUTH_ENABLED bool = !empty(authClientId)
+output AGENTKIT_KNOWLEDGE_SEARCH_ENDPOINT string = knowledge.outputs.searchEndpoint
+output AGENTKIT_KNOWLEDGE_DOCINTEL_ENDPOINT string = knowledge.outputs.docintelEndpoint
+output AGENTKIT_KNOWLEDGE_CONTAINER_URL string = knowledge.outputs.containerUrl
 output TEAMS_BOT_APP_ID string = bot.outputs.appId
 output TEAMS_BOT_NAME string = bot.outputs.name

@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from agent_framework import tool
 from agentkit.hosting import approve_if
+from agentkit.knowledge import KnowledgeBase, knowledge_tool
 from pydantic import Field
 
 from .connectors import CARRIER_TOOLS
@@ -74,6 +75,11 @@ TOOLS = [lookup_order, issue_refund, escalate_to_human, *CARRIER_TOOLS]
 
 # Central policy: enforced by agentkit when the tool runs, whatever the model decides (and even after approval).
 TOOL_POLICY: dict = {"denied": [], "validators": {"issue_refund": _refund_policy}}
+
+# Policy documents (knowledge/), synced to Azure AI Search on every deploy and searched as the signed-in
+# user: support agents never see the refund-leads playbook.
+KNOWLEDGE = KnowledgeBase()
+TOOLS += [knowledge_tool(KNOWLEDGE)]
 
 # Refunds pause for a human; up to the self-service limit they're approved automatically.
 APPROVAL_RULES: list = [approve_if("issue_refund", lambda a: float(a["amount"]) <= REFUND_LIMIT)]

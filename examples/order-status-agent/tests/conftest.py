@@ -1,10 +1,14 @@
 import os
+from pathlib import Path
 
 import pytest
 from agentkit.hosting import AgentKitSettings
+from agentkit.knowledge import StaticGroups
+from agentkit.knowledge.testing import fake_knowledge, index_folder
 from agentkit.tools.testing import mock_api
 
 from order_status_agent.connectors import CARRIER
+from order_status_agent.tools import KNOWLEDGE
 
 LIVE = os.getenv("AGENTKIT_LIVE_EVALS") == "1"
 
@@ -17,6 +21,10 @@ CARRIER_ROUTES = {
         "internalRoutingCode": "HUB-7-SLC",
     },
 }
+
+REFUND_LEADS = "6f1c2a4e-0000-4000-8000-00000000a11d"  # the refund-leads group in knowledge/acl.yaml
+#: Offline stand-ins for the users in evals/cases.yaml. Live runs look them up in Entra: use real test accounts.
+EVAL_USERS = StaticGroups({"sam@contoso.example": [], "riley@contoso.example": [REFUND_LEADS]})
 
 
 @pytest.fixture
@@ -33,3 +41,19 @@ def carrier_api():
         return
     with mock_api(CARRIER, CARRIER_ROUTES) as calls:
         yield calls
+
+
+@pytest.fixture(scope="session")
+def knowledge_index():
+    """knowledge/ run through the real ingestion pipeline (acl.yaml, extraction, chunking) into a fake index."""
+    return index_folder(Path(__file__).parents[1] / "knowledge")
+
+
+@pytest.fixture(autouse=True)
+def offline_knowledge(knowledge_index):
+    """Offline, every test searches the fake index as the EVAL_USERS. Live evals use the real index."""
+    if LIVE:
+        yield None
+        return
+    with fake_knowledge(KNOWLEDGE, knowledge_index, groups=EVAL_USERS) as index:
+        yield index

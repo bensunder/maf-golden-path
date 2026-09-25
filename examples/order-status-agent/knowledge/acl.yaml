@@ -1,0 +1,7 @@
+# Who may read each document. First matching rule wins; a file no rule matches is NOT indexed.
+# Globs are path-aware: "*" stays inside one folder, "**" crosses folders.
+rules:
+  - match: "refund-leads/**"
+    groups: ["6f1c2a4e-0000-4000-8000-00000000a11d"]   # refund-leads (Entra group object id)
+  - match: "*.md"
+    groups: ["all-users"]                               # everyone who can use the agent

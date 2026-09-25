@@ -18,6 +18,8 @@
     "cosmosDatabase": { "value": "${AGENTKIT_COSMOS_DATABASE}" },
     "approverRole": { "value": "${AGENTKIT_APPROVER_ROLE=}" },
     "authClientId": { "value": "${AGENTKIT_AUTH_CLIENT_ID=}" },
+    "ingestPrincipalId": { "value": "${AZURE_PRINCIPAL_ID=}" },
+    "knowledgeEmbeddingModel": { "value": "${AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL=text-embedding-3-small}" },
     "teamsApproverGroupId": { "value": "${AGENTKIT_TEAMS_APPROVER_GROUP_ID=}" },
     "teamsApprovalsChannelId": { "value": "${AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID=}" }
   }

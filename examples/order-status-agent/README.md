@@ -50,6 +50,10 @@ The caller's identity comes from the `x-ms-client-principal-name` header set by 
 
 Setup and options: the kit's `docs/channels.md`.
 
+## Company documents
+
+`knowledge/` holds documents the agent can search, with who may read each one in `knowledge/acl.yaml`. Searches run as the signed-in user, and answers cite their sources. Every deploy syncs the folder to Azure AI Search; to preview: `agentkit-ingest --source knowledge --dry-run`. Details: the kit's `docs/knowledge.md`.
+
 ## Updating
 
 `copier update` pulls template improvements. Bump the kit version in `pyproject.toml` to take package fixes.
