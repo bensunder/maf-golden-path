@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "{{ project_slug }}"
+version = "0.1.0"
+description = "{{ description }}"
+requires-python = ">={{ python_version }}"
+dependencies = [
+{%- if agentkit_source == 'git' %}
+    "agentkit-hosting @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-hosting",
+    "agentkit-guardrails @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-guardrails",
+    "agentkit-telemetry[azure] @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-telemetry",
+{%- else %}
+    "agentkit-hosting>=0.1,<0.2",
+    "agentkit-telemetry[azure]>=0.1,<0.2",
+{%- endif %}
+]
+
+[project.optional-dependencies]
+dev = [
+{%- if agentkit_source == 'git' %}
+    "agentkit-testing @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-testing",
+{%- else %}
+    "agentkit-testing>=0.1,<0.2",
+{%- endif %}
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{ package_name }}"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["live: runs against the real model through the gateway (set AGENTKIT_LIVE_EVALS=1)"]

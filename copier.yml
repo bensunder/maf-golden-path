@@ -1,0 +1,68 @@
+# Copier template for a new MAF agent service on the agentkit paved road.
+#   copier copy gh:bensunder/maf-golden-path my-agent
+#   cd my-agent && copier update     # pull template improvements later
+_subdirectory: template
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+_min_copier_version: "9.0.0"
+
+project_name:
+  type: str
+  help: Human-readable name of the agent service
+  default: My Agent
+
+project_slug:
+  type: str
+  help: Repo / distribution name (kebab-case)
+  default: "{{ project_name | lower | replace(' ', '-') }}"
+  validator: "{% if not (project_slug | regex_search('^[a-z][a-z0-9-]+$')) %}lowercase letters, digits and dashes only{% endif %}"
+
+package_name:
+  type: str
+  help: Python package name (snake_case)
+  default: "{{ project_slug | replace('-', '_') }}"
+  validator: "{% if not (package_name | regex_search('^[a-z][a-z0-9_]+$')) %}lowercase letters, digits and underscores only{% endif %}"
+
+agent_name:
+  type: str
+  help: Agent name used in telemetry, gateway headers and quotas
+  default: "{{ project_slug }}"
+
+description:
+  type: str
+  help: One sentence on what the agent does (shown to orchestrators and in the charter)
+  default: Answers questions for internal users.
+
+team:
+  type: str
+  help: Owning team (drives gateway quota headers and span attributes)
+  default: platform
+
+owner_email:
+  type: str
+  help: Accountable owner for the agent charter
+  default: owner@example.com
+
+python_version:
+  type: str
+  default: "3.11"
+  choices: ["3.11", "3.12"]
+
+agentkit_source:
+  type: str
+  help: Where the agentkit packages are installed from
+  default: git
+  choices:
+    Private package feed (Azure Artifacts / internal index): feed
+    Git tag of the golden-path repo: git
+
+agentkit_repo:
+  type: str
+  default: bensunder/maf-golden-path
+  when: "{{ agentkit_source == 'git' }}"
+
+agentkit_ref:
+  type: str
+  help: Blessed kit version (git tag)
+  default: v0.1.0
+  when: "{{ agentkit_source == 'git' }}"

@@ -1,0 +1,13 @@
+# Changes here will be overwritten by Copier; do not edit manually.
+_commit: e5f6930
+_src_path: maf-golden-path
+agent_name: order-status-agent
+agentkit_source: feed
+description: Answers order, shipping and small-refund questions for customer support
+    staff.
+owner_email: commerce-leads@example.com
+package_name: order_status_agent
+project_name: Order Status Agent
+project_slug: order-status-agent
+python_version: '3.11'
+team: commerce

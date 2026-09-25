@@ -86,6 +86,12 @@ class RecordedCall:
     options: dict[str, Any]
 
     @property
+    def instructions(self) -> str:
+        """System instructions the agent sent (MAF passes them as an option, not a message)."""
+        value = self.options.get("instructions") or ""
+        return value if isinstance(value, str) else "\n".join(value)
+
+    @property
     def last_user_text(self) -> str:
         for message in reversed(self.messages):
             if message.role == "user":

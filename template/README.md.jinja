@@ -1,0 +1,39 @@
+# {{ project_name }}
+
+{{ description }}
+
+Owned by **{{ team }}**. Built on the agentkit golden path for Microsoft Agent Framework.
+
+## What you own vs. what the platform owns
+
+| You edit | The platform provides (agentkit) |
+|---|---|
+| `src/{{ package_name }}/tools.py`: tools | Gateway-bound model client, Entra ID auth |
+| `src/{{ package_name }}/instructions/system.md`: behaviour | Prompt Shields / PII / tool-policy guardrails |
+| `evals/cases.yaml`: expected behaviour | OpenTelemetry traces, metrics, request context |
+| `agent.charter.md`: scope and accountability | Sessions, run limits, token budgets, HTTP API, CI |
+
+## Run it
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+pytest                          # unit tests + offline evals, no model needed
+cp .env.example .env && az login
+python -m {{ package_name }}    # http://localhost:8000
+curl -s localhost:8000/v1/chat -H 'content-type: application/json' -d '{"message":"When is support open?"}'
+```
+
+Live evals against the gateway: `AGENTKIT_LIVE_EVALS=1 pytest tests/test_evals.py`.
+
+## API
+
+- `POST /v1/chat` `{message, session_id?}` → `{session_id, reply, blocked, usage}`
+- `POST /v1/chat/stream` → Server-Sent Events (`data: {"delta": ...}`, then `event: done`)
+- `DELETE /v1/sessions/{id}`, `GET /healthz`, `GET /readyz`
+
+The caller's identity comes from the `x-ms-client-principal-name` header set by platform auth (Container Apps / App Service Easy Auth, or APIM). Sessions can only be used by the user who created them.
+
+## Updating
+
+`copier update` pulls template improvements. Bump the kit version in `pyproject.toml` to take package fixes.

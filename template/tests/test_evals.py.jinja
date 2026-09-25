@@ -1,0 +1,27 @@
+"""Eval cases in evals/cases.yaml.
+
+Offline (default, runs in CI on every PR): replays each case's script to prove the wiring.
+Live (AGENTKIT_LIVE_EVALS=1, runs in the deploy pipeline against the gateway): same inputs
+and expectations, real model.
+"""
+
+import os
+from pathlib import Path
+
+import pytest
+from agentkit.testing import load_eval_cases, run_case
+
+from {{ package_name }} import create_agent
+
+CASES = load_eval_cases(Path(__file__).parents[1] / "evals" / "cases.yaml")
+LIVE = os.getenv("AGENTKIT_LIVE_EVALS") == "1"
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
+async def test_eval_case(case, settings):
+    if LIVE:
+        from agentkit.hosting import AgentKitSettings
+
+        settings = AgentKitSettings()  # real gateway settings from the environment
+    result = await run_case(lambda client: create_agent(settings, client=client), case, live=LIVE)
+    assert result.passed, result.summary()

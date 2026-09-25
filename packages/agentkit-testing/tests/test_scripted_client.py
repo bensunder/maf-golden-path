@@ -23,6 +23,7 @@ async def test_plain_reply():
     result = await agent.run("hi")
     assert result.text == "hello"
     assert client.calls[0].last_user_text == "hi"
+    assert client.calls[0].instructions == "be nice"
     client.assert_script_consumed()
 
 
