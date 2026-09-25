@@ -223,6 +223,32 @@ def test_chat_keeps_history_across_requests(app_env):
     assert history == ["where is A1?", "what did I ask?"]
 
 
+def test_session_locks_are_released(app_env):
+    http, client = app_env
+    for _ in range(5):
+        client.enqueue(reply("x"))
+        http.post("/v1/chat", json={"message": "hi"})
+    assert len(http.app.state.session_locks) == 0
+
+
+async def test_same_session_requests_are_serialized():
+    import asyncio
+
+    from agentkit.hosting.app import _KeyedLocks
+
+    locks, order = _KeyedLocks(), []
+
+    async def worker(tag):
+        async with locks.hold("s"):
+            order.append(f"{tag}-in")
+            await asyncio.sleep(0.01)
+            order.append(f"{tag}-out")
+
+    await asyncio.gather(worker("a"), worker("b"))
+    assert order in (["a-in", "a-out", "b-in", "b-out"], ["b-in", "b-out", "a-in", "a-out"])
+    assert len(locks) == 0
+
+
 def test_session_ownership_and_expiry(app_env):
     http, client = app_env
     client.enqueue(reply("hi"))

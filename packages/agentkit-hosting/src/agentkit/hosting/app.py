@@ -6,7 +6,6 @@ import asyncio
 import json
 import time
 import uuid
-from collections import defaultdict
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -23,6 +22,30 @@ from .sessions import InMemorySessionStore, SessionRecord, SessionStore
 from .settings import AgentKitSettings
 
 __all__ = ["ChatRequest", "ChatResponseBody", "create_app"]
+
+
+class _KeyedLocks:
+    """One lock per session while in use; entries are dropped when the last holder leaves."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._holders: dict[str, int] = {}
+
+    def __len__(self) -> int:
+        return len(self._locks)
+
+    @asynccontextmanager
+    async def hold(self, key: str):
+        lock = self._locks.setdefault(key, asyncio.Lock())
+        self._holders[key] = self._holders.get(key, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            self._holders[key] -= 1
+            if self._holders[key] == 0:
+                del self._holders[key]
+                del self._locks[key]
 
 
 class ChatRequest(BaseModel):
@@ -47,7 +70,7 @@ def create_app(
     """Build the HTTP app. ``agent_factory`` is called once at startup."""
     settings = settings or AgentKitSettings()
     store = session_store or InMemorySessionStore()
-    locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+    locks = _KeyedLocks()
     state: dict[str, Agent] = {}
 
     @asynccontextmanager
@@ -66,6 +89,7 @@ def create_app(
         yield
 
     app = FastAPI(title=settings.service_name, version=settings.service_version, lifespan=lifespan)
+    app.state.session_locks = locks
 
     def _agent() -> Agent:
         agent = state.get("agent")
@@ -108,7 +132,7 @@ def create_app(
     async def chat(body: ChatRequest, request: Request) -> ChatResponseBody:
         user, tenant = _identity(request)
         session_id, session = await _load(body.session_id, user)
-        async with locks[session_id]:
+        async with locks.hold(session_id):
             with run_context(user_id=user, session_id=session_id, tenant_id=tenant, request_id=str(uuid.uuid4())):
                 result = await _agent().run(body.message, session=session)
             await _save(session_id, session, user)
@@ -125,7 +149,7 @@ def create_app(
         session_id, session = await _load(body.session_id, user)
 
         async def events():
-            async with locks[session_id]:
+            async with locks.hold(session_id):
                 with run_context(user_id=user, session_id=session_id, tenant_id=tenant, request_id=str(uuid.uuid4())):
                     stream = _agent().run(body.message, session=session, stream=True)
                     async for update in stream:

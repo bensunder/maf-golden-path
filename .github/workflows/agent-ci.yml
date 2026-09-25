@@ -1,0 +1,53 @@
+# Reusable pipeline for agent services generated from the template.
+# Callers: `uses: <org>/maf-golden-path/.github/workflows/agent-ci.yml@<kit tag>`
+name: agent-ci
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: "3.11"
+      working-directory:
+        type: string
+        default: "."
+      build-image:
+        type: boolean
+        default: true
+    secrets:
+      PIP_INDEX_URL:
+        description: Private feed URL for agentkit packages (feed mode only)
+        required: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      PIP_EXTRA_INDEX_URL: ${{ secrets.PIP_INDEX_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Unit tests + offline evals
+        run: pytest -q --junitxml=test-results.xml
+      - name: Publish results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ${{ inputs.working-directory }}/test-results.xml
+
+  image:
+    if: ${{ inputs.build-image }}
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container
+        run: docker build -t agent:${{ github.sha }} ${{ inputs.working-directory }}

@@ -1,0 +1,31 @@
+# CI for the kit itself: packages, template (both install modes), sample, end-to-end smoke.
+name: kit-ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # copier needs history to render the template
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: make install
+      - name: Package tests
+        run: make test-packages
+      - name: Sample agent tests
+        run: make test-example
+      - name: Template renders and generated project passes its tests
+        run: make test-template
+      - name: End-to-end smoke (real servers, fake gateway)
+        run: make smoke
