@@ -23,6 +23,9 @@ from __future__ import annotations
 from typing import Annotated
 
 from agent_framework import tool
+{%- if enable_knowledge %}
+from agentkit.knowledge import KnowledgeBase, knowledge_tool
+{%- endif %}
 from pydantic import Field
 
 _FAQ = {
@@ -39,6 +42,13 @@ def search_faq(topic: Annotated[str, Field(description="Short topic keyword, e.g
 
 
 TOOLS = [search_faq]
+{%- if enable_knowledge %}
+
+# Company documents: knowledge/ in this repo, synced to Azure AI Search on every deploy. Searches run as the
+# signed-in user, so each person only finds what their Entra groups may read (kit docs: knowledge.md).
+KNOWLEDGE = KnowledgeBase()
+TOOLS += [knowledge_tool(KNOWLEDGE)]
+{%- endif %}
 
 # Deny or validate tool calls centrally (see agentkit.guardrails.ToolPolicyMiddleware).
 TOOL_POLICY: dict = {"denied": [], "validators": {}}

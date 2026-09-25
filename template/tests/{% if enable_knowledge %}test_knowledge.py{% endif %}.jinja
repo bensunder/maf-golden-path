@@ -1,0 +1,28 @@
+"""Company documents: every file has an access rule, and search is trimmed to what each user may read."""
+
+from pathlib import Path
+
+from agentkit.knowledge.ingest import local_documents
+from agentkit.telemetry import run_context
+
+from {{ package_name }}.tools import KNOWLEDGE
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_every_document_has_an_access_rule():
+    skipped = [item for item in local_documents(ROOT / "knowledge") if isinstance(item, tuple)]
+    assert skipped == [], f"add rules to knowledge/acl.yaml for: {skipped}"
+
+
+async def test_search_is_trimmed_per_user():
+    agent_docs = {p.doc_id for p in await KNOWLEDGE.search("escalate on-call enterprise", user_id="agent@example.com")}
+    lead_docs = {p.doc_id for p in await KNOWLEDGE.search("escalate on-call enterprise", user_id="lead@example.com")}
+    assert "escalation-policy" in agent_docs and "team-leads-on-call-exceptions" not in agent_docs
+    assert "team-leads-on-call-exceptions" in lead_docs
+
+
+async def test_unknown_user_sees_only_public_documents():
+    with run_context(user_id="someone@example.com"):
+        docs = {p.doc_id for p in await KNOWLEDGE.search("on-call exceptions", user_id="someone@example.com")}
+    assert "team-leads-on-call-exceptions" not in docs

@@ -39,6 +39,13 @@ param openAIModelVersion string = '2025-04-14'
 @description('Deployment capacity in thousands of tokens per minute.')
 param openAICapacity int = 50
 
+@description('Embedding model for knowledge search, served through the gateway at /deployments/<name>/embeddings. Empty = none.')
+param embeddingDeploymentName string = 'text-embedding-3-small'
+param embeddingModelVersion string = '1'
+@allowed(['Standard', 'GlobalStandard'])
+param embeddingSkuName string = 'Standard'
+param embeddingCapacity int = 50
+
 param tags object = {}
 
 var suffix = uniqueString(resourceGroup().id)
@@ -162,6 +169,24 @@ resource openAIDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024
       format: 'OpenAI'
       name: openAIModelName
       version: openAIModelVersion
+    }
+  }
+}
+
+// Deployments on one account are created one at a time (Azure rejects concurrent ones), hence dependsOn.
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (deployOpenAI && !empty(embeddingDeploymentName)) {
+  parent: openAI
+  name: empty(embeddingDeploymentName) ? 'unused' : embeddingDeploymentName
+  dependsOn: [openAIDeployment]
+  sku: {
+    name: embeddingSkuName
+    capacity: embeddingCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'text-embedding-3-small'
+      version: embeddingModelVersion
     }
   }
 }
@@ -293,6 +318,7 @@ resource openaiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@202
 output AGENTKIT_PLATFORM_RESOURCE_GROUP string = resourceGroup().name
 output AGENTKIT_GATEWAY_ENDPOINT string = apim.properties.gatewayUrl
 output AGENTKIT_MODEL string = openAIDeploymentName
+output AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL string = embeddingDeploymentName
 output AGENTKIT_CONTENT_SAFETY_ENDPOINT string = contentSafety.properties.endpoint
 output AGENTKIT_CONTENT_SAFETY_NAME string = contentSafety.name
 output AGENTKIT_CONTAINER_APPS_ENVIRONMENT_ID string = containerEnv.id

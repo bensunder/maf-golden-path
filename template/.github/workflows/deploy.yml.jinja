@@ -23,3 +23,6 @@ jobs:
       agent-environment: {% raw %}${{ inputs.environment == 'prod' && 'prod' || 'dev' }}{% endraw %}
       python-version: "{{ python_version }}"
       agent-factory: "{{ package_name }}:create_agent"
+{%- if enable_knowledge %}
+      knowledge-source: knowledge
+{%- endif %}

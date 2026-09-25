@@ -1,0 +1,41 @@
+import pytest
+from agentkit.hosting import AgentKitSettings
+{%- if enable_knowledge %}
+import os
+from pathlib import Path
+
+from agentkit.knowledge import StaticGroups
+from agentkit.knowledge.testing import fake_knowledge, index_folder
+
+from {{ package_name }}.tools import KNOWLEDGE
+
+LIVE = os.getenv("AGENTKIT_LIVE_EVALS") == "1"
+LEADS_GROUP = "00000000-0000-0000-0000-00000000a11d"  # matches knowledge/acl.yaml
+#: Offline stand-ins for the users in evals/cases.yaml. Live runs look the same users up in Entra, so use
+#: real test accounts (UPN or object id) with these group memberships.
+EVAL_USERS = StaticGroups({"agent@example.com": [], "lead@example.com": [LEADS_GROUP]})
+{%- endif %}
+
+
+@pytest.fixture
+def settings() -> AgentKitSettings:
+    """Offline settings: no gateway, heuristic guardrails, nothing read from .env."""
+    return AgentKitSettings(environment="test", guardrail_mode="heuristic", _env_file=None)
+{%- if enable_knowledge %}
+
+
+@pytest.fixture(scope="session")
+def knowledge_index():
+    """knowledge/ run through the real ingestion pipeline (acl.yaml, extraction, chunking) into a fake index."""
+    return index_folder(Path(__file__).parents[1] / "knowledge")
+
+
+@pytest.fixture(autouse=True)
+def offline_knowledge(knowledge_index):
+    """Offline, every test searches the fake index as the EVAL_USERS. Live evals use the real index."""
+    if LIVE:
+        yield None
+        return
+    with fake_knowledge(KNOWLEDGE, knowledge_index, groups=EVAL_USERS) as index:
+        yield index
+{%- endif %}

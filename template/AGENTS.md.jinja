@@ -8,6 +8,9 @@ This repo was generated from the agentkit golden path (see `.copier-answers.yml`
 - High-impact tools (money, customer messages, deletions) use `@tool(approval_mode="always_require")`; auto-approve low-risk calls with `approve_if(...)` in `APPROVAL_RULES` (see `tools.py`). Hard limits stay in `TOOL_POLICY`.
 - In tests, fake downstream APIs with `agentkit.tools.testing.mock_api`. Never call real APIs from unit tests.
 - Users reach the agent through the channels in `src/{{ package_name }}/app.py` (web chat, Teams). Don't build a bot or chat UI; see the kit's `docs/channels.md`. Approvals work in every channel.
+{%- if enable_knowledge %}
+- Company documents live in `knowledge/`; every file needs a rule in `knowledge/acl.yaml` (who may read it). Search only through `knowledge_tool` (it runs as the signed-in user). Add eval cases with `user:`, `cites:` and, for anything restricted, `must_not_retrieve:` with `critical: true`.
+{%- endif %}
 - Deploy with `azd up` (infra in `infra/`). Don't create Azure resources by hand. Platform values come from `azd env` (see `scripts/check_platform_env.py`).
 - Eval cases are the quality contract: add `rubric:`/`grounded:`/`tool_args:` for answer quality and `critical: true` for safety cases. The deploy pipeline scores them live with `agentkit-gate` against `evals/baseline.json`.
 - Behaviour changes go in `src/{{ package_name }}/instructions/system.md`, plus a case in `evals/cases.yaml`.

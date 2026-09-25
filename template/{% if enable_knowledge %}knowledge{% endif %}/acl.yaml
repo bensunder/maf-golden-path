@@ -1,0 +1,8 @@
+# Who may read each document. First matching rule wins; a file no rule matches is NOT indexed.
+# Globs are path-aware: "*" stays inside one folder, "**" crosses folders.
+# Groups are Entra group object ids; "all-users" is the index's marker for "everyone who can use the agent".
+rules:
+  - match: "team-leads/**"
+    groups: ["00000000-0000-0000-0000-00000000a11d"]   # replace with your team-leads group's object id
+  - match: "*.md"
+    groups: ["all-users"]

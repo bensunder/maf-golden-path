@@ -53,6 +53,11 @@ enable_teams:
   help: Reach the agent from Microsoft Teams (Azure Bot, /api/messages, approvals as Adaptive Cards)
   default: false
 
+enable_knowledge:
+  type: bool
+  help: Answer from company documents (Azure AI Search, trimmed to what each user may read, with citations)
+  default: false
+
 python_version:
   type: str
   default: "3.11"
@@ -74,4 +79,4 @@ agentkit_repo:
 agentkit_ref:
   type: str
   help: Blessed kit version (git tag)
-  default: v0.5.0
+  default: v0.6.0
