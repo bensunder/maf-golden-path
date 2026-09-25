@@ -70,7 +70,23 @@ async def chat(deployment: str, request: Request):
         finish = "tool_calls" if step.get("tool_calls") else "stop"
         return JSONResponse({**base, "object": "chat.completion",
                              "choices": [{"index": 0, "message": step, "finish_reason": finish}], "usage": usage})
-    text = _reply(body)
+    if step is not None and step.get("tool_calls"):  # streamed tool call, in OpenAI chunk format
+        call = step["tool_calls"][0]
+
+        def tool_chunks():
+            first = {"index": 0, "id": call["id"], "type": "function",
+                     "function": {"name": call["function"]["name"], "arguments": ""}}
+            deltas = [{"role": "assistant", "content": None, "tool_calls": [first]},
+                      {"tool_calls": [{"index": 0, "function": {"arguments": call["function"]["arguments"]}}]}]
+            for delta in deltas:
+                yield f"data: {json.dumps({**base, 'object': 'chat.completion.chunk', 'choices': [{'index': 0, 'delta': delta, 'finish_reason': None}]})}\n\n"
+            done = {**base, "object": "chat.completion.chunk",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}], "usage": usage}
+            yield f"data: {json.dumps(done)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(tool_chunks(), media_type="text/event-stream")
+    text = step["content"] if step is not None else _reply(body)
     if body.get("stream"):
 
         def chunks():

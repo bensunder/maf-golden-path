@@ -24,6 +24,10 @@ jobs:
       - name: Redis for session-store and multi-replica tests
         run: sudo apt-get install -y -qq redis-server
       - run: make install
+      - name: Chromium for the web chat browser tests
+        run: |
+          python -m pip install -q "playwright==1.56.0"
+          python -m playwright install --with-deps chromium
       - name: Package tests
         run: make test-packages
       - name: Sample agent tests

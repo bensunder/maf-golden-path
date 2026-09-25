@@ -1,6 +1,8 @@
 PY ?= python
-PACKAGES := testing telemetry guardrails tools hosting
+PACKAGES := testing telemetry guardrails tools hosting channels
 EXTRAS_hosting := [redis,cosmos]
+EXTRAS_channels := [teams]
+PLAYWRIGHT_VERSION ?= 1.56.0
 GEN_DIR ?= $(or $(TMPDIR),/tmp)/agentkit-template-check
 TOOLS_DIR := $(CURDIR)/.tools/bin
 BICEP_VERSION ?= v0.47.16
@@ -15,12 +17,16 @@ BICEP_ARCH := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,x64)
 ACTIONLINT_OS := $(if $(filter Darwin,$(UNAME_S)),darwin,linux)
 ACTIONLINT_ARCH := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,amd64)
 
-.PHONY: install tools test test-packages test-example test-template test-infra smoke new-agent
+.PHONY: install browser tools test test-packages test-example test-template test-infra smoke new-agent
 
 install:            ## editable installs of all packages + the sample agent
 	$(PY) -m pip install -q copier jsonschema
 	$(foreach p,$(PACKAGES),$(PY) -m pip install -q -e "packages/agentkit-$(p)$(EXTRAS_$(p))";)
 	$(PY) -m pip install -q -e "examples/order-status-agent[dev]"
+
+browser:            ## optional: Playwright + Chromium for the web chat browser tests (skipped without it)
+	$(PY) -m pip install -q "playwright==$(PLAYWRIGHT_VERSION)"
+	$(PY) -m playwright install chromium
 
 tools:              ## download bicep + actionlint for this OS/CPU into .tools/bin (offline infra validation)
 	mkdir -p $(TOOLS_DIR)
@@ -40,17 +46,25 @@ test-example:
 	mkdir -p $(RESULTS_DIR)
 	cd examples/order-status-agent && $(PY) -m pytest -q --junitxml=$(RESULTS_DIR)/example.xml
 
-test-template:      ## render in both modes; run the generated project's tests (feed mode uses local packages)
+TEAMS := --data enable_teams=true --data enable_web_chat=false
+
+test-template:      ## render both install modes, with and without Teams; run the generated projects' tests
 	rm -rf $(GEN_DIR)
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=feed . $(GEN_DIR)/feed
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=git . $(GEN_DIR)/git
+	copier copy --defaults --vcs-ref HEAD -q --data project_name="Teams Check" --data agentkit_source=feed $(TEAMS) . $(GEN_DIR)/feed-teams
+	copier copy --defaults --vcs-ref HEAD -q --data project_name="Teams Check" --data agentkit_source=git --data enable_teams=true . $(GEN_DIR)/git-teams
 	$(PY) scripts/check_rendered.py $(GEN_DIR)/git
+	$(PY) scripts/check_rendered.py $(GEN_DIR)/git-teams
 	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed
 	cd $(GEN_DIR)/feed && $(PY) -m pytest -q -p no:cacheprovider
+	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed-teams
+	cd $(GEN_DIR)/feed-teams && $(PY) -m pytest -q -p no:cacheprovider
 
 test-infra: tools   ## Bicep build+lint, azure.yaml schema, workflow lint, platform↔service contract
-	test -d $(GEN_DIR)/git || $(MAKE) test-template
+	test -d $(GEN_DIR)/git-teams || $(MAKE) test-template
 	$(PY) scripts/check_infra.py --service $(GEN_DIR)/git
+	$(PY) scripts/check_infra.py --service $(GEN_DIR)/git-teams
 	$(PY) scripts/check_infra.py --service examples/order-status-agent
 
 smoke:
