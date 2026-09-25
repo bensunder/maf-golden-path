@@ -250,10 +250,10 @@ def test_busy_session_returns_409_when_another_replica_holds_it(redis_url):
         sid = http.post("/v1/chat", json={"message": "hi"}, headers=BEN).json()["session_id"]
 
         async def hold_from_other_replica():
+            # Exactly what a live replica's lock looks like: the key, owned by a token we don't have.
             other = RedisSessionStore.from_url(redis_url, prefix=prefix)
-            ctx = other.lock(sid)
-            await ctx.__aenter__()
-            await other._r.aclose()  # connection gone, lock key stays until its TTL: like a busy replica
+            await other._r.set(f"{prefix}lock:{sid}", "token-of-replica-b", px=10_000)
+            await other._r.aclose()
 
         asyncio.run(hold_from_other_replica())
         r = http.post("/v1/chat", json={"message": "again", "session_id": sid}, headers=BEN)
