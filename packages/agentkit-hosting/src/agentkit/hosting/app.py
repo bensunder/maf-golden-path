@@ -31,6 +31,7 @@ __all__ = [
     "Channel",
     "ChatRequest",
     "ChatResponseBody",
+    "CitationView",
     "DecisionsRequest",
     "approval_views",
     "create_app",
@@ -52,12 +53,20 @@ class ApprovalView(BaseModel):
     requested_at: float
 
 
+class CitationView(BaseModel):
+    n: int
+    id: str
+    title: str
+    url: str | None = None
+
+
 class ChatResponseBody(BaseModel):
     session_id: str
     status: Literal["completed", "approval_required"] = "completed"
     reply: str
     blocked: str | None = None
     approvals: list[ApprovalView] = []
+    citations: list[CitationView] = []
     usage: dict[str, Any] | None = None
 
 
@@ -128,6 +137,7 @@ def _body(result: TurnResult) -> ChatResponseBody:
         reply=result.reply,
         blocked=result.blocked,
         approvals=approval_views(result.pending),
+        citations=[CitationView(**c.to_dict()) for c in result.citations],
         usage=result.usage,
     )
 
@@ -232,7 +242,8 @@ def create_app(
             if result.pending:
                 views = [v.model_dump() for v in approval_views(result.pending)]
                 yield f"event: approval_required\ndata: {json.dumps({'approvals': views})}\n\n"
-            done = {"session_id": result.session_id, "status": result.status, "blocked": result.blocked}
+            done = {"session_id": result.session_id, "status": result.status, "blocked": result.blocked,
+                    "citations": [c.to_dict() for c in result.citations]}
             yield f"event: done\ndata: {json.dumps(done)}\n\n"
 
         return StreamingResponse(events(), media_type="text/event-stream")

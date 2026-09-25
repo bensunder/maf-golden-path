@@ -19,6 +19,7 @@ from agent_framework import Agent, AgentResponse, AgentResponseUpdate, AgentSess
 from agentkit.guardrails import BLOCKED_KEY
 from agentkit.telemetry import run_context
 
+from .citations import Citation, citations_from_response
 from .approvals import APPROVALS_KEY, AUDIT_KEY, approval_message, approvals_decided, pending_from_response
 from .sessions import SessionRecord, SessionStore
 from .settings import AgentKitSettings
@@ -79,6 +80,16 @@ class TurnResult:
     @property
     def blocked(self) -> str | None:
         return (self.response.additional_properties or {}).get(BLOCKED_KEY)
+
+    @property
+    def citations(self) -> list[Citation]:
+        """Sources the answer cites with ``[n]`` (from knowledge tools), in citation order."""
+        return citations_from_response(self.response)[0]
+
+    @property
+    def sources(self) -> list[Citation]:
+        """Every source knowledge tools showed the model in this run, cited or not."""
+        return citations_from_response(self.response)[1]
 
     @property
     def usage(self) -> dict[str, Any] | None:

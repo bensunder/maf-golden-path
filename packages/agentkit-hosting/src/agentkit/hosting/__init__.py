@@ -7,6 +7,7 @@ from .app import (
     Channel,
     ChatRequest,
     ChatResponseBody,
+    CitationView,
     DecisionsRequest,
     approval_views,
     create_app,
@@ -25,6 +26,7 @@ from .conversations import (
     SessionNotFound,
     TurnResult,
 )
+from .citations import SOURCES_HEADER, Citation, citations_from_response, format_source, parse_sources
 from .clients import create_chat_client, gateway_headers, get_credential, token_provider
 from .sessions import (
     CosmosSessionStore,
@@ -38,6 +40,12 @@ from .sessions import (
 from .settings import AgentKitSettings
 
 __all__ = [
+    "SOURCES_HEADER",
+    "Citation",
+    "CitationView",
+    "citations_from_response",
+    "format_source",
+    "parse_sources",
     "ApprovalPending",
     "Caller",
     "Channel",
