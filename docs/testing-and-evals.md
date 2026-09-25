@@ -185,6 +185,10 @@ Use `AGENTKIT_JUDGE_MODEL` to judge with a different deployment than the agent's
 
 `tests/test_app.py` drives the real FastAPI app with `TestClient` and a scripted model. Use it for anything about sessions, identity headers or response shape. It also runs a turn through the AG-UI endpoint when web chat is on.
 
+## Knowledge
+
+Eval cases can run as a user (`user:`) and check citations (`cites:`) and permissions (`must_not_retrieve:`, which checks what the *search returned*, not what the answer says). The generated `conftest.py` searches your real `knowledge/` folder offline through the real ingestion pipeline. See [knowledge.md](knowledge.md#testing).
+
 ## Channels
 
 `agentkit.channels.testing.TeamsTestClient` sends real Bot Framework activities into your app and records what the agent posts back, through a fake Bot Connector, with no Teams and no network. You can click approval cards as different users, which is how you test separation of duties. See [channels.md](channels.md#testing-channels).

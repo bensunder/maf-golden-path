@@ -83,6 +83,10 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | `AGENTKIT_APPROVAL_SEPARATION` | `true` | With a role set, forbid approving your own request |
 | `AGENTKIT_PRINCIPAL_CLAIMS_HEADER` | `x-ms-client-principal` | Easy Auth header carrying the caller's claims (roles) |
 
+## Knowledge
+
+`AGENTKIT_KNOWLEDGE_*` (search endpoint, index, top-k, embedding model, semantic configuration, access mode, public marker, Document Intelligence endpoint, passage budgets). They're listed in [knowledge.md](knowledge.md#settings); the Bicep sets the endpoints.
+
 ## Channels
 
 Teams settings are `AGENTKIT_TEAMS_*` (bot identity, approver group, approvals channel, auth type). They're listed in [channels.md](channels.md#settings). The web chat and AG-UI endpoint have no settings of their own: they use the HTTP host's identity headers above.

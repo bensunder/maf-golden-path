@@ -81,6 +81,7 @@ The template generates `azure.yaml`, `infra/main.bicep` (and modules), `infra/ma
 | Session container `<service>-<env>-sessions` | In the platform's Cosmos DB, with a data-plane role for the service identity **scoped to this container only**, so no service can read another's conversations |
 | Container App | Probes on `/healthz` and `/readyz`, 1–5 replicas (sessions in Cosmos DB, locked per conversation), App Insights connection string as a secret, all `AGENTKIT_*` settings wired, `AGENTKIT_REQUIRE_USER=true` |
 | Easy Auth (when `AGENTKIT_AUTH_CLIENT_ID` is set) | Validates Entra tokens and injects `X-MS-CLIENT-PRINCIPAL-NAME`, the header agentkit reads the caller from. Anonymous calls get 401, or a redirect to sign-in when web chat is on. Probes (and `/api/messages` with Teams) are let through |
+| Knowledge (with `enable_knowledge`) | Its own Azure AI Search, Document Intelligence and a `knowledge` Blob container, all Entra-only. The service identity can only **read**; the ingest identity (whoever runs azd, or the pipeline) can write. The pipeline syncs `knowledge/` after deploy. See [knowledge.md](knowledge.md#deploy) |
 | Azure Bot + Teams channel (with `enable_teams`) | Identity = the service's managed identity (no secret), endpoint `https://<app>/api/messages`. See [channels.md](channels.md#deploy) for the app package and approver setup |
 
 ### One-time: an Entra app registration for the API (Easy Auth)

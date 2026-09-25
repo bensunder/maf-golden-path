@@ -16,6 +16,7 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
    - `MCPStreamableHTTPTool(http_client=, allowed_tools=)` (gateway MCP helper);
    - `azure.identity.aio.OnBehalfOfCredential(client_assertion_func=, user_assertion=)` (on-behalf-of auth);
    - approvals: `AgentResponse.user_input_requests`, `Content.to_function_approval_response()`, `ToolApprovalMiddleware(auto_approval_rules=)` (rule receives the function call; requires a session; surfaces queued approvals one at a time), and the pending-approval state MAF keeps in `session.state["tool_approval"]`. Also check whether the spurious "did not match the active approval occurrence" warning (demoted by `agentkit.hosting.approvals`) is fixed upstream.
+   - knowledge: `azure-search-documents` (`SearchClient.search(filter=, vector_queries=[VectorizedQuery], vector_filter_mode=, query_type=, semantic_configuration_name=)`, `SearchIndex` models); `packages/agentkit-knowledge/tests/test_search_wire.py` pins the request body on the wire.
    - channels: `microsoft-agents-hosting-*` (pinned `<2`): `AgentApplication(ApplicationOptions(storage=…))`, `adaptive_card.action_execute`, `CloudAdapter(connection_manager=, host_validator=)`, `continue_conversation_with_claims`, `Conversation.store_item_to_json/from_json_to_store_item`, `jwt_authorization_decorator`; `ag-ui-protocol` (pinned `<0.2`): `RunAgentInput.resume`, `RunFinishedEvent.outcome` interrupts. The Teams and AG-UI tests exercise all of these offline.
 4. **Infra drift.** Bump `BICEP_VERSION` in the Makefile deliberately. Azure API versions in the Bicep are pinned; `make test-infra` fails on any new linter warning, so review them on upgrade.
 5. **Release.** Tag `vX.Y.Z`; generated services move by bumping the tag in `pyproject.toml` (git mode) or the version range (feed mode). Template changes reach existing services with `copier update`.
@@ -23,6 +24,14 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 
 ## Kit release notes for services
+
+### 0.5 → 0.6 (knowledge)
+
+- `copier update` asks `enable_knowledge` (default no). With it: `knowledge/` + `acl.yaml`, the knowledge tool in `tools.py`, citation rules in `system.md`, a test fixture in `conftest.py`, two eval cases, and Search, Document Intelligence and Blob in Bicep. `tools.py`, `system.md` and `conftest.py` are yours, so copier may ask you to merge: keep your lines and add the kit's.
+- The platform deploys an embedding model (`embeddingDeploymentName`, default `text-embedding-3-small`) next to the chat model. Re-run the platform deployment before enabling knowledge in a service.
+- JSON responses gain `citations` (empty unless a knowledge tool was used); the stream's `done` event too.
+- Eval cases accept `user:`, and `expect` accepts `cites:` and `must_not_retrieve:`.
+- Graph permission `GroupMember.Read.All` for the service identity (and the pipeline identity, for live evals) when documents are trimmed by group.
 
 ### 0.4 → 0.5 (channels)
 

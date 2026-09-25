@@ -1,6 +1,6 @@
 # Why agentkit: the boilerplate you don't write
 
-**Short version:** a production agent on Microsoft Agent Framework (MAF) needs about fifteen things that have nothing to do with what your agent does: gateway access, identity, injection defences, PII handling, tool-loop limits, cost caps, tracing, sessions, an HTTP API, a test double for the model, an eval harness, a container, cloud infrastructure, a deploy pipeline, authenticated and resilient calls to the enterprise APIs its tools use, conversations that survive scale-out, a human in the loop for risky actions, a quality gate that blocks a deploy when answers get worse, and a way for people to actually reach the agent: Teams and a web chat. agentkit ships all of them, already tested against MAF 1.19. On agentkit, your service is your **tools, instructions and eval cases**, and `azd up`.
+**Short version:** a production agent on Microsoft Agent Framework (MAF) needs about fifteen things that have nothing to do with what your agent does: gateway access, identity, injection defences, PII handling, tool-loop limits, cost caps, tracing, sessions, an HTTP API, a test double for the model, an eval harness, a container, cloud infrastructure, a deploy pipeline, authenticated and resilient calls to the enterprise APIs its tools use, conversations that survive scale-out, a human in the loop for risky actions, a quality gate that blocks a deploy when answers get worse, a way for people to actually reach the agent (Teams and a web chat), and answers from company documents that respect who may read them. agentkit ships all of them, already tested against MAF 1.19. On agentkit, your service is your **tools, instructions and eval cases**, and `azd up`.
 
 ---
 
@@ -10,24 +10,25 @@ These are measured from this repository, not estimated.
 
 | | Lines of code* |
 |---|---|
-| agentkit packages (source): hosting, guardrails, telemetry, testing, tools, channels (incl. the web chat component) | **4,307** |
-| agentkit package tests (incl. Teams, AG-UI and headless-browser tests) | **2,010** |
-| Service template, including its Bicep, azd config, deploy workflow and Teams packaging (generated into every repo) | **979** |
-| Shared platform infrastructure (Bicep + AI gateway policy) | **313** |
-| CI workflows, infra validation, multi-replica, channel and live-gate smoke test, tooling | **876** |
-| **Total the platform maintains once** | **~8,500** |
-| What the team wrote to turn the generated project into the order-status agent | **345** |
+| agentkit packages (source): hosting, guardrails, telemetry, testing, tools, channels (incl. the web chat component), knowledge | **5,438** |
+| agentkit package tests (incl. Teams, AG-UI, headless-browser and search wire-format tests) | **2,437** |
+| Service template, including its Bicep, azd config, deploy workflow, Teams packaging and knowledge (generated into every repo) | **1,258** |
+| Shared platform infrastructure (Bicep + AI gateway policy) | **336** |
+| CI workflows, infra validation, multi-replica, channel and live-gate smoke test, tooling | **892** |
+| **Total the platform maintains once** | **~10,400** |
+| What the team wrote to turn the generated project into the order-status agent | **426** |
 
-\* Non-blank lines, excluding comment-only lines, counted by one script across the repo at v0.5.0 (earlier versions of this page used a slightly different count).
+\* Non-blank lines, excluding comment-only lines, counted by one script across the repo (v0.5.0 and later; earlier versions of this page used a slightly different count).
 
-The sample team's 345 lines break down as:
-- three tools, a refund rule, and **human approval for refunds over $50** (57);
+The sample team's 426 lines break down as:
+- three tools, a refund rule, **human approval for refunds over $50**, and the policy-document search (60);
 - the connector to a live carrier API, with managed-identity auth, retries and response shaping (**19**);
-- instructions (13);
-- eight eval cases, which double as the deploy **quality gate**, with judged rubrics, groundedness and critical safety cases (87);
-- domain tests (169), including a Teams test that a refunds lead, and never the requester, approves a large refund from a card.
+- instructions (15);
+- eleven eval cases, which double as the deploy **quality gate**, with judged rubrics, groundedness, citations and critical safety cases, including "a support agent never retrieves the leads-only playbook" (120);
+- domain tests (207), including a Teams test that a refunds lead, and never the requester, approves a large refund from a card, and tests that each person only finds the documents they may read;
+- who may read each policy document (`acl.yaml`, 5).
 
-Reaching the agent from **Teams and a web chat** took two copier answers and no code. None of the 345 lines is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
+Reaching the agent from **Teams and a web chat** took two copier answers and no code. Answering from **policy documents, trimmed per user and cited**, took one copier answer, three Markdown files and an `acl.yaml`. None of the 426 lines is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
 
 ### Estimated engineering time per concern
 
@@ -56,6 +57,7 @@ These **are estimates**. They reflect what each piece took to build and debug he
 | **Total per team** | | **~28–46 engineer-days, plus 1–3 per API** |
 | *If users reach it through Teams* | Bot endpoint with JWT validation, secretless bot registration, background turns and proactive replies, per-user sessions, app manifest; approval cards with approver checks, click-once updates, an approvals channel; offline test harness | 5–8 |
 | *If users reach it through a web page* | Streaming protocol with approvals and resume, server-held history, thread ownership, a chat UI that can't be XSS'd, CSP, browser sign-in, CSRF | 3–6 |
+| *If it answers from documents* | Search trimmed to each user's (nested) Entra groups that fails closed, hybrid + semantic query, citations in every channel, ingestion with access rules, extraction, chunking, embeddings and incremental sync, search/Document Intelligence/storage with least-privilege RBAC, permission-aware evals | 6–10 |
 
 The shared AI gateway (API Management policy, per-identity token limits, chargeback metrics, Azure OpenAI behind a managed identity) is a one-time platform cost, typically another 5–10 days. agentkit ships it as `infra/platform/`.
 
@@ -153,6 +155,7 @@ Everything in the table in section 1 is attached by `build_agent`, `create_app`,
 | `approval_mode="always_require"` + `approve_if` rules; approvals API with confirmation or separation-of-duties modes; audit log; `approve:` in eval cases | Build pause/resume, authorization and audit for risky actions | [sessions-and-approvals.md](sessions-and-approvals.md#human-approvals) |
 | Teams: bot endpoint, secretless Azure Bot, approvals as Adaptive Cards in an approvers channel, Entra-group approvers, app package script, offline `TeamsTestClient` | Learn the M365 Agents SDK, Bot Framework auth and Teams' timeouts | [channels.md](channels.md#microsoft-teams) |
 | Web chat at `/chat` and AG-UI at `/v1/agui`, with approvals as standard interrupts | Build and secure a chat UI and its streaming protocol | [channels.md](channels.md#web-chat) |
+| `knowledge_tool()`: company documents searched **as the signed-in user**, with citations in every channel; `agentkit-ingest` with `acl.yaml`; `cites:` / `must_not_retrieve:` eval checks | Build RAG, then find out it shows everyone everything | [knowledge.md](knowledge.md) |
 
 ---
 
@@ -192,6 +195,14 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 30. **AG-UI clients send the whole conversation on every run.** Trusting it lets a browser rewrite what the agent said. MAF's own AG-UI endpoint also keeps approval state in process memory and doesn't tie a thread to a user. agentkit keeps history and approvals in the shared session store, owner-checked, and uses only the newest user message.
 31. **A cookie-authenticated chat page opens the API to CSRF** on FastAPI versions that parse `text/plain` bodies as JSON. agentkit rejects non-JSON POSTs app-wide (415), so a cross-site form can't act as the signed-in user.
 32. **`from __future__ import annotations` plus a locally imported FastAPI `Request`** makes FastAPI read the parameter as a required query field, and every call returns 422. It happened twice while building the channels. The endpoints now import at module level or register plain Starlette routes.
+33. **MAF's Azure AI Search context provider has no per-user filter.** In semantic mode it searches as the app, so every user retrieves every document the app can read; agentic mode takes one fixed credential. It also drops document ids and titles, so there's nothing to cite. agentkit's knowledge tool filters by the caller's groups and returns numbered, citable sources.
+34. **The groups claim in a user's token isn't enough.** It's omitted for users in many groups (overage), it doesn't include nested groups, and Teams turns carry no user token at all. agentkit asks Microsoft Graph for transitive membership, caches it, and fails closed on errors.
+35. **Filtering vector results after the nearest-neighbour search hides relevant documents** from users with narrow access: the top matches are picked from the whole index, then trimmed, sometimes to nothing. agentkit sets `vectorFilterMode: preFilter`, and a wire-level test checks that it's sent.
+36. **`fnmatch`'s `*` matches `/`.** An access rule for `*.md` meant for top-level documents also matched `refund-leads/playbook.md`, and once the leads rule was removed, the leads-only playbook became readable by everyone. The kit's own test caught it. agentkit's `acl.yaml` globs are path-aware, like `.gitignore`.
+37. **Keeping a document's old chunks when its rule is removed or its extraction fails** leaves it indexed with its old access groups. agentkit's ingestion removes anything it didn't successfully process; the next good run adds it back.
+38. **Passing `params` to httpx replaces the query string of a Graph `@odata.nextLink`.** The `$skiptoken` disappears and paging fetches page one forever. agentkit carries the link's query over as params, and a test checks the second request.
+39. **Numbering sources per tool call makes `[1]` mean two documents** when the agent searches twice in one answer. agentkit numbers per run, so citations stay unambiguous.
+40. **An eval that only checks the answer can't catch a permission leak:** the model may politely ignore a document it shouldn't have seen. `must_not_retrieve:` checks what the search returned.
 
 ---
 
@@ -200,6 +211,7 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 Being honest about scope saves you time too.
 
 - **The infrastructure hasn't been deployed to a real subscription by this repo's CI.** Every Bicep file compiles and lints clean, and names are contract-checked across platform and service (see [deploy.md](deploy.md#whats-validated-without-azure)). Run `what-if` in your subscription before first use.
+- **Knowledge hasn't run against a real Azure AI Search service yet.** The query is tested against the real SDK over HTTP, and ingestion against a fake index. See [knowledge.md](knowledge.md#not-included-yet).
 - **The Teams channel hasn't run in a real Teams tenant yet.** It's tested offline with real Bot Framework activities through the M365 Agents SDK, a fake Bot Connector, and a headless browser for the web chat. See [channels.md](channels.md#not-included-yet) for what that leaves open, including Teams SSO for on-behalf-of tools and Microsoft 365 Copilot publishing.
 - **Python only.** A .NET track is planned.
 

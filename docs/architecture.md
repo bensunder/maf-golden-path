@@ -12,6 +12,7 @@ flowchart LR
       W[AgUiChannel + WebChat] --> CS2
       TC[TeamsChannel<br/>/api/messages] --> CS2
       CS2 --> A[MAF Agent<br/>built by build_agent]
+      A --> K[knowledge_tool<br/>as the caller]
       A --> T[Your tools.py]
     end
     A -->|Entra token + x-agentkit-* headers| G[AI gateway<br/>APIM]
@@ -19,6 +20,8 @@ flowchart LR
     A -.->|Prompt Shields| CS[Azure AI Content Safety]
     H -.->|OTLP / Azure Monitor| O[Traces + metrics]
     CS2 <--> S[(Session store)]
+    K -->|filter: caller's Entra groups| AIS[(Azure AI Search<br/>per service)]
+    K -.->|groups| GR[Microsoft Graph]
     TC -.->|replies, approval cards<br/>managed identity| TM
 ```
 
@@ -111,7 +114,7 @@ The Chat Completions API is the default because every APIM GenAI policy (token l
 
 | Method | Path | Body / response |
 |---|---|---|
-| `POST` | `/v1/chat` | `{message, session_id?}` → `{session_id, status, reply, blocked, approvals, usage}`; `status` is `completed` or `approval_required`; 409 while an approval is pending |
+| `POST` | `/v1/chat` | `{message, session_id?}` → `{session_id, status, reply, blocked, approvals, citations, usage}`; `status` is `completed` or `approval_required`; 409 while an approval is pending |
 | `POST` | `/v1/chat/stream` | Same request → SSE: `data: {"delta": "…"}` …, `event: approval_required` if paused, then `event: done` with `{session_id, status, blocked}` |
 | `GET` | `/v1/sessions/{id}/approvals` | Pending approvals (owner, or holder of the approver role) |
 | `POST` | `/v1/sessions/{id}/approvals` | `{decisions: [{id, approved, comment?}]}` → resumes the run; same response shape as `/v1/chat` |

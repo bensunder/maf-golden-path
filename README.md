@@ -1,6 +1,6 @@
 # maf-golden-path
 
-A paved road for building agents on **Microsoft Agent Framework (MAF) 1.19, Python**. Teams generate a service from the template and write only tools, instructions and eval cases. Model access, Entra auth, guardrails, telemetry, sessions, approvals, run limits, the HTTP API, **Microsoft Teams and a web chat**, and CI come from versioned packages owned by the platform team.
+A paved road for building agents on **Microsoft Agent Framework (MAF) 1.19, Python**. Teams generate a service from the template and write only tools, instructions and eval cases. Model access, Entra auth, guardrails, telemetry, sessions, approvals, run limits, the HTTP API, **Microsoft Teams and a web chat**, **answers from company documents trimmed to what each user may read**, and CI come from versioned packages owned by the platform team.
 
 ```
 copier copy gh:bensunder/maf-golden-path my-agent     # new service in ~1 minute
@@ -18,6 +18,7 @@ cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model
 | `packages/agentkit-telemetry` | One-call OTel bootstrap (OTLP / App Insights), span processor that stamps user (pseudonymized), session, tenant and team on **every** MAF span, run metrics by outcome |
 | `packages/agentkit-tools` | `openapi_tools()` (OpenAPI → typed MAF tools, read-only by default), `ManagedIdentityAuth` / secretless `OnBehalfOfAuth`, `ApiClient` (safe retries, `Retry-After`, tracing, model-friendly errors), `Shaper`, `gateway_mcp_tool()`, `mock_api` for tests |
 | `packages/agentkit-channels` | **Microsoft Teams** (M365 Agents SDK: JWT-validated `/api/messages`, background turns and proactive replies, **approvals as Adaptive Cards** in an approvers channel with Entra-group approvers), **AG-UI** endpoint with approvals as interrupts, drop-in **web chat** (`/chat`, `<agentkit-chat>`), `TeamsTestClient` for offline Teams tests |
+| `packages/agentkit-knowledge` | `knowledge_tool()`: hybrid + semantic Azure AI Search **as the signed-in user** (Entra groups via Graph, nested, fail closed), numbered sources and **citations in every channel**; `agentkit-ingest` (folder or Blob, `acl.yaml`, Document Intelligence, heading-aware chunks, gateway embeddings, incremental sync); fake index that evaluates the security filter |
 | `packages/agentkit-testing` | `ScriptedChatClient` (real MAF layer stack, scripted model), span recorder, YAML eval cases that run offline in CI and live against the gateway, **LLM judge + `agentkit-gate` quality gate** (repetitions, baseline, run-page report), pytest plugin |
 | `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI and deploy callers, **`azure.yaml` + `infra/` (Bicep) for `azd up`**, `AGENTS.md`/`CLAUDE.md` |
 | `infra/platform/` | Shared platform, deployed once per environment: API Management AI gateway (Entra-only, per-identity token limits, chargeback metrics), Azure OpenAI behind a managed identity, Content Safety, Container Apps environment, registry, App Insights |
@@ -48,6 +49,7 @@ In the sample, the team-authored code is `tools.py` (3 tools + a refund policy),
 | Scale-out | Sessions in Cosmos DB (managed identity), locked per conversation; 5 replicas | `hosting.sessions`, `template/infra` |
 | Human in the loop | Risky tools pause for approval; confirmation or separation of duties via Entra app roles; audit log; eval support | `hosting.approvals` |
 | Deploy | `azd up`: managed identity, least-privilege grants, Container App with Entra sign-in; OIDC pipeline with smoke check and live evals as a gate | `template/infra`, `agent-deploy.yml` |
+| Company documents | Search trimmed to the caller's groups, citations in the API, web chat and Teams, ingestion on deploy, per-service Search + Document Intelligence (Entra only, service reads only), `cites:` / `must_not_retrieve:` evals | `knowledge`, `template/infra` |
 | Reaching users | Teams (secretless Azure Bot, app package script) and a web chat at `/chat`, from two copier answers; every channel shares sessions, approvals and audit through one `ConversationService` | `channels`, `template/infra` |
 | Model access at org level | AI gateway: Entra-only, per-identity token limits, chargeback metrics, models behind a managed identity | `infra/platform` |
 | Calling enterprise APIs | Tools generated from OpenAPI; managed-identity or secretless on-behalf-of auth; safe retries, tracing, response shaping | `tools` |
@@ -65,4 +67,4 @@ make browser     # optional: Playwright + Chromium, for the web chat browser tes
 make test        # packages, sample, template (both modes, with and without Teams), infra, end-to-end smoke
 ```
 
-Status: **v0.5.0, milestone 5**: channels. Microsoft Teams with approvals as Adaptive Cards (separation of duties in an approvers channel), an AG-UI endpoint and a drop-in web chat, all on one conversation service. Tested offline with real Bot Framework activities, a fake Bot Connector and a headless browser; not yet run against a live Teams tenant. Earlier: the deploy quality gate (v0.4), shared sessions and human approvals (v0.3), deploy and connectors (v0.2). Not yet included: Teams SSO for on-behalf-of tools, Microsoft 365 Copilot publishing, and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.
+Status: **v0.6.0, milestone 6**: knowledge. Answers from company documents, searched as the signed-in user (Entra groups, fail closed), with citations in every channel, an ingestion pipeline with access rules, and permission-aware evals. Tested offline, including the real search SDK's wire format; not yet run against a live Azure AI Search service. Earlier: Teams and web chat channels (v0.5), the deploy quality gate (v0.4), shared sessions and human approvals (v0.3), deploy and connectors (v0.2). Not yet included: Teams SSO for on-behalf-of tools, Microsoft 365 Copilot publishing, and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.

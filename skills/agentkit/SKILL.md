@@ -18,6 +18,7 @@ Run `copier copy gh:bensunder/maf-golden-path <dest>`, then `pip install -e ".[d
 - MCP servers: `agentkit.tools.gateway_mcp_tool(name, url, auth=..., allowed_tools=[...])`, and always set `allowed_tools`.
 - Deploy: `azd up` using the generated `infra/`. Never create Azure resources by hand for a service.
 - Channels: users reach the agent through `create_app(create_agent, channels=[AgUiChannel(), WebChat(), *teams_from_env()])` (`agentkit.channels`). Don't write a bot, a chat UI or an approvals UI. Custom channels call `ConversationService.run_turn/decide` with a `Caller`, never `agent.run` directly, so ownership, approvals and audit apply.
+- Company documents: `enable_knowledge` → `KNOWLEDGE = KnowledgeBase(); TOOLS += [knowledge_tool(KNOWLEDGE)]` (`agentkit.knowledge`). Never search Azure AI Search, a vector DB or files yourself: the kit trims by the caller's groups and fails closed. Every file in `knowledge/` needs an `acl.yaml` rule. Eval cases for documents set `user:` and use `cites:` and `must_not_retrieve:`; permission cases are `critical: true`.
 - Teams tests: `agentkit.channels.testing.TeamsTestClient` with `teams_test_settings()`; `await teams.send(text, user=TeamsTestUser("sam"))`, `teams.last_card()`, `await teams.click(card, "approve", user=...)`.
 - Do not add custom prompt-injection, PII or logging code in services. If a guardrail is missing, change `agentkit-guardrails` instead.
 
