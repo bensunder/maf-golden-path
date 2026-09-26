@@ -1,0 +1,174 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "name": "intro",
+      "content": {
+        "json": "## agentkit operations\nEvery agent on the platform: model spend by team (from the AI gateway), outcomes, refusals, latency, approvals and document search. Queries live in `infra/platform/ops/queries.json`; the live validation runs each one."
+      }
+    },
+    {
+      "type": 9,
+      "name": "params",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "parameters": [
+          {
+            "id": "5c1f6f2e-0d7a-4c1e-9d8b-2f1f5b6f0a01",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "allowCustom": true,
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "tokens_by_team",
+      "customWidth": "50",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"Total Tokens\"\n| summarize Tokens = sum(Sum) by Team = tostring(Properties[\"Team\"]), bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Model tokens by team (all agents, through the gateway)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "tokens_by_agent",
+      "customWidth": "100",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"Total Tokens\"\n| summarize Tokens = sum(Sum) by Team = tostring(Properties[\"Team\"]), Agent = tostring(Properties[\"Agent\"]), Environment = tostring(Properties[\"Environment\"])\n| order by Tokens desc",
+        "size": 0,
+        "title": "Tokens by team, agent and environment (chargeback)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "runs_by_outcome",
+      "customWidth": "50",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"agentkit.agent.runs\"\n| summarize Runs = sum(Sum) by Outcome = tostring(Properties[\"outcome\"]), bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Agent runs by outcome (ok, blocked, error)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "blocked_by_reason",
+      "customWidth": "50",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"agentkit.agent.runs\" and tostring(Properties[\"outcome\"]) == \"blocked\"\n| summarize Runs = sum(Sum) by Reason = tostring(Properties[\"blocked_reason\"]), Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| order by Runs desc",
+        "size": 0,
+        "title": "Refused inputs by reason and agent",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "run_latency",
+      "customWidth": "50",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"agentkit.agent.run.duration\"\n| summarize AvgSeconds = sum(Sum) / sum(ItemCount), MaxSeconds = max(Max) by bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Agent run time in seconds (average and worst)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "error_rate",
+      "customWidth": "100",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"agentkit.agent.runs\"\n| summarize Errors = sumif(Sum, tostring(Properties[\"outcome\"]) == \"error\"), Runs = sum(Sum) by Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| extend ErrorPct = round(100.0 * Errors / Runs, 2)\n| order by ErrorPct desc",
+        "size": 0,
+        "title": "Error rate by agent (%)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "approvals",
+      "customWidth": "100",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name in (\"agentkit.approvals.requested\", \"agentkit.approvals.decided\")\n| summarize Count = sum(Sum) by Metric = Name, Tool = tostring(Properties[\"tool\"]), Decision = tostring(Properties[\"decision\"])",
+        "size": 0,
+        "title": "Human approvals: requested vs decided, by tool",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "knowledge_searches",
+      "customWidth": "50",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AppMetrics\n| where Name == \"agentkit.knowledge.searches\"\n| summarize Searches = sum(Sum) by Outcome = tostring(Properties[\"outcome\"]), bin(TimeGenerated, 1h)\n| render timechart",
+        "size": 0,
+        "title": "Knowledge searches by outcome (unavailable = users got no documents)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      }
+    }
+  ],
+  "isLocked": false,
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

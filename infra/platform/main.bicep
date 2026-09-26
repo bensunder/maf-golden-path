@@ -46,6 +46,9 @@ param embeddingModelVersion string = '1'
 param embeddingSkuName string = 'Standard'
 param embeddingCapacity int = 50
 
+@description('Email for operations alerts. Empty = alerts show in the Azure portal only.')
+param alertEmail string = ''
+
 param tags object = {}
 
 var suffix = uniqueString(resourceGroup().id)
@@ -315,6 +318,66 @@ resource openaiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@202
 }
 
 // ---------------------------------------------------------------- outputs (feed these to services)
+// ---------------------------------------------------------------- operations: dashboard and alerts
+// Queries live in ops/queries.json (the workbook is generated from it by scripts/build_workbook.py);
+// the live validation runs every one against this workspace.
+var opsQueries = loadJsonContent('ops/queries.json')
+
+resource opsWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = {
+  name: guid(resourceGroup().id, 'agentkit-ops-workbook')
+  location: location
+  tags: allTags
+  kind: 'shared'
+  properties: {
+    displayName: 'agentkit operations (${namePrefix})'
+    category: 'workbook'
+    sourceId: logs.id
+    serializedData: loadTextContent('ops/workbook.json')
+  }
+}
+
+resource opsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!empty(alertEmail)) {
+  name: '${namePrefix}-ag-ops'
+  location: 'global'
+  tags: allTags
+  properties: {
+    groupShortName: 'agentkitops'
+    enabled: true
+    emailReceivers: [
+      { name: 'ops', emailAddress: alertEmail, useCommonAlertSchema: true }
+    ]
+  }
+}
+
+resource opsAlerts 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for alert in opsQueries.alerts: {
+  name: '${namePrefix}-${alert.id}'
+  location: location
+  tags: allTags
+  properties: {
+    displayName: alert.title
+    description: alert.description
+    severity: alert.severity
+    enabled: true
+    scopes: [logs.id]
+    evaluationFrequency: alert.frequency
+    windowSize: alert.window
+    criteria: {
+      allOf: [
+        {
+          query: alert.kql
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'Value'
+          operator: alert.operator
+          threshold: alert.threshold
+          failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: { actionGroups: empty(alertEmail) ? [] : [opsActionGroup.id] }
+  }
+}]
+
 output AGENTKIT_PLATFORM_RESOURCE_GROUP string = resourceGroup().name
 output AGENTKIT_GATEWAY_ENDPOINT string = apim.properties.gatewayUrl
 output AGENTKIT_MODEL string = openAIDeploymentName
@@ -325,6 +388,8 @@ output AGENTKIT_CONTAINER_APPS_ENVIRONMENT_ID string = containerEnv.id
 output AGENTKIT_REGISTRY_NAME string = registry.name
 output AGENTKIT_REGISTRY_ENDPOINT string = registry.properties.loginServer
 output AGENTKIT_APPINSIGHTS_NAME string = appInsights.name
+output AGENTKIT_LOG_ANALYTICS_WORKSPACE_ID string = logs.properties.customerId
+output AGENTKIT_OPS_WORKBOOK_ID string = opsWorkbook.id
 output AGENTKIT_COSMOS_ACCOUNT_NAME string = cosmos.name
 output AGENTKIT_COSMOS_ENDPOINT string = cosmos.properties.documentEndpoint
 output AGENTKIT_COSMOS_DATABASE string = sessionsDb.name

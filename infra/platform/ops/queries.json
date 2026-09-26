@@ -1,0 +1,109 @@
+{
+  "panels": [
+    {
+      "id": "tokens_by_team",
+      "title": "Model tokens by team (all agents, through the gateway)",
+      "viz": "timechart",
+      "kql": "AppMetrics\n| where Name == \"Total Tokens\"\n| summarize Tokens = sum(Sum) by Team = tostring(Properties[\"Team\"]), bin(TimeGenerated, 1h)"
+    },
+    {
+      "id": "tokens_by_agent",
+      "title": "Tokens by team, agent and environment (chargeback)",
+      "viz": "table",
+      "kql": "AppMetrics\n| where Name == \"Total Tokens\"\n| summarize Tokens = sum(Sum) by Team = tostring(Properties[\"Team\"]), Agent = tostring(Properties[\"Agent\"]), Environment = tostring(Properties[\"Environment\"])\n| order by Tokens desc"
+    },
+    {
+      "id": "runs_by_outcome",
+      "title": "Agent runs by outcome (ok, blocked, error)",
+      "viz": "timechart",
+      "kql": "AppMetrics\n| where Name == \"agentkit.agent.runs\"\n| summarize Runs = sum(Sum) by Outcome = tostring(Properties[\"outcome\"]), bin(TimeGenerated, 1h)"
+    },
+    {
+      "id": "blocked_by_reason",
+      "title": "Refused inputs by reason and agent",
+      "viz": "barchart",
+      "kql": "AppMetrics\n| where Name == \"agentkit.agent.runs\" and tostring(Properties[\"outcome\"]) == \"blocked\"\n| summarize Runs = sum(Sum) by Reason = tostring(Properties[\"blocked_reason\"]), Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| order by Runs desc"
+    },
+    {
+      "id": "run_latency",
+      "title": "Agent run time in seconds (average and worst)",
+      "viz": "timechart",
+      "kql": "AppMetrics\n| where Name == \"agentkit.agent.run.duration\"\n| summarize AvgSeconds = sum(Sum) / sum(ItemCount), MaxSeconds = max(Max) by bin(TimeGenerated, 1h)"
+    },
+    {
+      "id": "error_rate",
+      "title": "Error rate by agent (%)",
+      "viz": "table",
+      "kql": "AppMetrics\n| where Name == \"agentkit.agent.runs\"\n| summarize Errors = sumif(Sum, tostring(Properties[\"outcome\"]) == \"error\"), Runs = sum(Sum) by Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| extend ErrorPct = round(100.0 * Errors / Runs, 2)\n| order by ErrorPct desc"
+    },
+    {
+      "id": "approvals",
+      "title": "Human approvals: requested vs decided, by tool",
+      "viz": "table",
+      "kql": "AppMetrics\n| where Name in (\"agentkit.approvals.requested\", \"agentkit.approvals.decided\")\n| summarize Count = sum(Sum) by Metric = Name, Tool = tostring(Properties[\"tool\"]), Decision = tostring(Properties[\"decision\"])"
+    },
+    {
+      "id": "knowledge_searches",
+      "title": "Knowledge searches by outcome (unavailable = users got no documents)",
+      "viz": "timechart",
+      "kql": "AppMetrics\n| where Name == \"agentkit.knowledge.searches\"\n| summarize Searches = sum(Sum) by Outcome = tostring(Properties[\"outcome\"]), bin(TimeGenerated, 1h)"
+    }
+  ],
+  "alerts": [
+    {
+      "id": "token-spend-spike",
+      "title": "Model token spend spike",
+      "severity": 2,
+      "window": "PT1H",
+      "frequency": "PT15M",
+      "operator": "GreaterThan",
+      "threshold": 2000000,
+      "description": "More than 2M model tokens through the gateway in an hour. Check the dashboard's 'Tokens by team, agent' for the source.",
+      "kql": "AppMetrics\n| where Name == \"Total Tokens\"\n| summarize Value = sum(Sum)"
+    },
+    {
+      "id": "prompt-injection-spike",
+      "title": "Prompt-injection attempts spike",
+      "severity": 2,
+      "window": "PT15M",
+      "frequency": "PT5M",
+      "operator": "GreaterThan",
+      "threshold": 20,
+      "description": "More than 20 inputs refused as prompt injection in 15 minutes: likely a probing campaign.",
+      "kql": "AppMetrics\n| where Name == \"agentkit.agent.runs\" and tostring(Properties[\"blocked_reason\"]) == \"prompt_injection\"\n| summarize Value = sum(Sum)"
+    },
+    {
+      "id": "agent-error-rate",
+      "title": "Agent error rate above 5%",
+      "severity": 1,
+      "window": "PT15M",
+      "frequency": "PT5M",
+      "operator": "GreaterThan",
+      "threshold": 5,
+      "description": "More than 5% of agent runs failed in 15 minutes (only counted with at least 20 runs, so a quiet hour doesn't page anyone).",
+      "kql": "AppMetrics\n| where Name == \"agentkit.agent.runs\"\n| summarize Errors = sumif(Sum, tostring(Properties[\"outcome\"]) == \"error\"), Runs = sum(Sum)\n| extend Value = iff(Runs >= 20, 100.0 * Errors / Runs, 0.0)"
+    },
+    {
+      "id": "approvals-backlog",
+      "title": "Approvals piling up",
+      "severity": 3,
+      "window": "PT4H",
+      "frequency": "PT30M",
+      "operator": "GreaterThan",
+      "threshold": 10,
+      "description": "More than 10 more approvals requested than decided in 4 hours: approvers may not be seeing the cards.",
+      "kql": "AppMetrics\n| where Name in (\"agentkit.approvals.requested\", \"agentkit.approvals.decided\")\n| summarize Requested = sumif(Sum, Name == \"agentkit.approvals.requested\"), Decided = sumif(Sum, Name == \"agentkit.approvals.decided\")\n| extend Value = Requested - Decided"
+    },
+    {
+      "id": "knowledge-unavailable",
+      "title": "Knowledge search failing closed",
+      "severity": 2,
+      "window": "PT15M",
+      "frequency": "PT5M",
+      "operator": "GreaterThan",
+      "threshold": 5,
+      "description": "Document search returned 'unavailable' more than 5 times in 15 minutes (Search, Graph or permissions): users are getting answers without documents.",
+      "kql": "AppMetrics\n| where Name == \"agentkit.knowledge.searches\" and tostring(Properties[\"outcome\"]) == \"unavailable\"\n| summarize Value = sum(Sum)"
+    }
+  ]
+}

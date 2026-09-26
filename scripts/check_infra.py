@@ -114,6 +114,24 @@ def check_contract(service: Path | None) -> list[str]:
     return problems
 
 
+def check_ops() -> list[str]:
+    """Dashboard and alert queries: the workbook is generated from queries.json, and every alert query
+    yields the ``Value`` column its rule aggregates. (KQL itself is checked by running it: live validation.)"""
+    problems = []
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "build_workbook.py"), "--check"],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        problems.append(proc.stderr.strip() or "workbook check failed")
+    queries = json.loads((ROOT / "infra" / "platform" / "ops" / "queries.json").read_text(encoding="utf-8"))
+    for alert in queries["alerts"]:
+        missing = {"id", "title", "description", "severity", "window", "frequency", "operator", "threshold", "kql"} - set(alert)
+        if missing:
+            problems.append(f"alert {alert.get('id')}: missing {sorted(missing)}")
+        if "Value" not in alert.get("kql", ""):
+            problems.append(f"alert {alert.get('id')}: query must produce a Value column")
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--service", type=Path, help="rendered service project to validate as well")
@@ -132,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     problems += check_bicep(ROOT / "infra" / "platform" / "main.bicep")
     xml.dom.minidom.parse(str(ROOT / "infra" / "platform" / "policies" / "ai-gateway.xml"))
     problems += check_workflows(sorted((ROOT / ".github" / "workflows").glob("*.yml")))
+    problems += check_ops()
 
     problems += check_contract(args.service)
     if args.service:
