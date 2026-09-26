@@ -1,5 +1,63 @@
 # maf-golden-path Save an estimated 28–46 engineer-days per enterprise MAF agent.Generate the project in ~1 minute. Write the business logic. Inherit security, approvals, sessions, telemetry, testing, evaluation, knowledge, channels, infrastructure, and CI/CD. 
 A paved road for building agents on **Microsoft Agent Framework (MAF) 1.19, Python**. Teams generate a service from the template and write only tools, instructions and eval cases. Model access, Entra auth, guardrails, telemetry, sessions, approvals, run limits, the HTTP API, **Microsoft Teams and a web chat**, **answers from company documents trimmed to what each user may read**, and CI come from versioned packages owned by the platform team.
+YOUR BUSINESS LOGIC
+        │
+        ▼
+┌───────────────────────┐
+│       MAF Agent       │
+│ tools · prompts       │
+│ evals · policies      │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│    MAF GOLDEN PATH    │
+├───────────────────────┤
+│ Identity              │
+│ Security              │
+│ Guardrails            │
+│ Sessions              │
+│ Approvals             │
+│ Telemetry             │
+│ Evaluations           │
+│ Knowledge             │
+│ Channels              │
+│ Infrastructure        │
+│ CI/CD                 │
+└───────────┬───────────┘
+            │
+            ▼
+     ENTERPRISE AZURE
+
+     
+# 🏗️ What you actually build
+
+A generated service keeps the application team's surface area intentionally small.
+
+Your team owns
+
+tools.py · connectors.py · instructions · approval rules · evaluation cases · business tests
+
+The platform owns
+
+authentication · model access · security · sessions · approvals · telemetry · evaluation infrastructure · knowledge access · channels · Azure deployment · CI/CD
+
+# 🧩 What's in the box
+
+| Package / Path                 | Capability                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/agentkit-hosting`    | `build_agent()`, gateway-bound model client, Entra credentials, production policy enforcement, sessions, locking, approvals, audit, FastAPI host |
+| `packages/agentkit-guardrails` | Prompt Shields, tool-output injection protection, PII redaction, tool policies, per-session token budgets                                        |
+| `packages/agentkit-telemetry`  | OpenTelemetry bootstrap, OTLP / App Insights, pseudonymized identity/session/tenant/team attributes, run metrics                                 |
+| `packages/agentkit-tools`      | OpenAPI → typed MAF tools, managed identity, secretless OBO, retries, tracing, response shaping, MCP gateway tools                               |
+| `packages/agentkit-channels`   | Microsoft Teams, AG-UI, web chat, shared sessions, approvals and audit                                                                           |
+| `packages/agentkit-knowledge`  | Permission-aware Azure AI Search, Entra group filtering, fail-closed retrieval, citations, ingestion, ACLs, Document Intelligence                |
+| `packages/agentkit-testing`    | Scripted model, span recorder, offline/live evals, LLM judge, groundedness checks, quality gate, pytest plugin                                   |
+| `template/` + `copier.yml`     | Complete service scaffold, Dockerfile, CI, deployment, `azure.yaml`, Bicep                                                                       |
+| `infra/platform/`              | Shared API Management AI gateway, managed identity, Azure OpenAI, Content Safety, Container Apps, registry, App Insights                         |
+| `examples/order-status-agent`  | Generated service customized with business-agent code                                                                                            |
+| `.github/workflows/`           | Reusable CI, OIDC deployment, smoke checks and live evaluation gates                                                                             |
+
 
 ```
 copier copy gh:bensunder/maf-golden-path my-agent     # new service in ~1 minute
