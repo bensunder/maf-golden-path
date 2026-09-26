@@ -96,6 +96,8 @@ def approval_views(pending: list[dict[str, Any]]) -> list[ApprovalView]:
 def http_caller(request: Request, settings: AgentKitSettings, *, channel: str = "http") -> Caller:
     """The caller behind an HTTP request, from platform-auth headers (Easy Auth / APIM)."""
     user = request.headers.get(settings.user_header)
+    if not user and settings.user_fallback_header:
+        user = request.headers.get(settings.user_fallback_header)
     if settings.require_user and not user:
         raise HTTPException(401, f"missing {settings.user_header}")
     raw = request.headers.get(settings.user_token_header) if settings.user_token_header else None

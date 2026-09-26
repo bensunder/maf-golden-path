@@ -340,3 +340,19 @@ def test_posts_must_be_json():
                        headers={"content-type": "application/json; charset=utf-8"})
     assert form.status_code == 415 and ok.status_code == 200
     assert len(client.calls) == 1
+
+
+def test_app_only_callers_are_identified_by_object_id():
+    """Service-to-service calls through Easy Auth may carry no principal name; the object id identifies them."""
+    client = ScriptedChatClient(script=[reply("hi"), reply("again")])
+    settings = AgentKitSettings(**{**LOCAL, "require_user": True})
+    app = create_app(lambda s: build_agent(name="a", instructions="x", settings=s, client=client),
+                     settings=settings, configure_telemetry=False)
+    with TestClient(app) as http:
+        first = http.post("/v1/chat", json={"message": "hi"}, headers={"x-ms-client-principal-id": "sp-oid-1"})
+        assert first.status_code == 200
+        other = http.post("/v1/chat", json={"message": "hi", "session_id": first.json()["session_id"]},
+                          headers={"x-ms-client-principal-id": "sp-oid-2"})
+        assert other.status_code == 403  # sessions are owned by the object id
+        named = http.post("/v1/chat", json={"message": "hi"}, headers={"x-ms-client-principal-name": "ben"})
+        assert named.status_code == 200  # people keep being identified by name, as before

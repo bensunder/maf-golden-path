@@ -63,6 +63,9 @@ class AgentKitSettings(BaseSettings):
 
     # HTTP hosting: identity comes from platform auth (Container Apps / App Service Easy Auth, APIM)
     user_header: str = "x-ms-client-principal-name"
+    #: Used when ``user_header`` is absent: Easy Auth always sends the principal's object id, but app-only
+    #: tokens (another service, a pipeline) may carry no name. Empty = no fallback.
+    user_fallback_header: str = "x-ms-client-principal-id"
     tenant_header: str = "x-agentkit-tenant"
     require_user: bool = False
     #: Header carrying the caller's own access token, made available to on-behalf-of tools
