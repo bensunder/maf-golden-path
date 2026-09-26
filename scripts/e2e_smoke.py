@@ -230,6 +230,17 @@ def main() -> int:
                                                                "status": "resolved", "payload": {"approved": True}}])
             checks.append(("AG-UI resume runs the tool", "Refunded $129.00" in "".join(e.get("delta", "") for e in resumed)))
 
+        # Console: the page, the overview from the live agent, and the session's audit trail
+        console = httpx.get(f"{base}/console", headers=user)
+        overview = httpx.get(f"{base}/v1/console/overview", headers=user).json()
+        checks.append(("console page with CSP", console.status_code == 200
+                       and "script-src 'self'" in console.headers.get("content-security-policy", "")))
+        checks.append(("console overview from the running agent", overview["agent"]["name"] == "order-status-agent"
+                       and any(t["name"] == "issue_refund" and t["approval"] != "never" for t in overview["agent"]["tools"])
+                       and {c["id"]: c["status"] for c in overview["security"]}.get("entra_auth") != "off"))
+        audit = httpx.get(f"{base}/v1/console/sessions/agui-smoke-thread", headers=user).json().get("audit", [])
+        checks.append(("console shows the approval in the audit trail", len(audit) == 1 and audit[0]["approved"] is True))
+
         # Teams
         _wait(f"http://127.0.0.1:{teams_port}/healthz")
         teams_url = f"http://127.0.0.1:{teams_port}/api/messages"

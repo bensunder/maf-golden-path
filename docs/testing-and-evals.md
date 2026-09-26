@@ -199,6 +199,16 @@ Eval cases can run as a user (`user:`) and check citations (`cites:`) and permis
 
 `agentkit.channels.testing.TeamsTestClient` sends real Bot Framework activities into your app and records what the agent posts back, through a fake Bot Connector, with no Teams and no network. You can click approval cards as different users, which is how you test separation of duties. See [channels.md](channels.md#testing-channels).
 
+## A gate report from the offline run
+
+The offline evals run inside `pytest`, with your fixtures (fake APIs, the fake search index, test users), which the `agentkit-gate` CLI doesn't have. To get a gate report from that run, in the same JSON format:
+
+```bash
+pytest --agentkit-eval-report build/gate-report.json
+```
+
+Every scripted case must pass (the wiring works or it doesn't). `agent-deploy` writes this report into the image, and the [console](console.md) shows it on the Evaluations page, with each case's duration.
+
 ## What CI runs
 
 The reusable `agent-ci.yml` pipeline runs `pytest` (unit, offline evals, HTTP), publishes JUnit results and builds the container. Everything is deterministic, and no model or secrets are needed. Live, scored evals run in the **deploy** pipeline through the quality gate above.

@@ -47,6 +47,7 @@ class CaseStats:
     failures: list[str] = field(default_factory=list)  # distinct failure messages (first few)
     skipped: list[str] = field(default_factory=list)
     mean_tokens: float = 0.0
+    mean_duration_s: float = 0.0  # wall time per run (model, tools and judge)
 
     @property
     def pass_rate(self) -> float:
@@ -180,8 +181,14 @@ async def run_gate(
     stats = []
     for case in cases:
         n = case.repeat or repeat
-        results = [await run_case(agent_factory, case, live=live, judge=judge) for _ in range(n)]
-        stats.append(_stats(case, results))
+        results, durations = [], []
+        for _ in range(n):
+            t = time.perf_counter()
+            results.append(await run_case(agent_factory, case, live=live, judge=judge))
+            durations.append(time.perf_counter() - t)
+        case_stats = _stats(case, results)
+        case_stats.mean_duration_s = round(statistics.fmean(durations), 3) if durations else 0.0
+        stats.append(case_stats)
     reasons = evaluate_gate(stats, baseline=baseline, min_pass_rate=min_pass_rate,
                             max_regression=max_regression, score_tolerance=score_tolerance)
     return GateReport(stats, not reasons, reasons, live, repeat, started, time.perf_counter() - t0, bool(baseline))

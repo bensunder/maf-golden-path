@@ -7,3 +7,5 @@ build/
 .env
 .tools/
 .results/
+node_modules/
+*.tsbuildinfo

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-telemetry"
-version = "0.7.0"
+version = "0.8.0"
 description = "One-call OpenTelemetry bootstrap, request-context enrichment and run metrics for Microsoft Agent Framework agents."
 requires-python = ">=3.10"
 dependencies = [

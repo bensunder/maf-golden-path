@@ -33,3 +33,16 @@ def test_web_chat_and_agui(settings):
     events = [json.loads(line[6:]) for line in stream.splitlines() if line.startswith("data: ")]
     assert "".join(e.get("delta", "") for e in events) == "hello there"
     assert events[-1]["type"] == "RUN_FINISHED"
+
+
+def test_console_shows_this_agent(settings):
+    app = create_app(lambda s: create_agent(s, client=ScriptedChatClient()), settings=settings, configure_telemetry=False,
+                     channels=channels())
+    user = {"x-ms-client-principal-name": "dev@contoso.example"}
+    with TestClient(app) as http:
+        assert http.get("/console").status_code == 200
+        overview = http.get("/v1/console/overview", headers=user).json()
+        evals = http.get("/v1/console/evals", headers=user).json()
+    assert overview["agent"]["name"] == AGENT_NAME
+    assert {c["id"] for c in overview["security"] if c["status"] == "on"} >= {"pii", "token_budget"}
+    assert evals["cases"], "the console lists evals/cases.yaml"

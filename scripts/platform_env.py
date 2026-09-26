@@ -30,6 +30,8 @@ KEYS = [
     "AGENTKIT_COSMOS_ENDPOINT",
     "AGENTKIT_COSMOS_DATABASE",
 ]
+#: Passed on when the platform has them (older platform deployments don't).
+OPTIONAL_KEYS = ["AGENTKIT_OPS_WORKBOOK_ID"]
 
 
 def load_outputs(args: argparse.Namespace) -> dict[str, str]:
@@ -50,7 +52,7 @@ def load_outputs(args: argparse.Namespace) -> dict[str, str]:
     missing = [k for k in KEYS if k not in values]
     if missing:
         raise SystemExit(f"platform deployment is missing outputs: {missing}")
-    return {k: str(values[k]) for k in KEYS}
+    return {k: str(values[k]) for k in KEYS + OPTIONAL_KEYS if k in values}
 
 
 def render(values: dict[str, str], fmt: str, repo: str | None, env: str | None) -> list[str]:

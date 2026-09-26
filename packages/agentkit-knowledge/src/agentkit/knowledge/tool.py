@@ -100,5 +100,15 @@ def knowledge_tool(
         _searches.add(1, {"outcome": "results", "index": index})
         return _format(passages, kb, run_key or f"anon-{id(passages)}", numbering)
 
-    return tool(search_knowledge, name=name, description=description)
+    fn = tool(search_knowledge, name=name, description=description)
+    k = kb.knowledge
+    # Read-only description for the console (no endpoints or secrets).
+    fn.additional_properties["agentkit.knowledge"] = {
+        "index": k.index, "access": k.access, "top_k": k.top_k,
+        "vector": bool(k.embedding_model), "embedding_model": k.embedding_model,
+        "semantic_ranker": bool(k.semantic_configuration),
+        "search_configured": bool(k.search_endpoint),
+        "document_intelligence": bool(k.docintel_endpoint),
+    }
+    return fn
 

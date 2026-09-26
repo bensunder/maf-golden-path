@@ -70,6 +70,10 @@ jobs:
       AGENTKIT_COSMOS_DATABASE: ${{ vars.AGENTKIT_COSMOS_DATABASE }}
       AGENTKIT_APPROVER_ROLE: ${{ vars.AGENTKIT_APPROVER_ROLE }}
       AGENTKIT_JUDGE_MODEL: ${{ vars.AGENTKIT_JUDGE_MODEL }}
+      AGENTKIT_OPS_WORKBOOK_ID: ${{ vars.AGENTKIT_OPS_WORKBOOK_ID }}
+      # What the console's Deployments page shows (services without the console ignore them).
+      AGENTKIT_BUILD_COMMIT: ${{ github.sha }}
+      AGENTKIT_BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
 
@@ -94,8 +98,20 @@ jobs:
           --federated-credential-provider github
           --tenant-id "$AZURE_TENANT_ID"
 
+      - name: Offline quality gate report (the console shows it)
+        run: |
+          pip install -e ".[dev]"
+          if [ -f tests/test_evals.py ]; then
+            # The offline evals, exactly as in CI: without this job's deploy settings (AGENTKIT_*).
+            unset_args=()
+            for name in $(env | grep -o '^AGENTKIT_[A-Z_]*'); do unset_args+=(-u "$name"); done
+            env "${unset_args[@]}" pytest -q -p no:cacheprovider tests/test_evals.py --agentkit-eval-report evals/gate-report.json
+          fi
+
       - name: Provision and deploy
         run: |
+          AGENTKIT_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          export AGENTKIT_BUILD_TIME
           azd env new "$AZURE_ENV_NAME" --no-prompt --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION" \
             || azd env select "$AZURE_ENV_NAME"
           azd up --no-prompt

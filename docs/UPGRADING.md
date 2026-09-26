@@ -26,6 +26,17 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.7 → 0.8 (console)
+
+- New: the console at `/console` ([console.md](console.md)). `copier update` asks `enable_console` (default: on when web chat is on). It adds `Console(...)` to `app.py`, `COPY evals ./evals` to the Dockerfile, four optional Bicep parameters (build commit, run link, time, workbook id) and a test. `app.py` is generated, so accept the kit's change unless you edited it.
+- `agent-deploy` runs the offline tests once more before building the image, with `--agentkit-eval-report evals/gate-report.json`, so the console shows the gate result for the exact commit deployed. It also passes the commit, run link and time.
+- `scripts/platform_env.py` also emits `AGENTKIT_OPS_WORKBOOK_ID` when the platform outputs it. Set it as a GitHub variable to link the console to the operations workbook.
+- The pytest plugin gains `--agentkit-eval-report PATH` (a gate report from the offline eval run). `CaseStats` in gate reports gains `mean_duration_s`.
+- `ConversationService.agent` (read-only property) and `agentkit.channels.security_posture()` are new. The knowledge tool now describes its configuration in `additional_properties["agentkit.knowledge"]` (no endpoints).
+- The live check reads the console's posture and, in prod, fails unless sign-in, Prompt Shields, tool-output scanning, session isolation, audit and no-content-capture are all on.
+- **Behaviour change:** a streamed approval decision (AG-UI, the web chat, the console) now runs to completion even if the client disconnects. Before, a disconnect could cancel the resumed run after the tool ran, leaving the approval pending (so approving again ran the tool twice).
+- **Behaviour change:** the AG-UI interrupt's `metadata.awaiting` is `"requester"` when the caller may decide (including an approver in approver mode without separation), `"approver"` when someone else must. It used to say `"approver"` whenever an approver role was set.
+
 ### 0.6 → 0.7 (live validation, operations)
 
 - The platform deploys an operations workbook and five alerts (`alertEmail` for email). Re-deploy the platform to get them.

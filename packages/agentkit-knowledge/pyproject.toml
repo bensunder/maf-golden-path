@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-knowledge"
-version = "0.7.0"
+version = "0.8.0"
 description = "Answers from company documents for agentkit services: permission-trimmed Azure AI Search retrieval with citations, and an ingestion pipeline (Blob, Document Intelligence, chunking, embeddings through the AI gateway)."
 requires-python = ">=3.10"
 dependencies = [
-    "agentkit-hosting>=0.7,<0.8",
-    "agentkit-tools>=0.7,<0.8",
+    "agentkit-hosting>=0.8,<0.9",
+    "agentkit-tools>=0.8,<0.9",
     "azure-search-documents>=11.6",
     "opentelemetry-api>=1.30",
     "pydantic-settings>=2.4",

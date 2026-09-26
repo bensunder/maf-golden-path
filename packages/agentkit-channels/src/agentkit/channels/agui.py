@@ -13,8 +13,9 @@ Differences from MAF's generic AG-UI endpoint, on purpose:
 * A paused run ends with ``RUN_FINISHED`` + ``outcome: {type: "interrupt", interrupts: [...]}``: one
   interrupt per pending approval (``id`` = approval id). The client resumes with
   ``resume: [{interrupt_id, status: "resolved", payload: {approved, comment}}]``; ``cancelled`` rejects.
-  Who may resolve is the same rule as the JSON API: with an approver role, only an approver who isn't the
-  requester (the requester's interrupt says ``metadata.awaiting: "approver"``); otherwise the requester.
+  Who may resolve is the same rule as the JSON API: with an approver role, only an approver (never the
+  requester under separation of duties); otherwise the requester. ``metadata.awaiting`` is ``"requester"``
+  when this caller may decide, ``"approver"`` when someone else must.
 """
 
 from __future__ import annotations
@@ -128,7 +129,10 @@ class AgUiChannel:
     def _interrupts(self, result: TurnResult, caller: Caller) -> list[Any]:
         from ag_ui.core import Interrupt
 
-        separation = bool(self.settings.approver_role)
+        role = self.settings.approver_role
+        # Who decides: with an approver role, an approver (never the requester under separation of duties);
+        # otherwise the requester. "requester" means this caller may decide it themselves.
+        requester_decides = not role or (caller.is_approver and not self.settings.approval_separation)
         interrupts = []
         for item in result.pending:
             call = (item.get("request") or {}).get("function_call") or {}
@@ -142,7 +146,7 @@ class AgUiChannel:
                     "properties": {"approved": {"type": "boolean"}, "comment": {"type": "string", "maxLength": 1000}},
                 },
                 metadata={"tool": item["tool"], "arguments": item["arguments"],
-                          "awaiting": "approver" if separation else "requester",
+                          "awaiting": "requester" if requester_decides else "approver",
                           "approver_role": self.settings.approver_role,
                           # the requester can poll this (GET) to learn when an approver has decided
                           "status_url": f"/v1/sessions/{result.session_id}/approvals"},

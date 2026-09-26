@@ -2,6 +2,8 @@
 
 Your users probably won't call `POST /v1/chat`. They'll talk to the agent in **Microsoft Teams**, or in a **chat page** in the browser. agentkit ships both as *channels*. A channel only works out who is calling and how to show the result. Everything else runs through the same code path as the JSON API: sessions, locking across replicas, owner checks, human approvals with separation of duties, and the audit log.
 
+The people who build and run the agent get the [console](console.md) at `/console`. Its playground uses the same AG-UI endpoint as the web chat, and its approvals queue uses the same approvals API.
+
 ```
 Teams ──► /api/messages ─┐
 Browser ─► /chat, /v1/agui ─┼─► ConversationService ─► your agent (build_agent)

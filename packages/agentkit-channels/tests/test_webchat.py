@@ -4,19 +4,17 @@ Skipped when Playwright or its Chromium isn't installed (CI installs both)."""
 
 import base64
 import json
-import socket
-import threading
-import time
 
 import httpx
 import pytest
-import uvicorn
 from agent_framework import tool
 from fastapi.testclient import TestClient
 
 from agentkit.channels import AgUiChannel, WebChat
 from agentkit.hosting import AgentKitSettings, approve_if, build_agent, create_app
 from agentkit.testing import ScriptedChatClient, reply, tool_call
+
+from conftest import Server
 
 REFUNDS: list[tuple[str, float]] = []
 
@@ -55,39 +53,7 @@ def test_page_and_script_are_served_with_a_strict_csp():
     assert "customElements.define" in script.text
 
 
-# ------------------------------------------------------------------ browser
-@pytest.fixture
-def browser():
-    sync_api = pytest.importorskip("playwright.sync_api")
-    with sync_api.sync_playwright() as p:
-        try:
-            b = p.chromium.launch()
-        except Exception as exc:  # browsers not installed
-            pytest.skip(f"no Chromium for Playwright: {exc}")
-        yield b
-        b.close()
-
-
-class Server:
-    def __init__(self, app):
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            self.port = s.getsockname()[1]
-        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning"))
-        self.thread = threading.Thread(target=self.server.run, daemon=True)
-
-    def __enter__(self):
-        self.thread.start()
-        deadline = time.time() + 10
-        while not self.server.started and time.time() < deadline:
-            time.sleep(0.02)
-        return f"http://127.0.0.1:{self.port}"
-
-    def __exit__(self, *exc):
-        self.server.should_exit = True
-        self.thread.join(timeout=10)
-
-
+# ------------------------------------------------------------------ browser (fixture and Server in conftest)
 def open_chat(browser, url, headers=None, poll_ms=None):
     page = browser.new_page()
     errors: list[str] = []

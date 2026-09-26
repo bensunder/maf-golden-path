@@ -104,7 +104,9 @@ def check_contract(service: Path | None) -> list[str]:
         referenced = set(re.findall(r"\$\{(AGENTKIT_[A-Z_]+)", params_text))
         optional = {"AGENTKIT_ENVIRONMENT", "AGENTKIT_AUTH_CLIENT_ID", "AGENTKIT_APPROVER_ROLE",
                     "AGENTKIT_TEAMS_APPROVER_GROUP_ID", "AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID",
-                    "AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL"}
+                    "AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL",
+                    # console: set by the deploy pipeline or the platform when available, empty otherwise
+                    "AGENTKIT_BUILD_COMMIT", "AGENTKIT_BUILD_RUN_URL", "AGENTKIT_BUILD_TIME", "AGENTKIT_OPS_WORKBOOK_ID"}
         for name in sorted(referenced - optional - set(KEYS)):
             problems.append(f"main.parameters.json uses ${{{name}}}, which the platform does not output")
         hook = (service / "scripts" / "check_platform_env.py").read_text()

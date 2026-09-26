@@ -10,12 +10,13 @@ These are measured from this repository, not estimated.
 
 | | Lines of code* |
 |---|---|
-| agentkit packages (source): hosting, guardrails, telemetry, testing (incl. judge calibration), tools, channels (incl. the web chat component), knowledge | **5,631** |
-| agentkit package and script tests (incl. Teams, AG-UI, headless-browser and search wire-format tests) | **2,561** |
-| Service template, including its Bicep, azd config, deploy workflow, Teams packaging and knowledge (generated into every repo) | **1,264** |
+| agentkit packages (source): hosting, guardrails, telemetry, testing (incl. judge calibration), tools, channels (incl. the web chat component and the console API), knowledge | **6,053** |
+| agentkit package, script and console tests (incl. Teams, AG-UI, headless-browser and search wire-format tests) | **2,951** |
+| The console (React/TypeScript source; the built bundle isn't counted) | **4,719** |
+| Service template, including its Bicep, azd config, deploy workflow, Teams packaging and knowledge (generated into every repo) | **1,307** |
 | Shared platform infrastructure: Bicep, AI gateway policy, dashboard and alert queries (the generated workbook not counted) | **502** |
-| CI and live-validation workflows, infra validation, smoke and live checks, tooling | **1,405** |
-| **Total the platform maintains once** | **~11,400** |
+| CI and live-validation workflows, infra validation, smoke and live checks, tooling | **1,479** |
+| **Total the platform maintains once** | **~17,000** |
 | What the team wrote to turn the generated project into the order-status agent | **426** |
 
 \* Non-blank lines, excluding comment-only lines, counted by one script across the repo (v0.5.0 and later; earlier versions of this page used a slightly different count).
@@ -30,7 +31,7 @@ The sample team's 426 lines break down as:
 
 They also graded 12 sample answers by hand (`judge_calibration.yaml`), so the judge that gates their deploys is checked against people.
 
-Reaching the agent from **Teams and a web chat** took two copier answers and no code. Answering from **policy documents, trimmed per user and cited**, took one copier answer, three Markdown files and an `acl.yaml`. None of the 426 lines is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
+Reaching the agent from **Teams and a web chat** took two copier answers and no code. Answering from **policy documents, trimmed per user and cited**, took one copier answer, three Markdown files and an `acl.yaml`. The **operations console** took one copier answer and no code. None of the 426 lines is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
 
 ### Estimated engineering time per concern
 
@@ -59,6 +60,7 @@ These **are estimates**. They reflect what each piece took to build and debug he
 | **Total per team** | | **~28–46 engineer-days, plus 1–3 per API** |
 | *If users reach it through Teams* | Bot endpoint with JWT validation, secretless bot registration, background turns and proactive replies, per-user sessions, app manifest; approval cards with approver checks, click-once updates, an approvals channel; offline test harness | 5–8 |
 | *If users reach it through a web page* | Streaming protocol with approvals and resume, server-held history, thread ownership, a chat UI that can't be XSS'd, CSP, browser sign-in, CSRF | 3–6 |
+| *If people operate it from a console* | A read-only admin API that reads the live agent (posture from the middleware stack, tools, evals, sessions with ownership), a playground with tool traces and approvals, an approvals queue with audit, a CSP-safe single-page app, browser tests | 8–12 |
 | *If it answers from documents* | Search trimmed to each user's (nested) Entra groups that fails closed, hybrid + semantic query, citations in every channel, ingestion with access rules, extraction, chunking, embeddings and incremental sync, search/Document Intelligence/storage with least-privilege RBAC, permission-aware evals | 6–10 |
 
 The shared AI gateway (API Management policy, per-identity token limits, chargeback metrics, Azure OpenAI behind a managed identity) is a one-time platform cost, typically another 5–10 days. So is operating it: a dashboard and alerts across every agent (2–4 days) and a pipeline that proves the whole stack in a real subscription and cleans up after itself (3–5 days). agentkit ships all three: `infra/platform/`, `infra/platform/ops/` and the `live-validation` workflow.
@@ -211,6 +213,8 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 44. **`ubuntu-latest` moves under you** (to Ubuntu 26 on 2026-10-19, announced only as a run notice). Pipelines that install system packages, such as Redis and Chromium, can break without a code change. agentkit pins `ubuntu-24.04` and treats the move as an upgrade step.
 45. **Dashboards and alerts drift from what they claim to show**, and a KQL typo fails silently until someone opens the panel. agentkit generates the workbook from one query file, CI rejects a stale workbook, and live validation runs every query against real telemetry.
 46. **A judge nobody has checked gates deploys on noise.** A lenient judge lets regressions through; a harsh one blocks good releases. `agentkit-gate --calibrate` measures agreement with human grades and counts false passes (the dangerous kind) separately.
+47. **A security dashboard that reads configuration shows what should be on, not what is.** A middleware left out of the stack, or an environment variable that didn't apply, looks fine on paper. The console reads the running agent's middleware stack, and the live check fails a prod deploy whose posture isn't fully on.
+48. **The gate CLI's offline run can't see your pytest fixtures** (fake APIs, the fake search index, test users), so its offline report shows failures the test suite doesn't have. `pytest --agentkit-eval-report` writes the same report from the real offline run.
 
 ---
 

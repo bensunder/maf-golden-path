@@ -7,6 +7,36 @@ on:
     tags: ["v*"]
 
 jobs:
+  console:
+    # The console's build is committed into agentkit-channels, so services never need Node.
+    # This job proves the committed bundle is exactly what the sources build.
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npx vite build
+      - name: Committed bundle matches the sources
+        run: |
+          git status --porcelain -- ../packages/agentkit-channels/src/agentkit/channels/static/console
+          git diff --exit-code --stat -- ../packages/agentkit-channels/src/agentkit/channels/static/console
+          test -z "$(git status --porcelain -- ../packages/agentkit-channels/src/agentkit/channels/static/console)" \
+            || (echo "::error::run 'make console' and commit the result" && exit 1)
+      - name: Dependency audit (runtime)
+        run: npm audit --omit=dev --audit-level=high
+
   test:
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to 26 on 2026-10-19; upgrade deliberately
     strategy:

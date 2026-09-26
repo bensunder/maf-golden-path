@@ -33,11 +33,12 @@ def _reply(body: dict) -> str:
 
 
 _REFUND = re.compile(r"refund\s+([A-Za-z]\d{4})\s+\$?(\d+(?:\.\d+)?)", re.IGNORECASE)
+_LOOKUP = re.compile(r"(?:where is|status of)\s+(?:order\s+)?([A-Za-z]\d{4})", re.IGNORECASE)
 
 
 def _tool_step(body: dict) -> dict | None:
     """Deterministic 'model': 'refund A1002 $129' calls issue_refund when that tool is offered;
-    after a tool result, it reports the result. Lets the smoke test drive approvals end to end.
+    'where is A1001' calls lookup_order; after a tool result, it reports the result. Lets the smoke test drive approvals end to end.
     Judge prompts (agentkit's [agentkit-judge] marker) get a score: 5 if the graded response
     contains "Refunded" or "echo", else 2, so the smoke test can exercise the quality gate."""
     messages = body.get("messages", [])
@@ -50,6 +51,11 @@ def _tool_step(body: dict) -> dict | None:
     last = messages[-1] if messages else {}
     if last.get("role") == "tool":
         return {"role": "assistant", "content": f"tool said: {_text(last)}"}
+    lookup = _LOOKUP.search(_text(last)) if last.get("role") == "user" else None
+    if lookup and "lookup_order" in offered:
+        return {"role": "assistant", "content": None, "tool_calls": [
+            {"id": f"call_{len(messages)}", "type": "function",
+             "function": {"name": "lookup_order", "arguments": json.dumps({"order_id": lookup.group(1).upper()})}}]}
     match = _REFUND.search(_text(last)) if last.get("role") == "user" else None
     if match and "issue_refund" in offered:
         args = {"order_id": match.group(1).upper(), "amount": float(match.group(2)), "reason": "smoke test"}

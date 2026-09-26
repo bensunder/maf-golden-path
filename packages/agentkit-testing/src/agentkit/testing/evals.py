@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -241,6 +242,11 @@ def _tokens(response: AgentResponse | None) -> int:
 AgentFactory = Callable[[ScriptedChatClient | None], SupportsAgentRun]
 
 
+#: Called with (case, result, seconds, live) after every run_case, e.g. by the pytest plugin's
+#: ``--agentkit-eval-report`` to write a quality-gate report from the offline test run.
+RESULT_SINKS: list[Callable[[EvalCase, CaseResult, float, bool], None]] = []
+
+
 async def run_case(
     agent_factory: AgentFactory, case: EvalCase, *, live: bool = False, judge: Judge | None = None
 ) -> CaseResult:
@@ -248,6 +254,16 @@ async def run_case(
 
     Deterministic checks always run. Judge checks (``rubric``, ``grounded``) run when ``judge`` is given
     and are otherwise recorded as skipped (offline CI)."""
+    started = time.perf_counter()
+    result = await _run_case(agent_factory, case, live=live, judge=judge)
+    for sink in RESULT_SINKS:
+        sink(case, result, time.perf_counter() - started, live)
+    return result
+
+
+async def _run_case(
+    agent_factory: AgentFactory, case: EvalCase, *, live: bool = False, judge: Judge | None = None
+) -> CaseResult:
     client = None if live else ScriptedChatClient(script=case.scripted_turns())
     agent = agent_factory(client)
     recorder = _ToolRecorder()

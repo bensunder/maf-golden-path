@@ -35,6 +35,14 @@ param approverRole string = ''
 @description('Client id of the Entra app registration that protects this API (Easy Auth). Required for prod.')
 param authClientId string = ''
 
+@description('Console: what was deployed (the deploy pipeline sets these; empty for a manual azd up).')
+param buildCommit string = ''
+param buildRunUrl string = ''
+param buildTime string = ''
+
+@description('Console: resource id of the platform operations workbook (platform output AGENTKIT_OPS_WORKBOOK_ID).')
+param opsWorkbookId string = ''
+
 @description('Knowledge: identity that runs ingestion (azd sets AZURE_PRINCIPAL_ID to whoever runs azd: you, or the deploy pipeline).')
 param ingestPrincipalId string = ''
 
@@ -150,6 +158,10 @@ module app 'modules/container-app.bicep' = {
       { name: 'AGENTKIT_TEAMS_TENANT_ID', value: tenant().tenantId }
       { name: 'AGENTKIT_TEAMS_APPROVER_GROUP_ID', value: teamsApproverGroupId }
       { name: 'AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID', value: teamsApprovalsChannelId }
+      { name: 'AGENTKIT_BUILD_COMMIT', value: buildCommit }
+      { name: 'AGENTKIT_BUILD_RUN_URL', value: buildRunUrl }
+      { name: 'AGENTKIT_BUILD_TIME', value: buildTime }
+      { name: 'AGENTKIT_CONSOLE_WORKBOOK_URL', value: empty(opsWorkbookId) ? '' : 'https://portal.azure.com/#@${tenant().tenantId}/resource${opsWorkbookId}/workbook' }
       // Without Easy Auth there is no trusted user header, so every call is rejected (secure default).
       { name: 'AGENTKIT_REQUIRE_USER', value: 'true' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }

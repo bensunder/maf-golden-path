@@ -7,6 +7,10 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install .
+{%- if enable_console %}
+# The console lists the eval cases and shows the offline gate report the deploy pipeline writes here.
+COPY evals ./evals
+{%- endif %}
 RUN useradd --create-home --uid 10001 agent
 USER agent
 ENV PORT=8000 AGENTKIT_ENVIRONMENT=prod AGENTKIT_AUTH_MODE=managed_identity AGENTKIT_REQUIRE_USER=true

@@ -1,7 +1,8 @@
 """HTTP entrypoint: ``uvicorn {{ package_name }}.app:app``.
 {%- if enable_web_chat %}
 
-Web: AG-UI at /v1/agui and a chat page at /chat, next to the JSON API (/v1/chat, approvals).
+Web: AG-UI at /v1/agui and a chat page at /chat{% if enable_console %}, and the operations console at /console{% endif %}, next to the
+JSON API (/v1/chat, approvals).
 {%- endif %}
 {%- if enable_teams %}
 
@@ -12,7 +13,7 @@ Teams: the bot endpoint /api/messages is on once AGENTKIT_TEAMS_APP_ID is set (t
 {%- else %}"""
 {%- endif %}
 {% if enable_web_chat or enable_teams %}
-from agentkit.channels import {% if enable_web_chat %}AgUiChannel, WebChat{% endif %}{% if enable_web_chat and enable_teams %}, {% endif %}{% if enable_teams %}teams_from_env{% endif %}
+from agentkit.channels import {% if enable_web_chat %}AgUiChannel, {% if enable_console %}Console, {% endif %}WebChat{% endif %}{% if enable_web_chat and enable_teams %}, {% endif %}{% if enable_teams %}teams_from_env{% endif %}
 {%- endif %}
 from agentkit.hosting import create_app
 
@@ -24,6 +25,9 @@ def channels() -> list:
     result: list = []
 {%- if enable_web_chat %}
     result += [AgUiChannel(), WebChat(title="{{ project_name }}")]
+{%- if enable_console %}
+    result += [Console(title="{{ project_name }}")]
+{%- endif %}
 {%- endif %}
 {%- if enable_teams %}
     result += teams_from_env()

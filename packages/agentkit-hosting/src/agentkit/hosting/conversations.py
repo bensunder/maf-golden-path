@@ -7,6 +7,7 @@ A channel's only job is to work out *who* is calling (a :class:`Caller`) and to 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -38,6 +39,44 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_DETACHED: set[asyncio.Task[None]] = set()  # strong references, so running resumes aren't garbage-collected
+
+
+class _Failed:
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
+async def _run_to_completion(source: AsyncIterator[Any]) -> AsyncIterator[Any]:
+    """Yield ``source``'s items, but let it finish even if the consumer goes away.
+
+    A decided approval must run to completion and be recorded: if a browser disconnects (a closed tab, a
+    Stop button) after the approved tool ran but before the run was saved, the approval would still look
+    pending, and approving it again would run the tool twice."""
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+    end = object()
+
+    async def pump() -> None:
+        try:
+            async for item in source:
+                queue.put_nowait(item)
+        except Exception as exc:  # handed to the consumer, if it's still there
+            logger.debug("detached run failed", exc_info=True)
+            queue.put_nowait(_Failed(exc))
+        finally:
+            queue.put_nowait(end)
+
+    task = asyncio.create_task(pump())
+    _DETACHED.add(task)
+    task.add_done_callback(_DETACHED.discard)
+    while True:
+        item = await queue.get()
+        if item is end:
+            return
+        if isinstance(item, _Failed):
+            raise item.exc
+        yield item
 
 
 # ---------------------------------------------------------------------------- types
@@ -140,6 +179,11 @@ class ConversationService:
         self._agent = agent
         self.store = store
         self.settings = settings
+
+    @property
+    def agent(self) -> Agent:
+        """The running agent (for read-only views such as the console; raises before startup)."""
+        return self._agent()
 
     # ------------------------------------------------------------ reads and checks
     async def get(self, session_id: str) -> SessionRecord:
@@ -278,7 +322,8 @@ class ConversationService:
     def stream_decide(
         self, caller: Caller, session_id: str, decisions: Mapping[str, Decision]
     ) -> AsyncIterator[AgentResponseUpdate | TurnResult]:
-        return self._decide(caller, session_id, decisions, stream=True)
+        # Runs to completion even if the caller stops reading: see _run_to_completion.
+        return _run_to_completion(self._decide(caller, session_id, decisions, stream=True))
 
     async def _decide(self, caller, session_id, decisions, *, stream):
         async with self.store.lock(session_id):

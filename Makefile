@@ -18,7 +18,7 @@ BICEP_ARCH := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,x64)
 ACTIONLINT_OS := $(if $(filter Darwin,$(UNAME_S)),darwin,linux)
 ACTIONLINT_ARCH := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,amd64)
 
-.PHONY: install browser tools test test-packages test-example test-template test-infra smoke new-agent
+.PHONY: install browser tools console test test-packages test-example test-template test-infra smoke new-agent
 
 install:            ## editable installs of all packages + the sample agent
 	$(PY) -m pip install -q copier jsonschema
@@ -34,6 +34,9 @@ tools:              ## download bicep + actionlint for this OS/CPU into .tools/b
 	test -x $(TOOLS_DIR)/bicep || curl -fsSL -o $(TOOLS_DIR)/bicep https://github.com/Azure/bicep/releases/download/$(BICEP_VERSION)/bicep-$(BICEP_OS)-$(BICEP_ARCH)
 	chmod +x $(TOOLS_DIR)/bicep
 	test -x $(TOOLS_DIR)/actionlint || curl -fsSL https://github.com/rhysd/actionlint/releases/download/v$(ACTIONLINT_VERSION)/actionlint_$(ACTIONLINT_VERSION)_$(ACTIONLINT_OS)_$(ACTIONLINT_ARCH).tar.gz | tar xz -C $(TOOLS_DIR) actionlint
+
+console:            ## rebuild the console bundle into agentkit-channels (needs Node 22); commit the result
+	cd console && npm ci && npm run typecheck && npm test && npx vite build
 
 test: test-packages test-example test-template test-infra smoke
 

@@ -275,3 +275,49 @@ def test_broken_rule_never_auto_approves():
     rule = approve_if("issue_refund", lambda a: a["missing_key"] < 5)
     call = Content.from_function_call(call_id="c", name="issue_refund", arguments={"amount": 1})
     assert rule(call) is False
+
+
+SLOW_REFUNDS: list[float] = []
+
+
+@tool(approval_mode="always_require")
+async def slow_refund(order_id: str, amount: float) -> str:
+    """Refund slowly (a downstream API that takes a while)."""
+    import asyncio
+
+    await asyncio.sleep(0.3)
+    SLOW_REFUNDS.append(amount)
+    return f"Refunded ${amount:.2f} on {order_id}"
+
+
+async def test_streamed_approval_finishes_and_is_recorded_when_the_client_goes_away():
+    """A browser that disconnects mid-resume (closed tab, Stop) must not leave the approval pending,
+    or approving again would run the tool twice."""
+    import asyncio
+
+    from agentkit.hosting import Caller, ConversationService, Decision, InMemorySessionStore
+
+    SLOW_REFUNDS.clear()
+    settings = AgentKitSettings(**LOCAL)
+    client = ScriptedChatClient(script=[tool_call("slow_refund", order_id="A1", amount=80), reply("Refunded.")])
+    agent = build_agent(name="orders", instructions="x", tools=[slow_refund], settings=settings, client=client)
+    store = InMemorySessionStore()
+    service = ConversationService(lambda: agent, store, settings)
+    ben = Caller(user_id="ben")
+
+    paused = await service.run_turn(ben, "refund $80 on A1")
+    approval_id = paused.pending[0]["id"]
+
+    async def consume_then_leave():
+        async for _ in service.stream_decide(ben, paused.session_id, {approval_id: Decision(approved=True)}):
+            await asyncio.sleep(10)  # the client stops reading
+
+    reader = asyncio.create_task(consume_then_leave())
+    await asyncio.sleep(0.1)
+    reader.cancel()  # disconnect while the approved tool is running
+    await asyncio.sleep(0.6)
+
+    record = await store.get(paused.session_id)
+    assert SLOW_REFUNDS == [80.0]
+    assert record.meta["approvals"] == []
+    assert [a["approved"] for a in record.meta["approval_log"]] == [True]

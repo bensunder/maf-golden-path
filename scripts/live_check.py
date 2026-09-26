@@ -101,11 +101,30 @@ class Checker:
             self.record("rejected approval resumes the run", decided.status_code == 200
                         and body.get("status") == "completed", f"HTTP {decided.status_code} {body.get('reply', '')}")
 
+        self.run_console()
+
         if knowledge:
             answer = self.chat("Using the refund policy documents: how much can a support agent refund on their own?")
             # This check calls as an app (no Entra user), so the search must fail closed: no documents, no citations.
             self.record("knowledge fails closed for a caller that isn't a user", answer.get("citations") == [],
                         json.dumps(answer.get("citations")))
+
+    def run_console(self) -> None:
+        """The console's security posture, read from the running agent. In prod, the controls the prod policy
+        requires must be on; elsewhere they are reported only."""
+        response = httpx.get(self.base + "/v1/console/overview", headers=self.headers, timeout=30)
+        if response.status_code == 404:
+            return  # a service without the console
+        if response.status_code != 200:
+            self.record("console overview answers", False, f"HTTP {response.status_code}")
+            return
+        body = response.json()
+        prod = body["service"]["environment"] == "prod"
+        posture = {c["id"]: c["status"] for c in body["security"]}
+        required = ["entra_auth", "prompt_injection", "tool_output", "session_isolation", "content_capture", "audit"]
+        missing = [cid for cid in required if posture.get(cid) != "on"]
+        self.record("console: prod security controls on" if prod else "console: security posture", not missing,
+                    "not on: " + ", ".join(missing) if missing else json.dumps(posture), hard=prod)
 
     # ------------------------------------------------------------ telemetry
     def run_queries(self, workspace_id: str, *, expect_telemetry: bool, wait_seconds: int) -> None:

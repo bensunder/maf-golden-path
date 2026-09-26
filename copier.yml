@@ -48,6 +48,12 @@ enable_web_chat:
   help: Chat page at /chat and an AG-UI endpoint at /v1/agui (Entra sign-in via Easy Auth)
   default: true
 
+enable_console:
+  type: bool
+  help: Operations console at /console (overview, playground, approvals, evals, security posture); uses the web chat's sign-in and AG-UI endpoint
+  default: "{{ enable_web_chat }}"
+  when: "{{ enable_web_chat }}"
+
 enable_teams:
   type: bool
   help: Reach the agent from Microsoft Teams (Azure Bot, /api/messages, approvals as Adaptive Cards)
@@ -79,4 +85,4 @@ agentkit_repo:
 agentkit_ref:
   type: str
   help: Blessed kit version (git tag)
-  default: v0.7.0
+  default: v0.8.0

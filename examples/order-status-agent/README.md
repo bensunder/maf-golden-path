@@ -46,6 +46,7 @@ The caller's identity comes from the `x-ms-client-principal-name` header set by 
 ## Where people use it
 
 - **Web chat:** `https://<your-app>/chat` (Entra sign-in). The AG-UI endpoint behind it is `POST /v1/agui`, usable from CopilotKit or any AG-UI client. Approvals show as Approve/Reject buttons.
+- **Console:** `https://<your-app>/console`: this agent's health, playground, approvals, eval results, sessions, security posture and deployments ([docs](https://github.com/bensunder/maf-golden-path/blob/v0.8.0/docs/console.md)).
 - **Microsoft Teams:** `azd up` creates the Azure Bot. Then `python scripts/package_teams_app.py` builds `build/teams-app.zip` to upload in Teams. Approvals are Adaptive Cards (sent to the approvers channel if `AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID` is set). Say `reset` to start over.
 
 Setup and options: the kit's `docs/channels.md`.
