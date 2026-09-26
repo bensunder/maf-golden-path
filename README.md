@@ -1,11 +1,13 @@
 # maf-golden-path Save an estimated 28–46 engineer-days per enterprise MAF agent.Generate the project in ~1 minute. Write the business logic. Inherit security, approvals, sessions, telemetry, testing, evaluation, knowledge, channels, infrastructure, and CI/CD. 
 A paved road for building agents on **Microsoft Agent Framework (MAF) 1.19, Python**. Teams generate a service from the template and write only tools, instructions and eval cases. Model access, Entra auth, guardrails, telemetry, sessions, approvals, run limits, the HTTP API, **Microsoft Teams and a web chat**, **answers from company documents trimmed to what each user may read**, and CI come from versioned packages owned by the platform team.
 
-<img width="1268" height="832" alt="image" src="https://github.com/user-attachments/assets/839b979f-b776-4b0b-a590-834c604c0592" />
-
+# The paved-road workflow:
 
 <img width="1136" height="943" alt="image" src="https://github.com/user-attachments/assets/6f1783fd-05d2-4e15-9d8b-94c7a3903adf" />
 
+# Architecture
+
+<img width="1268" height="832" alt="image" src="https://github.com/user-attachments/assets/839b979f-b776-4b0b-a590-834c604c0592" />
 
 
      
