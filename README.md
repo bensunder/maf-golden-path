@@ -3,6 +3,8 @@ A paved road for building agents on **Microsoft Agent Framework (MAF) 1.19, Pyth
 
 <img width="546" height="364" alt="image" src="https://github.com/user-attachments/assets/dccd0b7e-d6bf-4973-ab01-3af404c82d0c" />
 
+<img width="518" height="430" alt="image" src="https://github.com/user-attachments/assets/de533e12-1fb4-4e10-a625-99ce423ef621" />
+
 
 <img width="218" height="434" alt="image" src="https://github.com/user-attachments/assets/ec7917a9-4ab0-4a70-a32c-2cd2fd935be4" />
 
