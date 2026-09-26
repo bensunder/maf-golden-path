@@ -67,7 +67,7 @@ cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model
 | `scripts/e2e_smoke.py` | Boots the sample and a fake gateway with uvicorn and checks the whole HTTP path |
 | `scripts/check_infra.py`, `platform_env.py` | Offline infra validation (Bicep, azd schema, actionlint, platform↔service contract); platform outputs → `azd env` / GitHub variables |
 
-🔐 Enterprise controls are part of the path
+## 🔐 Enterprise controls are part of the path
 Identity & Access
 Entra-aware authentication
 Managed identity in production
