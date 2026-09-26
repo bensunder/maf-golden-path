@@ -24,20 +24,26 @@ The platform owns
 authentication · model access · security · sessions · approvals · telemetry · evaluation infrastructure · knowledge access · channels · Azure deployment · CI/CD
 
 # 🧩 What's in the box
+| Path | What it is |
+|---|---|
+| `packages/agentkit-hosting` | `build_agent()`, gateway-bound client (APIM, Azure or OpenAI-v1 style), Entra credential per environment, `AgentKitSettings` with **prod policy enforcement**, **session stores (in-memory, Cosmos DB, Redis) with cross-replica locking**, **human approvals** (`approve_if`, approvals API, confirmation or separation of duties, audit), FastAPI host (JSON + SSE, session ownership, probes) |
+| `packages/agentkit-guardrails` | Prompt Shields input guard (Heuristic fallback), **tool-output injection shield**, PII redaction before the model, tool allow/deny/validators, per-session token budget |
+| `packages/agentkit-telemetry` | One-call OTel bootstrap (OTLP / App Insights), span processor that stamps user (pseudonymized), session, tenant and team on **every** MAF span, run metrics by outcome |
+| `packages/agentkit-tools` | `openapi_tools()` (OpenAPI → typed MAF tools, read-only by default), `ManagedIdentityAuth` / secretless `OnBehalfOfAuth`, `ApiClient` (safe retries, `Retry-After`, tracing, model-friendly errors), `Shaper`, `gateway_mcp_tool()`, `mock_api` for tests |
+| `packages/agentkit-channels` | **Operations console** at `/console` (overview, playground, approvals, evals, security posture read from the running agent, deployments, create agent; real data only), **Microsoft Teams** (M365 Agents SDK: JWT-validated `/api/messages`, background turns and proactive replies, **approvals as Adaptive Cards** in an approvers channel with Entra-group approvers), **AG-UI** endpoint with approvals as interrupts, drop-in **web chat** (`/chat`, `<agentkit-chat>`), `TeamsTestClient` for offline Teams tests |
+| `packages/agentkit-knowledge` | `knowledge_tool()`: hybrid + semantic Azure AI Search **as the signed-in user** (Entra groups via Graph, nested, fail closed), numbered sources and **citations in every channel**; `agentkit-ingest` (folder or Blob, `acl.yaml`, Document Intelligence, heading-aware chunks, gateway embeddings, incremental sync); fake index that evaluates the security filter |
+| `packages/agentkit-testing` | `ScriptedChatClient` (real MAF layer stack, scripted model), span recorder, YAML eval cases that run offline in CI and live against the gateway, **LLM judge + `agentkit-gate` quality gate** (repetitions, baseline, run-page report), pytest plugin |
+| `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI and deploy callers, **`azure.yaml` + `infra/` (Bicep) for `azd up`**, `AGENTS.md`/`CLAUDE.md` |
+| `infra/platform/` | Shared platform, deployed once per environment: API Management AI gateway (Entra-only, per-identity token limits, chargeback metrics), Azure OpenAI behind a managed identity, Content Safety, Container Apps environment, registry, App Insights |
+| `console/` | Source of the console (React, TypeScript, Tailwind). The build is committed into `agentkit-channels`; CI checks it matches |
+| `examples/order-status-agent` | A generated service after a team customized it (see its git history for the diff a team writes) |
+| `.github/workflows/live-validation.yml` | Manual: deploys the platform and the sample to a throwaway environment in your subscription (what-if first), runs live checks, the live gate and judge calibration, runs every dashboard/alert query, tears down |
+| `infra/platform/ops/` | The operations workbook and five alerts across every agent (spend, injection spikes, errors, approval backlog, knowledge failing closed), generated from one query file |
+| `.github/workflows/agent-ci.yml`, `agent-deploy.yml` | Reusable pipelines every generated service calls: test + build; OIDC `azd up` + smoke + live evals |
+| `skills/agentkit/SKILL.md` | Org skill so coding assistants write code the paved-road way |
+| `scripts/e2e_smoke.py` | Boots the sample and a fake gateway with uvicorn and checks the whole HTTP path |
+| `scripts/check_infra.py`, `platform_env.py` | Offline infra validation (Bicep, azd schema, actionlint, platform↔service contract); platform outputs → `azd env` / GitHub variables |
 
-| Package / Path                 | Capability                                                                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/agentkit-hosting`    | `build_agent()`, gateway-bound model client, Entra credentials, production policy enforcement, sessions, locking, approvals, audit, FastAPI host |
-| `packages/agentkit-guardrails` | Prompt Shields, tool-output injection protection, PII redaction, tool policies, per-session token budgets                                        |
-| `packages/agentkit-telemetry`  | OpenTelemetry bootstrap, OTLP / App Insights, pseudonymized identity/session/tenant/team attributes, run metrics                                 |
-| `packages/agentkit-tools`      | OpenAPI → typed MAF tools, managed identity, secretless OBO, retries, tracing, response shaping, MCP gateway tools                               |
-| `packages/agentkit-channels`   | Microsoft Teams, AG-UI, web chat, shared sessions, approvals and audit                                                                           |
-| `packages/agentkit-knowledge`  | Permission-aware Azure AI Search, Entra group filtering, fail-closed retrieval, citations, ingestion, ACLs, Document Intelligence                |
-| `packages/agentkit-testing`    | Scripted model, span recorder, offline/live evals, LLM judge, groundedness checks, quality gate, pytest plugin                                   |
-| `template/` + `copier.yml`     | Complete service scaffold, Dockerfile, CI, deployment, `azure.yaml`, Bicep                                                                       |
-| `infra/platform/`              | Shared API Management AI gateway, managed identity, Azure OpenAI, Content Safety, Container Apps, registry, App Insights                         |
-| `examples/order-status-agent`  | Generated service customized with business-agent code                                                                                            |
-| `.github/workflows/`           | Reusable CI, OIDC deployment, smoke checks and live evaluation gates                                                                             |
 
 
 ```
