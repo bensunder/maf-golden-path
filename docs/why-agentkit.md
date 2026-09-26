@@ -10,12 +10,12 @@ These are measured from this repository, not estimated.
 
 | | Lines of code* |
 |---|---|
-| agentkit packages (source): hosting, guardrails, telemetry, testing, tools, channels (incl. the web chat component), knowledge | **5,438** |
-| agentkit package tests (incl. Teams, AG-UI, headless-browser and search wire-format tests) | **2,437** |
-| Service template, including its Bicep, azd config, deploy workflow, Teams packaging and knowledge (generated into every repo) | **1,258** |
-| Shared platform infrastructure (Bicep + AI gateway policy) | **336** |
-| CI workflows, infra validation, multi-replica, channel and live-gate smoke test, tooling | **892** |
-| **Total the platform maintains once** | **~10,400** |
+| agentkit packages (source): hosting, guardrails, telemetry, testing (incl. judge calibration), tools, channels (incl. the web chat component), knowledge | **5,631** |
+| agentkit package and script tests (incl. Teams, AG-UI, headless-browser and search wire-format tests) | **2,561** |
+| Service template, including its Bicep, azd config, deploy workflow, Teams packaging and knowledge (generated into every repo) | **1,264** |
+| Shared platform infrastructure: Bicep, AI gateway policy, dashboard and alert queries (the generated workbook not counted) | **502** |
+| CI and live-validation workflows, infra validation, smoke and live checks, tooling | **1,405** |
+| **Total the platform maintains once** | **~11,400** |
 | What the team wrote to turn the generated project into the order-status agent | **426** |
 
 \* Non-blank lines, excluding comment-only lines, counted by one script across the repo (v0.5.0 and later; earlier versions of this page used a slightly different count).
@@ -27,6 +27,8 @@ The sample team's 426 lines break down as:
 - eleven eval cases, which double as the deploy **quality gate**, with judged rubrics, groundedness, citations and critical safety cases, including "a support agent never retrieves the leads-only playbook" (120);
 - domain tests (207), including a Teams test that a refunds lead, and never the requester, approves a large refund from a card, and tests that each person only finds the documents they may read;
 - who may read each policy document (`acl.yaml`, 5).
+
+They also graded 12 sample answers by hand (`judge_calibration.yaml`), so the judge that gates their deploys is checked against people.
 
 Reaching the agent from **Teams and a web chat** took two copier answers and no code. Answering from **policy documents, trimmed per user and cited**, took one copier answer, three Markdown files and an `acl.yaml`. None of the 426 lines is plumbing, and it deploys with `azd up`. The carrier's OpenAPI spec (77 lines) isn't counted, because the API's owner supplies it.
 
@@ -59,7 +61,7 @@ These **are estimates**. They reflect what each piece took to build and debug he
 | *If users reach it through a web page* | Streaming protocol with approvals and resume, server-held history, thread ownership, a chat UI that can't be XSS'd, CSP, browser sign-in, CSRF | 3–6 |
 | *If it answers from documents* | Search trimmed to each user's (nested) Entra groups that fails closed, hybrid + semantic query, citations in every channel, ingestion with access rules, extraction, chunking, embeddings and incremental sync, search/Document Intelligence/storage with least-privilege RBAC, permission-aware evals | 6–10 |
 
-The shared AI gateway (API Management policy, per-identity token limits, chargeback metrics, Azure OpenAI behind a managed identity) is a one-time platform cost, typically another 5–10 days. agentkit ships it as `infra/platform/`.
+The shared AI gateway (API Management policy, per-identity token limits, chargeback metrics, Azure OpenAI behind a managed identity) is a one-time platform cost, typically another 5–10 days. So is operating it: a dashboard and alerts across every agent (2–4 days) and a pipeline that proves the whole stack in a real subscription and cleans up after itself (3–5 days). agentkit ships all three: `infra/platform/`, `infra/platform/ops/` and the `live-validation` workflow.
 
 For a new agent on agentkit, the equivalent line item is **generate the project: about a minute**. Your time then goes to the agent itself.
 
@@ -203,6 +205,12 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 38. **Passing `params` to httpx replaces the query string of a Graph `@odata.nextLink`.** The `$skiptoken` disappears and paging fetches page one forever. agentkit carries the link's query over as params, and a test checks the second request.
 39. **Numbering sources per tool call makes `[1]` mean two documents** when the agent searches twice in one answer. agentkit numbers per run, so citations stay unambiguous.
 40. **An eval that only checks the answer can't catch a permission leak:** the model may politely ignore a document it shouldn't have seen. `must_not_retrieve:` checks what the search returned.
+41. **Package names you install from a private feed may be free on public PyPI.** None of the `agentkit-*` names are registered there, so anyone could publish them, and a build that can see PyPI (`--extra-index-url`) may install the stranger's higher version: dependency confusion. [deploy.md](deploy.md#package-feeds-and-dependency-confusion) has the mitigations; the template's default git mode and live validation avoid it.
+42. **App-only callers through Easy Auth may have no principal name**, so a host that identifies users by name refuses every service-to-service call as anonymous. agentkit falls back to the object id Easy Auth always sends.
+43. **Deleting Azure OpenAI, Content Safety or API Management doesn't free the name.** They're soft-deleted for a retention period, and a re-run with the same names fails. Live validation purges them after teardown.
+44. **`ubuntu-latest` moves under you** (to Ubuntu 26 on 2026-10-19, announced only as a run notice). Pipelines that install system packages, such as Redis and Chromium, can break without a code change. agentkit pins `ubuntu-24.04` and treats the move as an upgrade step.
+45. **Dashboards and alerts drift from what they claim to show**, and a KQL typo fails silently until someone opens the panel. agentkit generates the workbook from one query file, CI rejects a stale workbook, and live validation runs every query against real telemetry.
+46. **A judge nobody has checked gates deploys on noise.** A lenient judge lets regressions through; a harsh one blocks good releases. `agentkit-gate --calibrate` measures agreement with human grades and counts false passes (the dangerous kind) separately.
 
 ---
 
@@ -210,7 +218,7 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 
 Being honest about scope saves you time too.
 
-- **The infrastructure hasn't been deployed to a real subscription by this repo's CI.** Every Bicep file compiles and lints clean, and names are contract-checked across platform and service (see [deploy.md](deploy.md#whats-validated-without-azure)). Run `what-if` in your subscription before first use.
+- **The live validation workflow hasn't been run yet.** It needs your subscription (about 20 minutes of one-time setup: [live-validation.md](live-validation.md)). Until it runs, every Bicep file compiles and lints clean and names are contract-checked across platform and service, but nothing has been deployed.
 - **Knowledge hasn't run against a real Azure AI Search service yet.** The query is tested against the real SDK over HTTP, and ingestion against a fake index. See [knowledge.md](knowledge.md#not-included-yet).
 - **The Teams channel hasn't run in a real Teams tenant yet.** It's tested offline with real Bot Framework activities through the M365 Agents SDK, a fake Bot Connector, and a headless browser for the web chat. See [channels.md](channels.md#not-included-yet) for what that leaves open, including Teams SSO for on-behalf-of tools and Microsoft 365 Copilot publishing.
 - **Python only.** A .NET track is planned.

@@ -15,6 +15,8 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 | [Knowledge](knowledge.md) | Answers from company documents: per-user trimming, citations in every channel, `acl.yaml`, ingestion, deploy, permission-aware evals |
 | [Sessions and approvals](sessions-and-approvals.md) | Cosmos/Redis sessions and cross-replica locking; human approval for high-impact tools (confirmation or separation of duties), audit, evals |
 | [Connectors](connectors.md) | OpenAPI → tools, managed identity and on-behalf-of auth, retries, response shaping, MCP, test fakes |
+| [Live validation](live-validation.md) | Deploy the platform and the sample to a throwaway environment in your subscription, run real checks and the live gate, tear down |
+| [Operations](operations.md) | The platform dashboard and alerts, the metrics every agent emits, judge calibration |
 | [Configuration](configuration.md) | Every `AGENTKIT_*` setting and the prod policy |
 | [Guardrails](guardrails.md) | Prompt Shields, indirect injection, PII, tool policy, token budgets, custom guardrails |
 | [Telemetry](telemetry.md) | Spans, attributes, metrics, destinations, KQL queries |

@@ -145,6 +145,20 @@ python <kit>/scripts/platform_env.py --resource-group rg-agentkit-dev --format g
 
 Scope `Contributor` to a pre-created resource group instead of the subscription if your policy requires it (then set the resource group name in `infra/main.bicep`). Use a `prod` GitHub environment with required reviewers for production.
 
+## Package feeds and dependency confusion
+
+In **feed** mode (`agentkit_source=feed`), services install `agentkit-*` from your package feed. None of those names exist on public PyPI, which also means **anyone can register them**. If a build can reach PyPI (pip's default, or `--extra-index-url`), pip may install whichever index offers the highest version, including a stranger's. Before using feed mode:
+
+- point pip at your feed **only** (`--index-url`, not `--extra-index-url`), in CI and in the Dockerfile. Pass credentials as a BuildKit secret, not a build arg, which ends up in the image history;
+- or register placeholder `agentkit-*` projects on PyPI under your organisation;
+- or use **git** mode (the template default), which installs the kit from a pinned tag of this repo.
+
+Live validation uses git mode (`scripts/pin_to_git.py`) so it tests exactly the commit under test.
+
+## Validated in Azure
+
+[live-validation.md](live-validation.md): a manual workflow that deploys the platform and the sample to a throwaway environment in your subscription (what-if first), runs real checks, the live gate and judge calibration, runs every dashboard and alert query, and tears everything down.
+
 ## What's validated without Azure
 
 `make test-infra` (also in CI) checks everything that can be checked offline:

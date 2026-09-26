@@ -26,6 +26,14 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.6 → 0.7 (live validation, operations)
+
+- The platform deploys an operations workbook and five alerts (`alertEmail` for email). Re-deploy the platform to get them.
+- `agentkit.agent.runs` gains a `blocked_reason` dimension; `agentkit.knowledge.searches` is new.
+- Callers without a principal name (app-only tokens through Easy Auth) are now identified by `x-ms-client-principal-id` instead of being refused. Set `AGENTKIT_USER_FALLBACK_HEADER=` (empty) to restore the old behaviour.
+- `agentkit-gate` gains `--calibrate`, `--skip`, `--skip-user-cases`, and reads `AGENTKIT_EVAL_USERS`.
+- CI and the reusable pipelines run on `ubuntu-24.04`.
+
 ### 0.5 → 0.6 (knowledge)
 
 - `copier update` asks `enable_knowledge` (default no). With it: `knowledge/` + `acl.yaml`, the knowledge tool in `tools.py`, citation rules in `system.md`, a test fixture in `conftest.py`, two eval cases, and Search, Document Intelligence and Blob in Bicep. `tools.py`, `system.md` and `conftest.py` are yours, so copier may ask you to merge: keep your lines and add the kit's.

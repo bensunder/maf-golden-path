@@ -185,6 +185,12 @@ Use `AGENTKIT_JUDGE_MODEL` to judge with a different deployment than the agent's
 
 `tests/test_app.py` drives the real FastAPI app with `TestClient` and a scripted model. Use it for anything about sessions, identity headers or response shape. It also runs a turn through the AG-UI endpoint when web chat is on.
 
+## Judge calibration and live runs
+
+- `agentkit-gate --calibrate evals/judge_calibration.yaml` scores the judge against answers a person graded: agreement, kappa, false passes. See [operations.md](operations.md#judge-calibration).
+- `AGENTKIT_EVAL_USERS` (JSON) maps the test users named in cases (`user:`) to real accounts for live runs; `--skip-user-cases` skips those cases where there are no test accounts.
+- `--skip <case id>` skips a case the environment can't serve (e.g. a downstream API that isn't there). A typo in the id is an error, not a silent no-op.
+
 ## Knowledge
 
 Eval cases can run as a user (`user:`) and check citations (`cites:`) and permissions (`must_not_retrieve:`, which checks what the *search returned*, not what the answer says). The generated `conftest.py` searches your real `knowledge/` folder offline through the real ingestion pipeline. See [knowledge.md](knowledge.md#testing).

@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-channels"
-version = "0.6.0"
+version = "0.7.0"
 description = "Channels for agentkit services: Microsoft Teams (with Adaptive Card approvals) and AG-UI web chat, on top of agentkit-hosting's conversation service."
 requires-python = ">=3.10"
 dependencies = [
-    "agentkit-hosting>=0.6,<0.7",
-    "agentkit-tools>=0.6,<0.7",
+    "agentkit-hosting>=0.7,<0.8",
+    "agentkit-tools>=0.7,<0.8",
     "ag-ui-protocol>=0.1.22,<0.2",
     "fastapi>=0.115",
     "pydantic-settings>=2.4",

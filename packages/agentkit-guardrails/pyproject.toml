@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-guardrails"
-version = "0.6.0"
+version = "0.7.0"
 description = "Guardrail middleware for Microsoft Agent Framework: Prompt Shields, tool-output injection scanning, PII redaction, tool policy and token budgets."
 requires-python = ">=3.10"
 dependencies = [

@@ -63,6 +63,7 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | Variable | Default | Meaning |
 |---|---|---|
 | `AGENTKIT_USER_HEADER` | `x-ms-client-principal-name` | Header carrying the authenticated caller (set by platform auth) |
+| `AGENTKIT_USER_FALLBACK_HEADER` | `x-ms-client-principal-id` | Used when the user header is absent. Easy Auth always sends the object id, while app-only tokens (another service, a pipeline) may carry no name. Empty = no fallback |
 | `AGENTKIT_TENANT_HEADER` | `x-agentkit-tenant` | Header carrying the tenant id |
 | `AGENTKIT_REQUIRE_USER` | `false` | Reject requests without the user header (`401`) |
 | `AGENTKIT_USER_TOKEN_HEADER` | `authorization` | Header with the caller's own bearer token. It's passed privately to on-behalf-of tools (`agentkit.tools.OnBehalfOfAuth`) and never logged. Set to empty to disable |

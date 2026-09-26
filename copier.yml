@@ -79,4 +79,4 @@ agentkit_repo:
 agentkit_ref:
   type: str
   help: Blessed kit version (git tag)
-  default: v0.6.0
+  default: v0.7.0

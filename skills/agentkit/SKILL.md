@@ -26,6 +26,7 @@ Run `copier copy gh:bensunder/maf-golden-path <dest>`, then `pip install -e ".[d
 1. Edit `src/<pkg>/instructions/system.md` (sections: Role, Objectives, Tool use, Boundaries, Style).
 2. Add or adjust a case in `evals/cases.yaml` with `input`, an offline `script`, and `expect` (`contains`, `not_contains`, `tools`, `forbidden_tools`, `blocked`).
 3. Run `pytest`. Offline evals must pass. Live check: `AGENTKIT_LIVE_EVALS=1 pytest tests/test_evals.py`.
+5. Changing the judge model (`AGENTKIT_JUDGE_MODEL`) or rubrics: run `agentkit-gate --calibrate evals/judge_calibration.yaml` first; don't gate deploys on a judge with false passes.
 4. For answer quality, add `rubric:` (one-sentence definition of a good answer) and `grounded: true` to the case, `tool_args:` to pin tool arguments, and `critical: true` for safety cases. The deploy gate (`agentkit-gate`) scores these live against `evals/baseline.json`; refresh the baseline with `--update-baseline` in the same PR when a change is intentional.
 
 ## Testing pattern

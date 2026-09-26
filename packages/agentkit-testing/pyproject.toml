@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-testing"
-version = "0.6.0"
+version = "0.7.0"
 description = "Offline test doubles, span capture and eval-case runner for Microsoft Agent Framework agents."
 requires-python = ">=3.10"
 dependencies = [

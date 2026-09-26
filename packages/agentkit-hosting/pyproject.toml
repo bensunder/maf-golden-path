@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-hosting"
-version = "0.6.0"
+version = "0.7.0"
 description = "Company defaults for hosting Microsoft Agent Framework agents: gateway-bound clients, Entra credentials, default middleware stack, sessions and a FastAPI app."
 requires-python = ">=3.10"
 dependencies = [
     "agent-framework-core>=1.19,<1.20",
     "agent-framework-openai>=1.14,<1.15",
-    "agentkit-telemetry>=0.6,<0.7",
-    "agentkit-guardrails>=0.6,<0.7",
+    "agentkit-telemetry>=0.7,<0.8",
+    "agentkit-guardrails>=0.7,<0.8",
     "azure-identity>=1.19",
     "aiohttp>=3.9",  # transport for azure.identity.aio / azure.cosmos.aio (not pulled in by azure-core)
     "fastapi>=0.115",
