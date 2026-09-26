@@ -259,3 +259,126 @@ def test_cli_offline_report_summary_and_baseline(tmp_path, monkeypatch):
     # passes when the bar is 50%, now also comparing against the written baseline
     assert main(["--cases", str(cases), "--factory", "demo_agent:create_agent", "--min-pass-rate", "0.5",
                  "--baseline", str(baseline), "--summary", str(summary)]) == 0
+
+
+# --- judge calibration and live-run helpers ------------------------------------------------------------
+
+
+def _calibration_file(tmp_path):
+    path = tmp_path / "labels.yaml"
+    path.write_text("""items:
+  - id: good
+    kind: rubric
+    rubric: Gives the tracking number.
+    query: Where is A1?
+    response: Shipped, tracking 1Z9.
+    human: pass
+  - id: invented
+    kind: grounded
+    query: When will A1 arrive?
+    context: 'lookup_order -> {"eta": "2026-09-26"}'
+    response: Tomorrow before 9am.
+    human: fail
+  - id: vague
+    kind: rubric
+    rubric: Gives the tracking number.
+    query: Where is A1?
+    response: It's on its way.
+    human: fail
+""")
+    return path
+
+
+class _ScriptedJudge:
+    """Returns fixed scores per response, and records what it was asked."""
+
+    def __init__(self, scores):
+        self.scores, self.asked = scores, []
+
+    async def score(self, name, rubric, *, query, response, context=None, threshold=4):
+        from agentkit.testing.judge import JudgeScore
+
+        self.asked.append((name, context))
+        return JudgeScore(name, self.scores[response], "scripted", threshold)
+
+
+async def test_calibration_measures_agreement_and_false_passes(tmp_path):
+    from agentkit.testing.calibration import load_calibration, run_calibration
+
+    items = load_calibration(_calibration_file(tmp_path))
+    agreeing = _ScriptedJudge({"Shipped, tracking 1Z9.": 5, "Tomorrow before 9am.": 2, "It's on its way.": 2})
+    report = await run_calibration(agreeing, items)
+    assert report.passed and report.agreement == 1.0 and report.kappa == 1.0
+    assert agreeing.asked[1] == ("grounded", 'lookup_order -> {"eta": "2026-09-26"}')
+
+    lenient = _ScriptedJudge({"Shipped, tracking 1Z9.": 5, "Tomorrow before 9am.": 5, "It's on its way.": 2})
+    report = await run_calibration(lenient, items, min_agreement=0.5)
+    assert report.false_passes == ["invented"] and not report.passed  # agreement ok, but a false pass
+    assert "⚠️ false pass" in report.to_markdown()
+
+
+def test_calibration_file_is_validated(tmp_path):
+    import pytest as _pytest
+
+    from agentkit.testing.calibration import load_calibration
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("items:\n  - {id: x, kind: rubric, query: q, response: r, human: maybe, rubric: z}\n")
+    with _pytest.raises(ValueError, match="human must be"):
+        load_calibration(bad)
+
+
+def test_calibrate_cli(tmp_path, monkeypatch):
+    import argparse
+
+    from agentkit.testing import gate
+
+    judge = _ScriptedJudge({"Shipped, tracking 1Z9.": 5, "Tomorrow before 9am.": 1, "It's on its way.": 3})
+    args = argparse.Namespace(calibrate=_calibration_file(tmp_path), judge_temperature="0", min_agreement=0.8,
+                              max_false_pass=0, summary=tmp_path / "summary.md", report=tmp_path / "r.json")
+    assert gate._calibrate(args, judge=judge) == 0
+    assert "Judge calibration: PASSED" in (tmp_path / "summary.md").read_text()
+
+
+async def test_eval_users_map_to_real_accounts(monkeypatch):
+    from agentkit.telemetry import get_run_context
+    from agentkit.testing.evals import _as_user
+
+    monkeypatch.setenv("AGENTKIT_EVAL_USERS", '{"sam@contoso.example": "eval-support@contoso.com"}')
+    with _as_user("sam@contoso.example", "c"):
+        assert get_run_context().user_id == "eval-support@contoso.com"
+    with _as_user("riley@contoso.example", "c"):
+        assert get_run_context().user_id == "riley@contoso.example"
+
+
+def test_skip_user_cases(tmp_path, capsys, monkeypatch):
+    from agentkit.testing import gate
+
+    (tmp_path / "plain_agent.py").write_text(
+        "from agent_framework import Agent\n\ndef create_agent(client):\n    return Agent(client)\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("plain_agent", None)
+
+    cases = tmp_path / "cases.yaml"
+    cases.write_text("cases:\n  - id: plain\n    input: hi\n    script: [{reply: hello}]\n"
+                     "  - id: as-user\n    input: hi\n    user: sam\n    script: [{reply: hello}]\n")
+    code = gate.main(["--cases", str(cases), "--factory", "plain_agent:create_agent", "--skip-user-cases",
+                      "--summary", str(tmp_path / "s.md")])
+    out = capsys.readouterr().out
+    assert code == 0 and "skipping 1 case(s) that run as a user: as-user" in out and "`as-user`" not in out
+
+
+def test_skip_named_cases_and_reject_typos(tmp_path, capsys, monkeypatch):
+    from agentkit.testing import gate
+
+    (tmp_path / "plain_agent2.py").write_text(
+        "from agent_framework import Agent\n\ndef create_agent(client):\n    return Agent(client)\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    cases = tmp_path / "cases.yaml"
+    cases.write_text("cases:\n  - id: a\n    input: hi\n    script: [{reply: hello}]\n"
+                     "  - id: needs-carrier\n    input: hi\n    script: [{reply: hello}]\n")
+    base = ["--cases", str(cases), "--factory", "plain_agent2:create_agent", "--summary", str(tmp_path / "s.md")]
+    assert gate.main([*base, "--skip", "needs-carrier"]) == 0
+    assert "skipping 1 case(s) by request: needs-carrier" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        gate.main([*base, "--skip", "needs-carier"])  # a typo must not silently skip nothing

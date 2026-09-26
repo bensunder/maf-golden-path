@@ -215,11 +215,37 @@ def _live_judge(temperature: str) -> Judge:
     return Judge(create_chat_client(settings, agent_name="eval-judge"), model_options=options)
 
 
+def _calibrate(args: argparse.Namespace, judge: Judge | None = None) -> int:
+    from .calibration import load_calibration, run_calibration
+
+    items = load_calibration(args.calibrate)
+    judge = judge or _live_judge(args.judge_temperature)
+    report = asyncio.run(run_calibration(judge, items, min_agreement=args.min_agreement,
+                                         max_false_pass=args.max_false_pass))
+    markdown = report.to_markdown()
+    print(markdown)
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as fh:
+            fh.write(markdown)
+    if args.report:
+        args.report.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    return 0 if report.passed else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m agentkit.testing.gate", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--cases", required=True, type=Path)
-    parser.add_argument("--factory", required=True, help="module:create_agent")
+    parser.add_argument("--cases", type=Path)
+    parser.add_argument("--factory", help="module:create_agent")
+    parser.add_argument("--skip-user-cases", action="store_true",
+                        help="skip cases that run as a user (live runs without real test accounts in AGENTKIT_EVAL_USERS)")
+    parser.add_argument("--skip", action="append", default=[], metavar="CASE_ID",
+                        help="skip a case by id (e.g. one that needs a system the environment doesn't have); repeatable")
+    parser.add_argument("--calibrate", type=Path, metavar="LABELS.yaml",
+                        help="instead of running cases: score the judge against human-graded answers")
+    parser.add_argument("--min-agreement", type=float, default=0.8, help="calibration: minimum judge/human agreement")
+    parser.add_argument("--max-false-pass", type=int, default=0,
+                        help="calibration: answers the judge may pass that a human failed")
     parser.add_argument("--live", action="store_true", help="use the real model (gateway settings from env)")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--no-judge", action="store_true", help="skip rubric/grounded checks even when live")
@@ -232,8 +258,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--summary", type=Path, default=os.getenv("GITHUB_STEP_SUMMARY") or None)
     args = parser.parse_args(argv)
+    if args.calibrate:
+        return _calibrate(args)
+    if not args.cases or not args.factory:
+        parser.error("--cases and --factory are required (or use --calibrate)")
 
     cases = load_eval_cases(args.cases)
+    unknown = set(args.skip) - {c.id for c in cases}
+    if unknown:
+        parser.error(f"--skip: no such case(s): {sorted(unknown)}")
+    if args.skip:
+        cases = [c for c in cases if c.id not in set(args.skip)]
+        print(f"skipping {len(args.skip)} case(s) by request: {', '.join(args.skip)}")
+    if args.skip_user_cases:
+        skipped = [c.id for c in cases if c.user]
+        cases = [c for c in cases if not c.user]
+        if skipped:
+            print(f"skipping {len(skipped)} case(s) that run as a user: {', '.join(skipped)}")
     factory = _load_factory(args.factory, args.live)
     judge = _live_judge(args.judge_temperature) if args.live and not args.no_judge else None
     baseline = None

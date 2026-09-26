@@ -198,9 +198,26 @@ def _retrieved(calls: list[RecordedToolCall]) -> dict[int, str]:
     return found
 
 
+def _real_user(user: str) -> str:
+    """``AGENTKIT_EVAL_USERS`` (a JSON object) maps the test users named in cases to real accounts for live
+    runs, e.g. ``{"sam@contoso.example": "eval-support@contoso.com"}``. Unmapped users run as written."""
+    import json
+    import os
+
+    raw = os.getenv("AGENTKIT_EVAL_USERS")
+    if not raw:
+        return user
+    try:
+        mapping = json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError("AGENTKIT_EVAL_USERS must be a JSON object") from exc
+    return str(mapping.get(user, user))
+
+
 def _as_user(user: str | None, case_id: str):
     if user is None:
         return contextlib.nullcontext()
+    user = _real_user(user)
     try:
         from agentkit.telemetry import run_context
     except ImportError as exc:  # pragma: no cover
