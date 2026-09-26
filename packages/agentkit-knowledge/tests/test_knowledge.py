@@ -186,3 +186,24 @@ def test_poisoned_document_is_withheld_by_the_tool_output_shield():
         http.post("/v1/chat", json={"message": "refund faq?"}, headers={"x-ms-client-principal-name": "sam"})
     shown = list(client.tool_results().values())[0]
     assert "Ignore all previous instructions" not in shown
+
+
+async def test_search_outcomes_are_counted():
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+    import agentkit.knowledge.tool as tool_module
+
+    reader = InMemoryMetricReader()
+    tool_module._searches = MeterProvider(metric_readers=[reader]).get_meter("t").create_counter("agentkit.knowledge.searches")
+    tool = knowledge_tool(kb())
+    with run_context(user_id="sam", request_id="m1"):
+        await tool.invoke(arguments={"query": "refund approval"})
+        await tool.invoke(arguments={"query": "zzz nothing"})
+    await tool.invoke(arguments={"query": "refund"})  # no user: fails closed
+    counts = {}
+    for rm in reader.get_metrics_data().resource_metrics:
+        for sm in rm.scope_metrics:
+            for point in sm.metrics[0].data.data_points:
+                counts[point.attributes["outcome"]] = point.value
+    assert counts == {"results": 1, "empty": 1, "unavailable": 1}

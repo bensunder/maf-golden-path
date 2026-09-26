@@ -98,7 +98,7 @@ def test_setup_and_run_metrics_in_clean_process():
         class Refuse(AgentMiddleware):
             async def process(self, ctx, nxt):
                 ctx.result = AgentResponse(messages=[Message(role="assistant", contents=["no"])],
-                                           additional_properties={"agentkit.blocked": "test"})
+                                           additional_properties={"agentkit.blocked": "test:detail"})
 
         async def main():
             ok = Agent(ScriptedChatClient(script=[reply("fine")]), name="m", middleware=[AgentRunMetricsMiddleware()])
@@ -132,6 +132,8 @@ def test_setup_and_run_metrics_in_clean_process():
                     if m.name == "agentkit.agent.runs":
                         for p in m.data.data_points:
                             key = p.attributes["outcome"]
+                            if key == "blocked":
+                                assert p.attributes["blocked_reason"] == "test", dict(p.attributes)
                             outcomes[key] = outcomes.get(key, 0) + p.value
         assert outcomes == {"ok": 2, "blocked": 1}, outcomes
         print("OK")

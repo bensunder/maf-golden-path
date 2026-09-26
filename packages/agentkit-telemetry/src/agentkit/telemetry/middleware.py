@@ -17,12 +17,15 @@ _runs = _meter.create_counter("agentkit.agent.runs", unit="{run}", description="
 _duration = _meter.create_histogram("agentkit.agent.run.duration", unit="s", description="End-to-end agent run time")
 
 
-def _outcome(result: AgentResponse | None) -> str:
+def _outcome(result: AgentResponse | None) -> tuple[str, str | None]:
+    """(outcome, blocked reason). The reason is the guardrail's code without its detail
+    (``prompt_injection:prompt_shields`` → ``prompt_injection``) so the dimension stays low-cardinality."""
     if result is None:
-        return "error"
-    if (result.additional_properties or {}).get(BLOCKED_KEY):
-        return "blocked"
-    return "ok"
+        return "error", None
+    blocked = (result.additional_properties or {}).get(BLOCKED_KEY)
+    if blocked:
+        return "blocked", str(blocked).split(":", 1)[0][:40]
+    return "ok", None
 
 
 class AgentRunMetricsMiddleware(AgentMiddleware):
@@ -38,8 +41,10 @@ class AgentRunMetricsMiddleware(AgentMiddleware):
         name = self._agent_name or getattr(context.agent, "name", None) or "agent"
         started = time.perf_counter()
 
-        def record(outcome: str) -> None:
-            attrs = {"gen_ai.agent.name": name, "outcome": outcome, "stream": context.stream}
+        def record(outcome: tuple[str, str | None]) -> None:
+            attrs = {"gen_ai.agent.name": name, "outcome": outcome[0], "stream": context.stream}
+            if outcome[1]:
+                attrs["blocked_reason"] = outcome[1]
             _runs.add(1, attrs)
             _duration.record(time.perf_counter() - started, attrs)
 
@@ -54,7 +59,7 @@ class AgentRunMetricsMiddleware(AgentMiddleware):
         try:
             await call_next()
         except Exception:
-            record("error")
+            record(("error", None))
             raise
 
         if not isinstance(context.result, ResponseStream):
