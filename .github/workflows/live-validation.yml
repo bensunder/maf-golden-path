@@ -1,0 +1,181 @@
+# Live validation: deploy the platform and the sample to a throwaway environment in YOUR subscription,
+# run real checks, then delete everything. Manual only. One-time setup: docs/live-validation.md.
+#
+# What it proves that offline CI can't: the Bicep deploys (what-if first), models answer through the real
+# AI gateway with managed identity, Prompt Shields refuses injection, sessions/approvals work in Container
+# Apps + Cosmos DB, the knowledge index is created and synced, the live quality gate and judge calibration
+# run against real models, and every dashboard and alert query runs against real telemetry.
+name: live-validation
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: Azure region with gpt-4.1-mini (GlobalStandard) and text-embedding-3-small capacity
+        type: string
+        default: eastus2
+      keep:
+        description: Keep the environment afterwards (you delete rg-agentkit-live-<run id> and the azd env yourself)
+        type: boolean
+        default: false
+      run-gate:
+        description: Run the sample's quality gate and judge calibration against the real models
+        type: boolean
+        default: true
+
+concurrency:
+  group: live-validation
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to 26 on 2026-10-19; upgrade deliberately
+    environment: live
+    timeout-minutes: 180
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: ${{ inputs.location }}
+      LIVE_AUTH_CLIENT_ID: ${{ vars.LIVE_AUTH_CLIENT_ID }}
+      LIVE_AUTH_RESOURCE: ${{ vars.LIVE_AUTH_RESOURCE }}
+      LIVE_ALERT_EMAIL: ${{ vars.LIVE_ALERT_EMAIL }}
+      AGENTKIT_EVAL_USERS: ${{ vars.LIVE_EVAL_USERS }}
+      PREFIX: akl${{ github.run_number }}
+      PLATFORM_RG: rg-agentkit-live-${{ github.run_id }}
+      AZURE_ENV_NAME: aklive-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in (OIDC, no secrets)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: azd login
+        run: >
+          azd auth login
+          --client-id "$AZURE_CLIENT_ID"
+          --federated-credential-provider github
+          --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Preflight
+        run: |
+          if [ -z "$LIVE_AUTH_CLIENT_ID" ]; then
+            echo "::error::Set the LIVE_AUTH_CLIENT_ID variable on the 'live' environment (docs/live-validation.md)"
+            exit 1
+          fi
+          make install PY=python
+          make tools
+
+      - name: Platform what-if
+        run: |
+          az group create --name "$PLATFORM_RG" --location "$AZURE_LOCATION" --tags agentkit-live=true "run=$GITHUB_RUN_ID" --output none
+          az deployment group what-if --resource-group "$PLATFORM_RG" --template-file infra/platform/main.bicep \
+            --parameters infra/platform/main.parameters.json \
+            --parameters namePrefix="$PREFIX" apimPublisherEmail=live-validation@example.com alertEmail="$LIVE_ALERT_EMAIL" \
+            | tee what-if-platform.txt
+
+      - name: Platform deploy
+        run: |
+          az deployment group create --name main --resource-group "$PLATFORM_RG" --template-file infra/platform/main.bicep \
+            --parameters infra/platform/main.parameters.json \
+            --parameters namePrefix="$PREFIX" apimPublisherEmail=live-validation@example.com alertEmail="$LIVE_ALERT_EMAIL" \
+            --output none
+          python scripts/platform_env.py --resource-group "$PLATFORM_RG" > platform-env.sh
+          workspace=$(az deployment group show --resource-group "$PLATFORM_RG" --name main \
+            --query properties.outputs.AGENTKIT_LOG_ANALYTICS_WORKSPACE_ID.value --output tsv)
+          echo "WORKSPACE_ID=$workspace" >> "$GITHUB_ENV"
+
+      - name: Sample what-if and deploy (kit pinned to this commit)
+        working-directory: examples/order-status-agent
+        run: |
+          python ../../scripts/pin_to_git.py . --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_SHA"
+          azd env new "$AZURE_ENV_NAME" --no-prompt --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION"
+          sh ../../platform-env.sh
+          azd env set AGENTKIT_AUTH_CLIENT_ID "$LIVE_AUTH_CLIENT_ID"
+          azd env set AGENTKIT_ENVIRONMENT dev
+          azd provision --preview --no-prompt | tee ../../what-if-service.txt
+          azd up --no-prompt
+          azd env get-values > ../../.azd.env
+          # service URL, knowledge endpoints and platform values for the next steps
+          grep -E '^(SERVICE_API_URI|AGENTKIT_[A-Z_]+)=' ../../.azd.env | grep -v '^AGENTKIT_ENVIRONMENT=' | tr -d '"' >> "$GITHUB_ENV"
+
+      - name: Sync knowledge
+        working-directory: examples/order-status-agent
+        env:
+          AGENTKIT_ENVIRONMENT: test
+          AGENTKIT_AUTH_MODE: azure_cli
+        run: |
+          pip install -q -e .
+          agentkit-ingest --source knowledge
+
+      - name: Live checks
+        run: |
+          resource="${LIVE_AUTH_RESOURCE:-api://$LIVE_AUTH_CLIENT_ID}"
+          python scripts/live_check.py --url "$SERVICE_API_URI" --token-resource "$resource" --knowledge \
+            --report live-check.json
+
+      - name: Quality gate and judge calibration (live)
+        if: ${{ inputs.run-gate }}
+        working-directory: examples/order-status-agent
+        env:
+          AGENTKIT_ENVIRONMENT: test
+          AGENTKIT_AUTH_MODE: azure_cli
+          AGENTKIT_GUARDRAIL_MODE: heuristic
+        run: |
+          skip=(--skip live-tracking-via-carrier-api)  # the sample's carrier API is a placeholder host
+          if [ -z "$AGENTKIT_EVAL_USERS" ]; then skip+=(--skip-user-cases); fi
+          agentkit-gate --cases evals/cases.yaml --factory order_status_agent:create_agent --live --repeat 2 \
+            --min-pass-rate 0.8 "${skip[@]}" --report ../../gate.json
+          agentkit-gate --calibrate evals/judge_calibration.yaml --report ../../calibration.json
+
+      - name: Dashboard and alert queries against real telemetry
+        if: ${{ always() && env.WORKSPACE_ID != '' && env.SERVICE_API_URI != '' }}
+        run: |
+          resource="${LIVE_AUTH_RESOURCE:-api://$LIVE_AUTH_CLIENT_ID}"
+          python scripts/live_check.py --url "$SERVICE_API_URI" --token-resource "$resource" --skip-http \
+            --workspace-id "$WORKSPACE_ID" --expect-telemetry --wait 900 --report telemetry-check.json
+
+      - name: Upload results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-validation-${{ github.run_id }}
+          path: |
+            what-if-platform.txt
+            what-if-service.txt
+            live-check.json
+            gate.json
+            calibration.json
+            telemetry-check.json
+          if-no-files-found: ignore
+
+      - name: Tear down (and purge soft-deleted resources)
+        if: ${{ always() && !inputs.keep }}
+        run: |
+          if [ -f examples/order-status-agent/.azure/"$AZURE_ENV_NAME"/.env ]; then
+            (cd examples/order-status-agent && azd down --force --purge --no-prompt) || echo "::warning::azd down failed"
+          fi
+          az group delete --name "$PLATFORM_RG" --yes || echo "::warning::platform group delete failed"
+          az cognitiveservices account list-deleted --query "[?contains(name, '$PREFIX')].[name, location, id]" --output tsv |
+            while read -r name location id; do
+              group=$(echo "$id" | sed -E 's#.*/resourceGroups/([^/]+)/.*#\1#')
+              az cognitiveservices account purge --name "$name" --resource-group "$group" --location "$location" || true
+            done
+          az apim deletedservice list --query "[?contains(name, '$PREFIX')].[name, location]" --output tsv |
+            while read -r name location; do
+              az apim deletedservice purge --service-name "$name" --location "$location" || true
+            done

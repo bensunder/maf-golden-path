@@ -268,6 +268,13 @@ def main() -> int:
         if gate.returncode != 0:
             print(gate.stdout[-2000:], gate.stderr[-2000:])
 
+        # The live-check script (what live validation runs against Azure), here in local mode.
+        live = subprocess.run([sys.executable, str(ROOT / "scripts" / "live_check.py"), "--url", base,
+                               "--user", "smoke-user", "--knowledge"], capture_output=True, text=True, timeout=180)
+        checks.append(("live_check.py passes against the local stack", live.returncode == 0))
+        if live.returncode != 0:
+            print(live.stdout[-2000:], live.stderr[-2000:])
+
         for name, ok in checks:
             print(("PASS " if ok else "FAIL ") + name)
         return 0 if all(ok for _, ok in checks) else 1

@@ -41,7 +41,7 @@ RESULTS_DIR ?= $(CURDIR)/.results
 
 test-packages:
 	mkdir -p $(RESULTS_DIR)
-	$(PY) -m pytest packages -q --junitxml=$(RESULTS_DIR)/packages.xml
+	$(PY) -m pytest packages scripts/tests -q --junitxml=$(RESULTS_DIR)/packages.xml
 
 test-example:
 	mkdir -p $(RESULTS_DIR)
