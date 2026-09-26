@@ -6,6 +6,12 @@ Every agent service with web chat also serves an operations console at **`/conso
 https://<your-service>/console          # behind the same Entra sign-in as /chat
 ```
 
+![The console's overview page, running the sample agent locally](images/console-overview.png)
+
+![The playground: a tool trace and a refund waiting for approval](images/console-playground.png)
+
+*The sample agent running locally against the kit's fake model gateway, which is why the replies are raw echoes. Everything on screen comes from the running service.*
+
 ## Principles
 
 - **Only real data.** Every number and status comes from the running service. A value the service can't know is shown as unavailable, with a pointer to where it lives, never as a sample.
