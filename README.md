@@ -62,6 +62,34 @@ cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model
 | `scripts/e2e_smoke.py` | Boots the sample and a fake gateway with uvicorn and checks the whole HTTP path |
 | `scripts/check_infra.py`, `platform_env.py` | Offline infra validation (Bicep, azd schema, actionlint, platform↔service contract); platform outputs → `azd env` / GitHub variables |
 
+🔐 Enterprise controls are part of the path
+Identity & Access
+Entra-aware authentication
+Managed identity in production
+Secretless enterprise API access
+User/session ownership checks
+Permission-aware document retrieval
+Security
+Prompt Shields with fail-closed behavior
+Indirect prompt-injection protection on tool output
+PII redaction before model calls and stored history
+Tool allow/deny policies
+Argument validation
+Per-session token budgets
+Human Control
+Approval-required tools
+Confirmation or separation of duties
+Entra app-role based approvers
+Approval audit trail
+Approval support across API, Teams and AG-UI
+Reliability & Operations
+Durable session abstractions
+Cross-replica locking
+OpenTelemetry
+Production probes
+Spend / error / security / approval / knowledge alerts
+Quality gates before deployment
+
 ## What a team writes vs. what it gets
 
 In the sample, the team-authored code is `tools.py` (3 tools + a refund policy), a 25-line `connectors.py` (live carrier API from its OpenAPI spec), approval rules for large refunds, `instructions/system.md` and `evals/cases.yaml`. Everything below is inherited:
