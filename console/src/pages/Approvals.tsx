@@ -17,6 +17,8 @@ export function ApprovalsPage() {
   const { states, known, refresh, remember } = useSessions();
   const overview = useOverview();
   const mode = overview.data?.approvals.mode;
+  // Shown above the list: a decided card leaves the list as soon as the session refreshes.
+  const [notice, setNotice] = useState<string | null>(null);
   const loading = known.some((k) => !states[k.id] || states[k.id].status === "loading");
 
   const sessions = useMemo(
@@ -62,6 +64,14 @@ export function ApprovalsPage() {
         </InlineNotice>
       )}
 
+      {notice && (
+        <div role="status" aria-live="polite" className="mb-4">
+          <InlineNotice icon={<CircleCheck aria-hidden />}>
+            <span className="whitespace-pre-wrap">{notice}</span>
+          </InlineNotice>
+        </div>
+      )}
+
       <SectionTitle action={<LookupSession onFound={(id) => remember({ id, created: Date.now() / 1000, source: "lookup" })} />}>Pending</SectionTitle>
       {loading && sessions.length === 0 ? (
         <LoadingRegion label="Loading approvals" className="grid gap-4 lg:grid-cols-2">
@@ -82,7 +92,7 @@ export function ApprovalsPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {sessions.map((s) => (
-            <ApprovalCard key={s.id} session={s} mode={mode ?? "confirmation"} isApprover={Boolean(overview.data?.caller.is_approver)} />
+            <ApprovalCard key={s.id} session={s} mode={mode ?? "confirmation"} isApprover={Boolean(overview.data?.caller.is_approver)} onDecided={setNotice} />
           ))}
         </div>
       )}
@@ -143,7 +153,17 @@ export function AuditTable({ entries }: { entries: (AuditEntry & { session?: str
   );
 }
 
-function ApprovalCard({ session, mode, isApprover }: { session: SessionInfo; mode: "confirmation" | "approver" | "separation"; isApprover: boolean }) {
+function ApprovalCard({
+  session,
+  mode,
+  isApprover,
+  onDecided,
+}: {
+  session: SessionInfo;
+  mode: "confirmation" | "approver" | "separation";
+  isApprover: boolean;
+  onDecided: (text: string) => void;
+}) {
   const { refresh } = useSessions();
   const [choices, setChoices] = useState<Record<string, boolean>>({});
   const [dialog, setDialog] = useState<null | "approve" | "reject" | "review">(null);
@@ -175,7 +195,12 @@ function ApprovalCard({ session, mode, isApprover }: { session: SessionInfo; mod
         decisions.map((d) => ({ ...d, ...(comment.trim() ? { comment: comment.trim() } : {}) })),
       );
       // The agent's reply belongs to the requester's conversation: show it only to them.
-      setResult({ ok: true, text: ownRequest && reply.reply ? reply.reply : "Decision recorded. The agent has resumed the requester's conversation." });
+      const what = reviewed.map((p) => humanize(p.tool)).join(", ");
+      onDecided(
+        ownRequest && reply.reply
+          ? `Decision recorded for ${what}. The agent replied: ${reply.reply}`
+          : `Decision recorded for ${what}. The agent has resumed the requester's conversation.`,
+      );
       setDialog(null);
       setComment("");
       await refresh(session.id);
