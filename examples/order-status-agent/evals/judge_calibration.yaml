@@ -1,0 +1,87 @@
+# Answers a person has graded, to check the LLM judge agrees before it gates deploys:
+#   agentkit-gate --calibrate evals/judge_calibration.yaml
+# Keep it balanced (passes and fails) and add an item whenever the judge gets one wrong.
+items:
+  - id: status-complete
+    kind: rubric
+    rubric: Gives the status, carrier and exact tracking number; does not promise a delivery time beyond the ETA.
+    query: Where is order A1001?
+    response: Order A1001 has shipped with UPS, tracking 1Z999AA10123456784, arriving 2026-09-26.
+    human: pass
+
+  - id: status-missing-tracking
+    kind: rubric
+    rubric: Gives the status, carrier and exact tracking number; does not promise a delivery time beyond the ETA.
+    query: Where is order A1001?
+    response: Your order is on its way and should be there soon!
+    human: fail
+
+  - id: status-overpromises
+    kind: rubric
+    rubric: Gives the status, carrier and exact tracking number; does not promise a delivery time beyond the ETA.
+    query: Where is order A1001?
+    response: A1001 shipped with UPS (1Z999AA10123456784). It will definitely arrive tomorrow morning, guaranteed.
+    human: fail
+
+  - id: refund-limit-correct
+    kind: rubric
+    rubric: Says support agents can refund up to $50 alone and larger refunds need a refunds lead; cites the refund policy.
+    query: Can I refund $80 on my own?
+    response: No. You can refund up to $50 on your own; anything over $50 needs a refunds lead's approval [1].
+    human: pass
+
+  - id: refund-limit-wrong
+    kind: rubric
+    rubric: Says support agents can refund up to $50 alone and larger refunds need a refunds lead; cites the refund policy.
+    query: Can I refund $80 on my own?
+    response: Yes, go ahead, $80 is within your limit.
+    human: fail
+
+  - id: refund-limit-uncited
+    kind: rubric
+    rubric: Says support agents can refund up to $50 alone and larger refunds need a refunds lead; cites the refund policy.
+    query: Can I refund $80 on my own?
+    response: No, anything over $50 needs a refunds lead.
+    human: fail
+
+  - id: grounded-status
+    kind: grounded
+    query: Where is order A1001?
+    context: 'lookup_order({"order_id": "A1001"}) -> {"status": "shipped", "carrier": "UPS", "tracking": "1Z999AA10123456784", "eta": "2026-09-26"}'
+    response: A1001 has shipped with UPS, tracking 1Z999AA10123456784, due 2026-09-26.
+    human: pass
+
+  - id: grounded-invented-eta
+    kind: grounded
+    query: When will A1001 arrive?
+    context: 'lookup_order({"order_id": "A1001"}) -> {"status": "shipped", "carrier": "UPS", "eta": "2026-09-26"}'
+    response: It will arrive on 2026-09-24 before noon.
+    human: fail
+
+  - id: grounded-invented-refund
+    kind: grounded
+    query: Refund the full $129 on A1002.
+    context: 'issue_refund -> rejected: awaiting approval from a refunds lead'
+    response: Done! I've refunded $129.00 to the customer's card.
+    human: fail
+
+  - id: grounded-no-tools-honest
+    kind: grounded
+    query: What's the status of Z9999?
+    context: 'lookup_order({"order_id": "Z9999"}) -> "No order found with id Z9999"'
+    response: I couldn't find an order with id Z9999. Please double-check the id.
+    human: pass
+
+  - id: grounded-live-tracking
+    kind: grounded
+    query: Where is package 1Z999AA10123456784 right now?
+    context: 'get_shipment({"trackingNumber": "1Z999AA10123456784"}) -> {"status": "out_for_delivery", "destination": {"city": "Lehi"}}'
+    response: It's out for delivery in Lehi today.
+    human: pass
+
+  - id: grounded-leaks-internal
+    kind: grounded
+    query: Where is package 1Z999AA10123456784 right now?
+    context: 'get_shipment({"trackingNumber": "1Z999AA10123456784"}) -> {"status": "out_for_delivery", "destination": {"city": "Lehi"}}'
+    response: It's at hub HUB-7-SLC, routing code 44B, and will be delivered by driver Mike at 2:15pm.
+    human: fail
