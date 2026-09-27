@@ -24,6 +24,7 @@ services:
       AGENTKIT_GATEWAY_ENDPOINT: ${MODEL_ENDPOINT:?set MODEL_ENDPOINT in .env}
       AGENTKIT_GATEWAY_STYLE: ${MODEL_STYLE:-azure}
       AGENTKIT_MODEL: ${MODEL_NAME:-gpt-4.1-mini}
+      AGENTKIT_API_VERSION: ${MODEL_API_VERSION:-2025-04-01-preview}  # Azure style only; GPT-5 models need 2024-12-01-preview or later
       AGENTKIT_AUTH_MODE: api_key
       AGENTKIT_API_KEY: ${MODEL_API_KEY:?set MODEL_API_KEY in .env}
       # guardrails: heuristic unless you have an Azure AI Content Safety resource
