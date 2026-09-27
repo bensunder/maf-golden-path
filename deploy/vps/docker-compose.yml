@@ -1,0 +1,80 @@
+# The sample agent, its web chat and console, on one VPS:
+#
+#   Caddy (yours, TLS) ──► oauth2-proxy :4180 (Entra sign-in) ──► agent :8000 ──► Redis (sessions)
+#                                                                     └──► your model (Azure OpenAI or OpenAI)
+#
+# The agent is NOT published on the host: everything goes through oauth2-proxy, which signs people in with
+# your Entra tenant and passes their identity in X-Forwarded-Email. Setup: docs/vps.md.
+#
+#   cp .env.example .env && nano .env && docker compose up -d --build
+name: agentkit
+
+services:
+  agent:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENTKIT_ENVIRONMENT: dev  # prod requires Azure (managed identity, Prompt Shields, the AI gateway)
+      AGENTKIT_SERVICE_NAME: order-status-agent
+      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.9.1}
+      AGENTKIT_TEAM: ${TEAM:-commerce}
+      # the model
+      AGENTKIT_GATEWAY_ENDPOINT: ${MODEL_ENDPOINT:?set MODEL_ENDPOINT in .env}
+      AGENTKIT_GATEWAY_STYLE: ${MODEL_STYLE:-azure}
+      AGENTKIT_MODEL: ${MODEL_NAME:-gpt-4.1-mini}
+      AGENTKIT_AUTH_MODE: api_key
+      AGENTKIT_API_KEY: ${MODEL_API_KEY:?set MODEL_API_KEY in .env}
+      # guardrails: heuristic unless you have an Azure AI Content Safety resource
+      AGENTKIT_GUARDRAIL_MODE: ${GUARDRAIL_MODE:-heuristic}
+      AGENTKIT_CONTENT_SAFETY_ENDPOINT: ${CONTENT_SAFETY_ENDPOINT:-}
+      AGENTKIT_CONTENT_SAFETY_KEY: ${CONTENT_SAFETY_KEY:-}
+      # identity: only what oauth2-proxy sets. The Easy Auth headers must not count here, because nothing
+      # strips them: a caller could send them through the proxy.
+      AGENTKIT_REQUIRE_USER: "true"
+      AGENTKIT_USER_HEADER: x-forwarded-email
+      AGENTKIT_USER_FALLBACK_HEADER: ""
+      AGENTKIT_PRINCIPAL_CLAIMS_HEADER: x-agentkit-disabled-claims
+      AGENTKIT_USER_TOKEN_HEADER: ""
+      AGENTKIT_APPROVER_ROLE: ""  # roles need Easy Auth; on a VPS the requester confirms (docs/vps.md)
+      # sessions survive restarts
+      AGENTKIT_SESSION_STORE: redis
+      AGENTKIT_REDIS_URL: redis://redis:6379/0
+      # optional: send traces to Application Insights (the console's live charts still need Azure, see docs)
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+    depends_on: [redis]
+    expose: ["8000"]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis-data:/data"]
+
+  auth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+    restart: unless-stopped
+    depends_on: [agent]
+    ports: ["127.0.0.1:${PROXY_PORT:-4180}:4180"]  # Caddy on the same host reaches it; the internet doesn't
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://login.microsoftonline.com/${ENTRA_TENANT_ID:?set ENTRA_TENANT_ID}/v2.0
+      OAUTH2_PROXY_CLIENT_ID: ${ENTRA_CLIENT_ID:?set ENTRA_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:?set ENTRA_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${COOKIE_SECRET:?set COOKIE_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: https://${AGENT_HOST:?set AGENT_HOST}/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://agent:8000
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-*}  # the tenant already limits who can sign in
+      # Entra puts the sign-in name in preferred_username; not every account has a verified email claim
+      OAUTH2_PROXY_OIDC_EMAIL_CLAIM: preferred_username
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"  # X-Forwarded-Email / X-Forwarded-User (client values are replaced)
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_SCOPE: openid email profile
+
+volumes:
+  redis-data:

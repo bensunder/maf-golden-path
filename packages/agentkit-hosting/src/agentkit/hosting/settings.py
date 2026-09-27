@@ -23,9 +23,11 @@ class AgentKitSettings(BaseSettings):
     gateway_endpoint: str | None = Field(
         default=None, description="AI gateway base URL, e.g. https://apim-ai.contoso.com"
     )
-    gateway_style: Literal["azure", "openai_v1"] = Field(
+    gateway_style: Literal["azure", "openai_v1", "openai"] = Field(
         default="azure",
-        description="'azure' = /openai/deployments/{model}/... ; 'openai_v1' = OpenAI-compatible /openai/v1",
+        description="'azure' = /openai/deployments/{model}/... ; 'openai_v1' = <endpoint>/openai/v1 (APIM, Azure "
+                    "OpenAI v1); 'openai' = the endpoint is the OpenAI-compatible base URL itself, e.g. "
+                    "https://api.openai.com/v1 or a LiteLLM proxy (for running outside Azure)",
     )
     model: str = "gpt-4.1-mini"
     api_version: str = "2024-10-21"

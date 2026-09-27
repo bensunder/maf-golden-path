@@ -26,6 +26,11 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.9.0 → 0.9.1 (run it on a VPS)
+
+- New: `deploy/vps/` and [vps.md](vps.md). Docker Compose runs the sample agent, web chat and console on any Linux server, with Entra sign-in through oauth2-proxy and Redis sessions. Nothing changes for services on Azure.
+- `AGENTKIT_GATEWAY_STYLE` accepts `openai`: the endpoint is used as the OpenAI-compatible base URL itself (OpenAI, or a proxy such as LiteLLM). Backwards compatible.
+
 ### 0.8 → 0.9 (fleet view, live charts)
 
 - **Live charts** on the console's Telemetry page: requests, errors, latency, tokens, tool calls and recent traces, queried from Azure Monitor with the service's own identity. `copier update` adds `readTelemetry: true` to `platformAccess` (Monitoring Reader on the platform's Application Insights) and `AGENTKIT_CONSOLE_LOGS_RESOURCE` to the Container App. Re-deploy the platform too: its Log Analytics workspace now sets `enableLogAccessUsingOnlyResourcePermissions`, which resource-level reads rely on.

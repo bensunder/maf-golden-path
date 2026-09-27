@@ -140,6 +140,20 @@ async def test_gateway_openai_v1_style_url():
     assert requests[0].headers["Authorization"] == "Bearer k"
 
 
+async def test_gateway_plain_openai_style_uses_the_base_url_as_given():
+    """Outside Azure (a VPS): OpenAI itself, or an OpenAI-compatible proxy such as LiteLLM."""
+    requests: list[httpx.Request] = []
+    settings = AgentKitSettings(**LOCAL, gateway_endpoint="https://api.openai.com/v1/", gateway_style="openai",
+                                auth_mode="api_key", api_key="sk-test", model="gpt-4.1-mini")
+    client = create_chat_client(settings, agent_name="a",
+                                http_client=httpx.AsyncClient(transport=httpx.MockTransport(_fake_gateway(requests))))
+    agent = build_agent(name="a", instructions="x", tools=[lookup_order], settings=settings, client=client)
+    await agent.run("where is A1?")
+    assert str(requests[0].url) == "https://api.openai.com/v1/chat/completions"
+    assert requests[0].headers["Authorization"] == "Bearer sk-test"
+    assert json.loads(requests[0].content)["model"] == "gpt-4.1-mini"
+
+
 async def test_function_call_cap_from_settings():
     """max_function_calls flows into MAF's FunctionInvocationConfiguration."""
     settings = AgentKitSettings(**LOCAL, gateway_endpoint="https://apim.contoso.com", auth_mode="api_key", api_key="k",

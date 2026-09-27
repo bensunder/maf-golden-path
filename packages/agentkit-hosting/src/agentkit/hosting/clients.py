@@ -85,7 +85,10 @@ def create_chat_client(
         if api_key is None:
             # OpenAI-compatible v1 endpoint with Entra: the SDK accepts a callable api_key.
             api_key = azure_ad_token_provider  # type: ignore[assignment]
-        sdk_client = AsyncOpenAI(base_url=settings.gateway_endpoint.rstrip("/") + "/openai/v1", api_key=api_key, **common)
+        base = settings.gateway_endpoint.rstrip("/")
+        if settings.gateway_style == "openai_v1":
+            base += "/openai/v1"
+        sdk_client = AsyncOpenAI(base_url=base, api_key=api_key, **common)
 
     return OpenAIChatCompletionClient(
         model=settings.model,

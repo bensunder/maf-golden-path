@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-hosting"
-version = "0.9.0"
+version = "0.9.1"
 description = "Company defaults for hosting Microsoft Agent Framework agents: gateway-bound clients, Entra credentials, default middleware stack, sessions and a FastAPI app."
 requires-python = ">=3.10"
 dependencies = [

@@ -1,0 +1,5 @@
+# Add to your Caddyfile (Caddy handles TLS). oauth2-proxy signs people in and forwards to the agent.
+agent.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:4180
+}
