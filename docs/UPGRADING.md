@@ -26,6 +26,13 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.8 → 0.9 (fleet view, live charts)
+
+- **Live charts** on the console's Telemetry page: requests, errors, latency, tokens, tool calls and recent traces, queried from Azure Monitor with the service's own identity. `copier update` adds `readTelemetry: true` to `platformAccess` (Monitoring Reader on the platform's Application Insights) and `AGENTKIT_CONSOLE_LOGS_RESOURCE` to the Container App. Re-deploy the platform too: its Log Analytics workspace now sets `enableLogAccessUsingOnlyResourcePermissions`, which resource-level reads rely on.
+- **The fleet view** ([fleet.md](fleet.md)): one console for every agent, deployed once per environment from `fleet/` with `azd up`. `copier update` adds an `agentkit-environment` tag to each service's resources, so a fleet shows only its own environment's agents.
+- `platform-access.bicep` gains `readTelemetry` and `useContentSafety` (both backwards compatible).
+- `scripts/setup_live_validation.sh` does the live-validation setup in one command; the live run now also checks the live charts and deploys and checks the fleet view.
+
 ### 0.7 → 0.8 (console)
 
 - New: the console at `/console` ([console.md](console.md)). `copier update` asks `enable_console` (default: on when web chat is on). It adds `Console(...)` to `app.py`, `COPY evals ./evals` to the Dockerfile, four optional Bicep parameters (build commit, run link, time, workbook id) and a test. `app.py` is generated, so accept the kit's change unless you edited it.

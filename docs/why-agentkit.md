@@ -60,6 +60,7 @@ These **are estimates**. They reflect what each piece took to build and debug he
 | **Total per team** | | **~28–46 engineer-days, plus 1–3 per API** |
 | *If users reach it through Teams* | Bot endpoint with JWT validation, secretless bot registration, background turns and proactive replies, per-user sessions, app manifest; approval cards with approver checks, click-once updates, an approvals channel; offline test harness | 5–8 |
 | *If users reach it through a web page* | Streaming protocol with approvals and resume, server-held history, thread ownership, a chat UI that can't be XSS'd, CSP, browser sign-in, CSRF | 3–6 |
+| *If the platform team needs every agent in one view* | A registry with cloud discovery that can't be tricked into leaking tokens, server-side calls with managed identity, a posture matrix, per-agent traffic from Azure Monitor, its own deployment, auth and teardown | 6–9, once per platform |
 | *If people operate it from a console* | A read-only admin API that reads the live agent (posture from the middleware stack, tools, evals, sessions with ownership), a playground with tool traces and approvals, an approvals queue with audit, a CSP-safe single-page app, browser tests | 8–12 |
 | *If it answers from documents* | Search trimmed to each user's (nested) Entra groups that fails closed, hybrid + semantic query, citations in every channel, ingestion with access rules, extraction, chunking, embeddings and incremental sync, search/Document Intelligence/storage with least-privilege RBAC, permission-aware evals | 6–10 |
 
@@ -215,6 +216,9 @@ Each of these came up while building and testing agentkit against MAF 1.19. Each
 46. **A judge nobody has checked gates deploys on noise.** A lenient judge lets regressions through; a harsh one blocks good releases. `agentkit-gate --calibrate` measures agreement with human grades and counts false passes (the dangerous kind) separately.
 47. **A security dashboard that reads configuration shows what should be on, not what is.** A middleware left out of the stack, or an environment variable that didn't apply, looks fine on paper. The console reads the running agent's middleware stack, and the live check fails a prod deploy whose posture isn't fully on.
 48. **The gate CLI's offline run can't see your pytest fixtures** (fake APIs, the fake search index, test users), so its offline report shows failures the test suite doesn't have. `pytest --agentkit-eval-report` writes the same report from the real offline run.
+49. **Discovering services by tag and trusting the tag's token audience hands out tokens.** Anyone who can tag a resource can then make the fleet mint an Azure management token and send it to them. agentkit's fleet reads each app's audience from its own Easy Auth configuration, only mints `api://<GUID>` tokens, and never sends them over plain http.
+50. **azd pastes environment values into `main.parameters.json` as text**, so a JSON value breaks the file with its own quotes. The fleet registry has a quote-free `url|audience|name;…` form for azd.
+51. **Charting `bin()` output over `ago(range)` drops or distorts the edges.** There's one more bin than range/bin, and the first and last cover only part of their interval, so a chart can disagree with its own totals or show a false drop. The console draws every bin and marks the partial ones.
 
 ---
 

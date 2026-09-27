@@ -1,0 +1,11 @@
+# Build context for fleet/Dockerfile (the repo root)
+.git
+.venv
+.tools
+.results
+**/__pycache__
+**/node_modules
+console
+examples
+template
+docs

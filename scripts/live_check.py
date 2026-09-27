@@ -126,6 +126,65 @@ class Checker:
         self.record("console: prod security controls on" if prod else "console: security posture", not missing,
                     "not on: " + ", ".join(missing) if missing else json.dumps(posture), hard=prod)
 
+    # ------------------------------------------------------------ console live charts and the fleet
+    def run_console_traffic(self, *, wait_seconds: int) -> None:
+        """The console's live charts query Azure Monitor with the service's own identity: they must connect
+        and, after the traffic above, show runs."""
+        deadline = time.time() + wait_seconds
+        while True:
+            status, body = self._get_json("/v1/console/traffic?range=1h")
+            if status == 404:
+                return  # no console
+            runs = ((body.get("totals") or {}).get("runs") or 0) if body.get("available") else 0
+            if runs > 0 or time.time() > deadline or (not body.get("available") and body.get("reason")):
+                break
+            time.sleep(30)  # the console caches for a minute and telemetry lands a few minutes late
+        if status != 200:
+            self.record("console live charts answer", False, f"HTTP {status}")
+            return
+        self.record("console live charts connect to Azure Monitor", bool(body.get("available")),
+                    body.get("error") or body.get("reason") or "")
+        self.record("console live charts show this agent's runs", runs > 0, json.dumps(body.get("totals")))
+
+    def run_fleet(self, fleet_url: str, *, agent_url: str, discover: bool, wait_seconds: int = 0) -> None:
+        fleet = Checker(fleet_url.rstrip("/"), self.headers, self.timeout, [])
+        deadline = time.time() + wait_seconds
+        while True:
+            status, body = fleet._get_json("/v1/fleet/agents")
+            agents = body.get("agents") or []
+            mine = [a for a in agents if a.get("url", "").rstrip("/").lower() == agent_url.rstrip("/").lower()]
+            found = any(a.get("source") in ("discovered", "both") for a in mine)
+            # discovery depends on a new role assignment propagating: give it time
+            if status != 200 or not discover or found or time.time() > deadline:
+                break
+            time.sleep(30)
+        if status != 200:
+            self.record("fleet view answers", False, f"HTTP {status}")
+            return
+        self.record("fleet lists the agent", bool(mine), json.dumps([a.get("url") for a in agents]))
+        if mine:
+            a = mine[0]
+            self.record("fleet sees the agent ready", a.get("status") == "ready", str(a.get("detail")))
+            self.record("fleet reads the agent's console with its own identity", a.get("console") == "ok",
+                        str(a.get("detail") or a.get("console")))
+        if discover:
+            self.record("fleet discovers the agent in Azure (tags + Easy Auth config)", found,
+                        str(body.get("discovery_error") or [a.get("source") for a in mine]))
+        _, traffic = fleet._get_json("/v1/fleet/traffic?range=1h")
+        self.record("fleet traffic connects to Azure Monitor", bool(traffic.get("available")),
+                    traffic.get("error") or traffic.get("reason") or "")
+
+    def _get_json(self, path: str) -> tuple[int, dict[str, Any]]:
+        try:
+            response = httpx.get(self.base + path, headers=self.headers, timeout=self.timeout)
+        except httpx.HTTPError as exc:
+            return 0, {"error": f"{type(exc).__name__}: {exc}"}
+        try:
+            body = response.json() if response.status_code == 200 else {}
+        except ValueError:
+            body = {}
+        return response.status_code, body if isinstance(body, dict) else {}
+
     # ------------------------------------------------------------ telemetry
     def run_queries(self, workspace_id: str, *, expect_telemetry: bool, wait_seconds: int) -> None:
         queries = json.loads(QUERIES.read_text(encoding="utf-8"))
@@ -204,6 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect-telemetry", action="store_true", help="runs and tokens must show up in the workspace")
     parser.add_argument("--wait", type=int, default=600, help="seconds to wait for telemetry to arrive")
     parser.add_argument("--skip-http", action="store_true", help="only the telemetry queries (after other traffic)")
+    parser.add_argument("--console-traffic", action="store_true",
+                        help="the console's live charts must connect and show runs (after --wait)")
+    parser.add_argument("--fleet-url", help="a fleet view that must list this service (--url) and read its console")
+    parser.add_argument("--fleet-discover", action="store_true", help="the fleet also discovers agents in Azure")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
 
@@ -220,6 +283,10 @@ def main(argv: list[str] | None = None) -> int:
             checker.record("service reachable", False, f"{type(exc).__name__}: {exc}")
     if args.workspace_id:
         checker.run_queries(args.workspace_id, expect_telemetry=args.expect_telemetry, wait_seconds=args.wait)
+    if args.console_traffic:
+        checker.run_console_traffic(wait_seconds=args.wait)
+    if args.fleet_url:
+        checker.run_fleet(args.fleet_url, agent_url=args.url, discover=args.fleet_discover, wait_seconds=args.wait)
     return checker.report(args.report)
 
 

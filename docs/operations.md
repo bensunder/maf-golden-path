@@ -17,6 +17,8 @@ The platform deploys one dashboard and a set of alerts that cover **every agent 
 | Human approvals | Requested vs. decided, by tool and decision |
 | Knowledge searches by outcome | `unavailable` means users got answers without documents (Search, Graph or permissions) |
 
+The same numbers per agent, live, are in each agent's [console](console.md) (Telemetry) and across agents in the [fleet view](fleet.md) (Traffic). All three read the same metrics.
+
 ## Alerts
 
 | Alert | Fires when | Severity |

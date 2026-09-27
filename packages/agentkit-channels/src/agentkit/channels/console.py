@@ -38,6 +38,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from agentkit.hosting import AgentKitSettings, ConversationService, http_caller
 from agentkit.hosting.approvals import APPROVALS_KEY, AUDIT_KEY, roles_from_principal
 
+from .traffic import RANGES, AzureLogsClient, LogsClient, LogsQueryError, TrafficQueries, TtlCache, shape_series
+
 __all__ = ["Console", "security_posture"]
 
 logger = logging.getLogger(__name__)
@@ -264,12 +266,16 @@ class Console:
     def __init__(self, path: str = "/console", *, api: str = "/v1/console", title: str | None = None,
                  role: str | None = None, eval_cases: str | Path | None = None,
                  eval_report: str | Path | None = None, workbook_url: str | None = None,
-                 docs_url: str | None = "https://github.com/bensunder/maf-golden-path/tree/main/docs"):
+                 docs_url: str | None = "https://github.com/bensunder/maf-golden-path/tree/main/docs",
+                 logs: LogsClient | None = None):
         """``role``: Entra app role required for the console API (default ``AGENTKIT_CONSOLE_ROLE``; empty =
         any signed-in user of the service). ``eval_cases`` defaults to ``evals/cases.yaml`` in the working
         directory, ``eval_report`` to ``AGENTKIT_CONSOLE_EVAL_REPORT`` or else ``evals/gate-report.json`` when that
         file exists (the deploy pipeline writes it into the image). ``workbook_url`` (or
-        ``AGENTKIT_CONSOLE_WORKBOOK_URL``) links the telemetry page to the platform's operations workbook."""
+        ``AGENTKIT_CONSOLE_WORKBOOK_URL``) links the telemetry page to the platform's operations workbook.
+        ``logs`` queries Azure Monitor for the live traffic charts; by default it is built from
+        ``AGENTKIT_CONSOLE_LOGS_RESOURCE`` (App Insights resource id) or ``AGENTKIT_CONSOLE_LOGS_WORKSPACE_ID``
+        with the service's own identity, and the charts say "not connected" without either."""
         self.path = path.rstrip("/")
         self.api = api.rstrip("/")
         self.title = title
@@ -281,6 +287,10 @@ class Console:
         self.workbook_url = workbook_url or os.getenv("AGENTKIT_CONSOLE_WORKBOOK_URL") or None
         self.docs_url = docs_url
         self.started_at = time.time()
+        self._logs = logs
+        self._logs_scope = os.getenv("AGENTKIT_CONSOLE_LOGS_RESOURCE") or (
+            f"workspace:{os.getenv('AGENTKIT_CONSOLE_LOGS_WORKSPACE_ID')}" if os.getenv("AGENTKIT_CONSOLE_LOGS_WORKSPACE_ID") else None)
+        self._traffic_cache = TtlCache(60.0)
 
     # ------------------------------------------------------------ install
     def install(self, app: Any, service: ConversationService, settings: AgentKitSettings) -> None:
@@ -324,6 +334,8 @@ class Console:
                           summary="This service: agent, tools, channels, security posture, deployment")
         app.add_api_route(f"{self.api}/evals", self._evals, methods=["GET"], tags=["Console"],
                           summary="Eval cases and the last quality-gate report")
+        app.add_api_route(f"{self.api}/traffic", self._traffic, methods=["GET"], tags=["Console"],
+                          summary="Live traffic from Azure Monitor: runs, errors, latency, tokens, tool calls")
         app.add_api_route(f"{self.api}/sessions/{{session_id}}", self._session, methods=["GET"], tags=["Console"],
                           summary="Metadata of one of your sessions: expiry, pending approvals, audit trail")
 
@@ -371,7 +383,7 @@ class Console:
                           else ("approver" if s.approver_role else "confirmation"),
                           "approver_role": s.approver_role},
             "telemetry": {"exporter": exporter, "capture_content": s.capture_message_content,
-                          "workbook_url": self.workbook_url},
+                          "workbook_url": self.workbook_url, "live_charts": bool(self._logs or self._logs_scope)},
             "links": {"docs": self.docs_url, "chat": _path_of(self._app, "WebChat")},
         }
         return JSONResponse(body, headers=_API_HEADERS)
@@ -402,6 +414,59 @@ class Console:
                 report_error = "The configured quality-gate report file was not found."
         return JSONResponse({"cases": cases, "cases_error": cases_error, "report": report,
                              "report_error": report_error}, headers=_API_HEADERS)
+
+    def _logs_client(self) -> LogsClient | None:
+        if self._logs is None and self._logs_scope:
+            from agentkit.hosting.clients import get_credential
+
+            credential = get_credential(self._settings)
+            if credential is None:  # api_key mode (local, fake gateway): no Entra identity to query with
+                return None
+            if self._logs_scope.startswith("workspace:"):
+                self._logs = AzureLogsClient.for_workspace(self._logs_scope.split(":", 1)[1], credential)
+            else:
+                self._logs = AzureLogsClient.for_resource(self._logs_scope, credential)
+        return self._logs
+
+    async def _traffic(self, request: Request, range: str = "24h") -> JSONResponse:  # noqa: A002
+        self._caller(request)
+        if range not in RANGES:
+            raise HTTPException(400, f"range must be one of {', '.join(RANGES)}")
+        logs = self._logs_client()
+        if logs is None:
+            return JSONResponse({"available": False, "range": range,
+                                 "reason": "Set AGENTKIT_CONSOLE_LOGS_RESOURCE (the platform's Application Insights "
+                                           "resource id) so this service can read its telemetry. The generated "
+                                           "Bicep does this and grants Monitoring Reader."},
+                                headers=_API_HEADERS)
+        cached = self._traffic_cache.get(range)
+        if cached is not None:
+            return JSONResponse(cached, headers=_API_HEADERS)
+        timespan, bin_, bin_minutes = RANGES[range]
+        agent = self._service.agent.name or self._settings.service_name
+        service = self._settings.service_name
+        window = {"PT1H": "1h", "PT24H": "24h", "P7D": "7d"}[timespan]
+        try:
+            raw_series = await logs.query(TrafficQueries.series(agent, service, self._settings.environment, bin_, window),
+                                          timespan)
+            tools = await logs.query(TrafficQueries.tools(service, window), timespan)
+            recent = await logs.query(TrafficQueries.recent(service, window), timespan)
+        except LogsQueryError as exc:
+            return JSONResponse({"available": False, "range": range, "error": str(exc)},
+                                headers=_API_HEADERS)
+        series, totals = shape_series(raw_series)
+        listed = sum(int(t.get("Calls") or 0) for t in tools)
+        totals["tool_calls"] = max(int(tools[0].get("TotalCalls") or 0), listed) if tools else 0
+        body = {
+            "available": True, "range": range, "bin_minutes": bin_minutes, "queried_at": time.time(),
+            "series": series, "totals": totals,
+            "tools": [{"tool": t.get("Tool"), "calls": int(t.get("Calls") or 0), "failures": int(t.get("Failures") or 0),
+                       "avg_ms": t.get("AvgMs"), "max_ms": t.get("MaxMs")} for t in tools],
+            "recent": [{"time": r.get("Time"), "operation_id": r.get("OperationId"), "duration_ms": r.get("DurationMs"),
+                        "success": r.get("Success")} for r in recent],
+        }
+        self._traffic_cache.put(range, body)
+        return JSONResponse(body, headers=_API_HEADERS)
 
     async def _session(self, session_id: str, request: Request) -> JSONResponse:
         caller = self._caller(request)

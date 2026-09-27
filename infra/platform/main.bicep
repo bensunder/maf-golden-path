@@ -65,6 +65,8 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
+    // Services read their own telemetry with resource-level roles (Monitoring Reader on App Insights).
+    features: { enableLogAccessUsingOnlyResourcePermissions: true }
   }
 }
 

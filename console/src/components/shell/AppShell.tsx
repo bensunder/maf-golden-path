@@ -23,7 +23,7 @@ export function Wordmark({ className }: { className?: string }) {
   );
 }
 
-function NavLink({ item, path, onNavigate, badge }: { item: NavItem; path: string; onNavigate?: () => void; badge?: number }) {
+export function NavLink({ item, path, onNavigate, badge }: { item: NavItem; path: string; onNavigate?: () => void; badge?: number }) {
   const active = isActive(item, path);
   const Icon = item.icon;
   return (

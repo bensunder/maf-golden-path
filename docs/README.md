@@ -11,6 +11,7 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 |---|---|
 | [Architecture](architecture.md) | Request flow, middleware order, gateway contract, sessions, HTTP API |
 | [Deploying](deploy.md) | Shared platform (AI gateway, models, safety), `azd up` per service, OIDC pipeline, offline validation, troubleshooting |
+| [Fleet view](fleet.md) | One console for every agent service: health, security posture matrix, quality gates, deployments, traffic per agent. Registry plus Azure discovery |
 | [Console](console.md) | The operations console at `/console`: overview, playground, approvals, evals, security posture, deployments, create agent. Real data only |
 | [Channels: Teams and web chat](channels.md) | Teams bot with approval cards in an approvers channel, AG-UI endpoint, drop-in web chat, offline Teams tests, your own channel |
 | [Knowledge](knowledge.md) | Answers from company documents: per-user trimming, citations in every channel, `acl.yaml`, ingestion, deploy, permission-aware evals |

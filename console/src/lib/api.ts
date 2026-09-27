@@ -9,6 +9,8 @@ function meta(name: string, fallback: string): string {
 
 export const API = meta("agentkit-api", "/v1/console").replace(/\/$/, "");
 export const BASE = meta("agentkit-base", "/console/").replace(/\/$/, "");
+/** "agent": this service's console. "fleet": the fleet service, one row per agent. */
+export const MODE = meta("agentkit-mode", "agent") === "fleet" ? "fleet" : "agent";
 
 export type ControlStatus = "on" | "partial" | "off";
 
@@ -73,7 +75,7 @@ export interface Overview {
   security: Control[];
   sessions: { store: "memory" | "redis" | "cosmos"; shared: boolean; ttl_seconds: number };
   approvals: { mode: "confirmation" | "approver" | "separation"; approver_role: string | null };
-  telemetry: { exporter: "app_insights" | "otlp" | null; capture_content: boolean; workbook_url: string | null };
+  telemetry: { exporter: "app_insights" | "otlp" | null; capture_content: boolean; workbook_url: string | null; live_charts: boolean };
   links: { docs: string | null; chat: string | null };
 }
 
@@ -146,6 +148,31 @@ export interface SessionInfo {
   audit: AuditEntry[];
 }
 
+export type TrafficRange = "1h" | "24h" | "7d";
+
+export interface TrafficPoint {
+  t: string;
+  runs: number;
+  errors: number;
+  blocked: number;
+  avg_s: number | null;
+  max_s: number | null;
+  tokens: number;
+}
+
+export interface Traffic {
+  available: boolean;
+  range: TrafficRange;
+  reason?: string;
+  error?: string;
+  bin_minutes?: number;
+  queried_at?: number;
+  series?: TrafficPoint[];
+  totals?: { runs: number; errors: number; blocked: number; tokens: number; avg_s: number | null; max_s: number | null; error_rate: number | null; tool_calls: number };
+  tools?: { tool: string; calls: number; failures: number; avg_ms: number | null; max_ms: number | null }[];
+  recent?: { time: string; operation_id: string; duration_ms: number | null; success: boolean | null }[];
+}
+
 export interface ChatResult {
   session_id: string;
   status: "completed" | "approval_required";
@@ -206,6 +233,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   overview: () => request<Overview>(`${API}/overview`),
   evals: () => request<Evals>(`${API}/evals`),
+  // 502 carries a readable reason ({available:false, error}); surface it as data, not an exception.
+  traffic: async (range: TrafficRange): Promise<Traffic> => {
+    try {
+      return await request<Traffic>(`${API}/traffic?range=${range}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 502) return { available: false, range, error: err.message };
+      throw err;
+    }
+  },
   session: (id: string) => request<SessionInfo>(`${API}/sessions/${encodeURIComponent(id)}`),
   ready: () => request<{ status: string; agent: string; version: string }>("/readyz"),
   decide: (sessionId: string, decisions: { id: string; approved: boolean; comment?: string }[]) =>
@@ -215,4 +251,45 @@ export const api = {
     }),
   deleteSession: (sessionId: string) =>
     request<void>(`/v1/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
+};
+
+// ------------------------------------------------------------------ fleet
+export interface FleetAgent {
+  url: string;
+  console_url: string;
+  source: "registry" | "discovered";
+  name: string | null;
+  status: "ready" | "not_ready" | "unreachable";
+  console?: "ok" | "not_installed" | "denied" | "no_token" | "unreachable" | "error";
+  detail: string | null;
+  checked_at: number;
+  overview: Pick<Overview, "service" | "agent" | "channels" | "knowledge" | "security" | "sessions" | "approvals" | "telemetry"> | null;
+  gate: null | {
+    cases: number;
+    report: null | { passed: boolean; live: boolean; started_at: number; passed_runs: number; runs: number };
+    error: string | null;
+  };
+}
+
+export interface Fleet {
+  agents: FleetAgent[];
+  checked_at: number;
+  discovery_error: string | null;
+  registered: number;
+  discovery: boolean;
+}
+
+export interface FleetTraffic {
+  available: boolean;
+  range: TrafficRange;
+  reason?: string;
+  error?: string;
+  queried_at?: number;
+  agents?: { agent: string; services: string[]; runs: number; errors: number; blocked: number; avg_s: number | null; tokens: number; error_rate: number | null }[];
+}
+
+export const fleetApi = {
+  me: () => request<{ user: string | null; title: string; environment: string; kit_version: string | null }>("/v1/fleet/me"),
+  agents: () => request<Fleet>("/v1/fleet/agents"),
+  traffic: (range: TrafficRange) => request<FleetTraffic>(`/v1/fleet/traffic?range=${range}`),
 };

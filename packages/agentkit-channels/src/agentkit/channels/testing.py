@@ -24,7 +24,7 @@ from typing import Any
 
 import httpx
 
-__all__ = ["FakeConnector", "TeamsTestClient", "TeamsTestUser", "teams_test_settings"]
+__all__ = ["FakeConnector", "FakeLogs", "TeamsTestClient", "TeamsTestUser", "teams_test_settings"]
 
 
 @dataclass(frozen=True)
@@ -211,3 +211,31 @@ class TeamsTestClient:
         if not cards:
             raise AssertionError(f"no card was sent; messages: {self.texts(conversation_id)}")
         return cards[-1]
+
+
+class FakeLogs:
+    """A stand-in for Azure Monitor in tests of the console's live charts and the fleet view.
+
+    Give it the rows each kind of query returns; it records every KQL it was sent, so tests can check the
+    filters (agent, service, environment) without a workspace::
+
+        logs = FakeLogs(series=[{"T": "2026-09-27T10:00:00Z", "Runs": 12, "Errors": 1, ...}])
+        Console(logs=logs)
+    """
+
+    def __init__(self, *, series=None, tools=None, recent=None, fleet=None, error: Exception | None = None):
+        self.answers = {"series": series or [], "tools": tools or [], "recent": recent or [], "fleet": fleet or []}
+        self.error = error
+        self.queries: list[tuple[str, str]] = []
+
+    async def query(self, kql: str, timespan: str) -> list[dict[str, Any]]:
+        self.queries.append((kql, timespan))
+        if self.error is not None:
+            raise self.error
+        if "execute_tool" in kql:
+            return list(self.answers["tools"])
+        if "invoke_agent" in kql:
+            return list(self.answers["recent"])
+        if "by Agent" in kql:
+            return list(self.answers["fleet"])
+        return list(self.answers["series"])

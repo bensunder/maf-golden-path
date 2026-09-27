@@ -1,12 +1,11 @@
-// Knowledge, Telemetry, Security, Deployments and Settings: views of the running service's configuration.
-import { Activity, ExternalLink, GitCommitHorizontal, Library, Lock, Rocket, Shield, Terminal } from "lucide-react";
+// Knowledge, Security, Deployments and Settings: views of the running service's configuration.
+import { ExternalLink, GitCommitHorizontal, Library, Lock, Rocket, Shield, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { HealthDot, MoreLink, PostureList, postureSummary, useHealth } from "@/components/agent";
-import { ButtonLink } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, KeyValue } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/overlay";
-import { Page, PageHeader, SectionTitle } from "@/components/ui/page";
+import { Page, PageHeader } from "@/components/ui/page";
 import { EmptyState, ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { StatusBadge, StatusDot, Tag } from "@/components/ui/status";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
@@ -146,91 +145,6 @@ function Perm({ title, on, children }: { title: string; on: boolean; children: R
       </div>
       <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500">{children}</p>
     </li>
-  );
-}
-
-// ------------------------------------------------------------------ telemetry
-export function TelemetryPage() {
-  return (
-    <Page>
-      <PageHeader title="Telemetry" description="Monitor agent executions, tools, latency and errors." />
-      <WithOverview title="Telemetry">{(data) => <TelemetryBody data={data} />}</WithOverview>
-    </Page>
-  );
-}
-
-const METRICS = [
-  { name: "Requests", metric: "agentkit.agent.runs", detail: "By outcome: ok, blocked, error" },
-  { name: "Latency", metric: "agentkit.agent.run.duration", detail: "Per run, seconds" },
-  { name: "Errors", metric: "agentkit.agent.runs{outcome=error}", detail: "Alert above 5% in 15 minutes" },
-  { name: "Tool calls", metric: "execute_tool spans", detail: "Name, duration, status on every call" },
-  { name: "Tokens", metric: "Total Tokens (gateway)", detail: "By team, agent and caller" },
-];
-
-function TelemetryBody({ data }: { data: Overview }) {
-  const t = data.telemetry;
-  const workbook = safeUrl(t.workbook_url);
-  if (!t.exporter)
-    return (
-      <Card>
-        <EmptyState icon={<Activity aria-hidden />} title="Telemetry not connected">
-          Connect OpenTelemetry to view production traces and metrics. Set <span className="font-mono">APPLICATIONINSIGHTS_CONNECTION_STRING</span> (the
-          Azure deployment does) or <span className="font-mono">AGENTKIT_OTLP_ENDPOINT</span>.
-        </EmptyState>
-      </Card>
-    );
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader
-          title="Export"
-          description="Traces and metrics leave the service as they happen; dashboards query the workspace, not this service."
-          action={
-            workbook ? (
-              <ButtonLink size="sm" href={workbook} external>
-                <ExternalLink aria-hidden /> Operations workbook
-              </ButtonLink>
-            ) : undefined
-          }
-        />
-        <CardBody>
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <KeyValue label="Exporter">{t.exporter === "app_insights" ? "Azure Monitor (Application Insights)" : "OTLP"}</KeyValue>
-            <KeyValue label="Status">
-              <span title="An exporter is configured. Delivery isn't checked from here; the workbook shows what arrives.">
-                <StatusDot tone="ok">Configured</StatusDot>
-              </span>
-            </KeyValue>
-            <KeyValue label="Prompt content">{t.capture_content ? "Recorded in traces" : "Not recorded"}</KeyValue>
-          </dl>
-          {!workbook && (
-            <InlineNotice className="mt-4">
-              Set <span className="font-mono">AGENTKIT_CONSOLE_WORKBOOK_URL</span> to link the platform's operations workbook here (the platform
-              deployment outputs it).
-            </InlineNotice>
-          )}
-        </CardBody>
-      </Card>
-
-      <SectionTitle>Metrics this agent emits</SectionTitle>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {METRICS.map((m) => (
-          <Card key={m.name} className="p-4">
-            <div className="text-[13px] font-medium text-zinc-900">{m.name}</div>
-            <div className="mt-2 break-words font-mono text-2xs text-zinc-500">{m.metric}</div>
-            <div className="mt-2 text-xs text-zinc-500">{m.detail}</div>
-          </Card>
-        ))}
-      </div>
-
-      <SectionTitle>Recent traces</SectionTitle>
-      <Card>
-        <EmptyState compact icon={<Activity aria-hidden />} title="Traces are in Application Insights" action={workbook ? <ButtonLink size="sm" href={workbook} external><ExternalLink aria-hidden /> Open workbook</ButtonLink> : undefined}>
-          The service exports traces but doesn't keep them, so this console can't list them without reading your Log Analytics workspace.
-          Search by session ID in Transaction search; every span carries the pseudonymized user, session and team.
-        </EmptyState>
-      </Card>
-    </div>
   );
 }
 

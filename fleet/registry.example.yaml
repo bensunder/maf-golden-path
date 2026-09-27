@@ -1,0 +1,6 @@
+# AGENTKIT_FLEET_REGISTRY=registry.yaml (local). In AGENTKIT_FLEET_AGENTS: JSON, or "url|audience|name;..." (azd-safe).
+# audience: the Easy Auth app each agent is protected by; the fleet calls its console API with a token for it.
+agents:
+  - name: Order Status Agent
+    url: https://ca-order-status-agent-prod.example.azurecontainerapps.io
+    audience: api://00000000-0000-0000-0000-000000000000

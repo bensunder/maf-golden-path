@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# The fleet view (docs/fleet.md). Built from this repo's packages, so it runs the kit version you check out.
+name: agentkit-fleet
+metadata:
+  template: agentkit-fleet
+services:
+  fleet:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: ..
+infra:
+  provider: bicep
+  path: infra

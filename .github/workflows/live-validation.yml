@@ -147,7 +147,25 @@ jobs:
         run: |
           resource="${LIVE_AUTH_RESOURCE:-api://$LIVE_AUTH_CLIENT_ID}"
           python scripts/live_check.py --url "$SERVICE_API_URI" --token-resource "$resource" --skip-http \
-            --workspace-id "$WORKSPACE_ID" --expect-telemetry --wait 900 --report telemetry-check.json
+            --workspace-id "$WORKSPACE_ID" --expect-telemetry --console-traffic --wait 900 --report telemetry-check.json
+
+      - name: Fleet view (deploy, then check it finds and reads the agent)
+        if: ${{ always() && env.SERVICE_API_URI != '' }}
+        working-directory: fleet
+        run: |
+          resource="${LIVE_AUTH_RESOURCE:-api://$LIVE_AUTH_CLIENT_ID}"
+          azd env new "$AZURE_ENV_NAME-fleet" --no-prompt --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION"
+          sh ../platform-env.sh
+          azd env set AGENTKIT_ENVIRONMENT dev
+          # the same Entra app protects the fleet in this run; in your org, give the fleet its own (docs/fleet.md)
+          azd env set AGENTKIT_FLEET_AUTH_CLIENT_ID "$LIVE_AUTH_CLIENT_ID"
+          # listed here *and* found by discovery: the check requires both
+          azd env set AGENTKIT_FLEET_AGENTS "$SERVICE_API_URI|$resource|Order Status Agent"
+          azd up --no-prompt
+          fleet_uri=$(azd env get-value SERVICE_FLEET_URI)
+          echo "FLEET_URI=$fleet_uri" >> "$GITHUB_ENV"
+          python ../scripts/live_check.py --url "$SERVICE_API_URI" --token-resource "$resource" --skip-http \
+            --fleet-url "$fleet_uri" --fleet-discover --wait 600 --report ../fleet-check.json
 
       - name: Upload results
         if: ${{ always() }}
@@ -161,11 +179,24 @@ jobs:
             gate.json
             calibration.json
             telemetry-check.json
+            fleet-check.json
           if-no-files-found: ignore
 
       - name: Tear down (and purge soft-deleted resources)
         if: ${{ always() && !inputs.keep }}
         run: |
+          if [ -f fleet/.azure/"$AZURE_ENV_NAME-fleet"/.env ]; then
+            # from the identity itself, so it also works when azd up failed before writing its outputs
+            principal=""
+            if value=$(az identity show --resource-group "rg-$AZURE_ENV_NAME-fleet" --name id-agentkit-fleet-dev \
+                         --query principalId --output tsv 2>/dev/null); then principal="$value"; fi
+            # the Reader role for discovery is at subscription scope: azd down doesn't remove it
+            if [ -n "$principal" ]; then
+              az role assignment delete --assignee "$principal" --role Reader \
+                --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID" || echo "::warning::fleet Reader role not removed"
+            fi
+            (cd fleet && azd down --force --purge --no-prompt) || echo "::warning::fleet azd down failed"
+          fi
           if [ -f examples/order-status-agent/.azure/"$AZURE_ENV_NAME"/.env ]; then
             (cd examples/order-status-agent && azd down --force --purge --no-prompt) || echo "::warning::azd down failed"
           fi

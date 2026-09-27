@@ -31,7 +31,7 @@ https://<your-service>/console          # behind the same Entra sign-in as /chat
 | **Knowledge** | Search, retrieval and Document Intelligence configuration; how permissions are enforced | The knowledge tool's configuration (no endpoints shown) |
 | **Approvals** | Pending requests with Reject / Approve (each confirmed in a dialog), recent decisions with who and when | Your sessions; any session by ID for approvers |
 | **Sessions** | Your sessions: status, expiry, pending approvals, audit trail; delete | The session store, owner-checked (an approver sees only what's pending) |
-| **Telemetry** | Exporter status, the metrics the agent emits, a link to the operations workbook | Settings; traces stay in Application Insights |
+| **Telemetry** | Live charts: requests, errors, latency and model tokens over 1 hour, 24 hours or 7 days; tool calls; the last 20 traces | Azure Monitor, queried with the service's own identity (Monitoring Reader on Application Insights) |
 | **Security** | Every control with On / Partial / Off and why | The middleware stack and settings |
 | **Deployments** | Version, environment, commit, deploy time, run link, revision, quality gate | Deploy pipeline metadata, Container Apps environment |
 | **Platform** | What a team writes vs what the kit provides; the documented effort estimate | Static; the estimate is labeled as one |
@@ -40,8 +40,7 @@ https://<your-service>/console          # behind the same Entra sign-in as /chat
 
 What the console deliberately doesn't do:
 
-- **Fleet view.** Each service has its own console. The kit has no central registry of agents, so the console doesn't pretend to list other services.
-- **Charts of production traffic.** The service exports telemetry but doesn't store it, so drawing charts would mean reading your Log Analytics workspace. The Telemetry page links to the platform's operations workbook instead.
+- **Other agents.** Each service's console shows that service. For all of them side by side, deploy the [fleet view](fleet.md).
 - **All sessions.** Sessions are private to their user. The console lists the sessions started from your browser (it remembers their IDs, never their text) and opens any other by ID, with the same ownership rules as the JSON API.
 - **Generating agents on the server.** "Create agent" gives you the `copier` command. Generation runs on your machine.
 
@@ -81,9 +80,10 @@ The page itself holds no data, so only the API is restricted. Approvers use the 
 | `AGENTKIT_CONSOLE_EVAL_CASES` | `evals/cases.yaml` | Eval cases to list |
 | `AGENTKIT_CONSOLE_EVAL_REPORT` | `evals/gate-report.json` if present | Quality-gate report (`agentkit-gate --report` or `pytest --agentkit-eval-report`) |
 | `AGENTKIT_CONSOLE_WORKBOOK_URL` | set by the Bicep | Link to the platform's operations workbook |
+| `AGENTKIT_CONSOLE_LOGS_RESOURCE` | set by the Bicep | Application Insights resource id the live charts query (or `AGENTKIT_CONSOLE_LOGS_WORKSPACE_ID`). Without it, the Telemetry page says the charts aren't connected |
 | `AGENTKIT_BUILD_COMMIT`, `AGENTKIT_BUILD_RUN_URL`, `AGENTKIT_BUILD_TIME` | set by `agent-deploy` | Deployments page |
 
-Or in code: `Console(path="/console", api="/v1/console", title=..., role=..., eval_cases=..., eval_report=..., workbook_url=..., docs_url=...)`.
+Or in code: `Console(path="/console", api="/v1/console", title=..., role=..., eval_cases=..., eval_report=..., workbook_url=..., docs_url=..., logs=...)`. Tests pass `logs=agentkit.channels.testing.FakeLogs(...)`.
 
 ## API
 
@@ -91,6 +91,7 @@ All `GET`, JSON, `Cache-Control: no-store`, same auth as the service:
 
 | Endpoint | Returns |
 |---|---|
+| `/v1/console/traffic?range=1h\|24h\|7d` | Runs, errors, latency and tokens per interval, totals, tool calls, recent traces, from Azure Monitor (cached for a minute), or why they're unavailable |
 | `/v1/console/overview` | Service (name, version, environment, hosting, build), caller, agent (model, tools with approval mode, limits), channels, knowledge, security controls, sessions, approvals, telemetry |
 | `/v1/console/evals` | Eval cases (id, input, checks, critical) and the gate report, or why either is missing |
 | `/v1/console/sessions/{id}` | One session's expiry and pending approvals, plus the audit trail for its owner. The owner, or an approver (pending only) |

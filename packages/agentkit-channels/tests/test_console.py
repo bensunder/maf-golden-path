@@ -459,3 +459,59 @@ def test_rejected_action_is_shown_as_not_run(browser):
         assert page.locator("details", has_text="issue_refund").get_by_text("Not run (rejected)").is_visible()
     assert REFUNDS == []
     assert errors == []
+
+
+# ------------------------------------------------------------------ live traffic (Azure Monitor)
+SERIES = [
+    {"T": "2026-09-27T09:00:00Z", "Runs": 10.0, "Errors": 1.0, "Blocked": 2.0, "DurationSum": 20.0, "DurationCount": 10.0,
+     "DurationMax": 5.5, "Tokens": 4000.0},
+    {"T": "2026-09-27T10:00:00Z", "Runs": 30.0, "Errors": 0.0, "Blocked": 0.0, "DurationSum": 30.0, "DurationCount": 30.0,
+     "DurationMax": 3.0, "Tokens": 9000.0},
+]
+TOOLS = [{"Tool": "lookup_order", "Calls": 25, "Failures": 1, "AvgMs": 120.5, "MaxMs": 900.0, "TotalCalls": 31}]
+RECENT = [{"Time": "2026-09-27T10:05:00Z", "OperationId": "abc123", "DurationMs": 1800.0, "Success": True}]
+
+
+def test_traffic_is_not_connected_without_a_logs_scope(monkeypatch):
+    monkeypatch.delenv("AGENTKIT_CONSOLE_LOGS_RESOURCE", raising=False)
+    monkeypatch.delenv("AGENTKIT_CONSOLE_LOGS_WORKSPACE_ID", raising=False)
+    with TestClient(make_app()) as http:
+        body = http.get("/v1/console/traffic", headers=USER).json()
+        overview = http.get("/v1/console/overview", headers=USER).json()
+    assert body["available"] is False and "AGENTKIT_CONSOLE_LOGS_RESOURCE" in body["reason"]
+    assert overview["telemetry"]["live_charts"] is False
+
+
+def test_traffic_totals_series_tools_and_filters():
+    from agentkit.channels.testing import FakeLogs
+
+    logs = FakeLogs(series=SERIES, tools=TOOLS, recent=RECENT)
+    with TestClient(make_app(console=Console(logs=logs), service_name='order"desk')) as http:
+        body = http.get("/v1/console/traffic?range=24h", headers=USER).json()
+        again = http.get("/v1/console/traffic?range=24h", headers=USER).json()
+        bad = http.get("/v1/console/traffic?range=forever", headers=USER)
+        anon = http.get("/v1/console/traffic")
+    assert bad.status_code == 400 and anon.status_code == 401
+    assert body["available"] and body["bin_minutes"] == 60
+    t = body["totals"]
+    assert t["runs"] == 40 and t["errors"] == 1 and t["blocked"] == 2 and t["tokens"] == 13000
+    assert t["avg_s"] == 50 / 40 and t["max_s"] == 5.5 and t["error_rate"] == 1 / 40 and t["tool_calls"] == 31  # all calls, not just the top 20 tools
+    assert body["series"][0]["avg_s"] == 2.0 and body["tools"][0]["tool"] == "lookup_order"
+    assert body["recent"][0]["operation_id"] == "abc123"
+    assert again == body and len(logs.queries) == 3  # cached for a minute
+    series_kql = logs.queries[0][0]
+    assert 'tostring(Properties["gen_ai.agent.name"]) == "orders"' in series_kql
+    assert 'AppRoleName == "order\\"desk"' in series_kql  # scoped to this service too
+    assert 'tostring(Properties["Environment"]) == "test"' in series_kql and "bin(TimeGenerated, 1h)" in series_kql
+    assert 'AppRoleName == "order\\"desk"' in logs.queries[1][0]  # escaped, not injected
+    assert logs.queries[0][1] == "PT24H"
+
+
+def test_traffic_errors_are_shown_not_raised():
+    from agentkit.channels.testing import FakeLogs
+    from agentkit.channels.traffic import LogsQueryError
+
+    logs = FakeLogs(error=LogsQueryError("This service isn't allowed to read the telemetry."))
+    with TestClient(make_app(console=Console(logs=logs))) as http:
+        body = http.get("/v1/console/traffic?range=1h", headers=USER).json()
+    assert body == {"available": False, "range": "1h", "error": "This service isn't allowed to read the telemetry."}

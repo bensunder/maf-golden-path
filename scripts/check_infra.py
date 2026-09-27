@@ -134,6 +134,21 @@ def check_ops() -> list[str]:
     return problems
 
 
+def check_fleet() -> list[str]:
+    """The fleet view's azd project (fleet/): Bicep, parameters, azure.yaml, and its Dockerfile's packages."""
+    fleet = ROOT / "fleet"
+    problems = check_bicep(fleet / "infra" / "main.bicep") + check_parameters(fleet)
+    document = yaml.safe_load((fleet / "azure.yaml").read_text(encoding="utf-8"))
+    service = (document.get("services") or {}).get("fleet") or {}
+    if service.get("host") != "containerapp" or (service.get("docker") or {}).get("context") != "..":
+        problems.append("fleet/azure.yaml: services.fleet must be a containerapp built with context '..'")
+    dockerfile = (fleet / "Dockerfile").read_text(encoding="utf-8")
+    for package in ("agentkit-channels", "agentkit-hosting"):
+        if f"packages/{package}" not in dockerfile:
+            problems.append(f"fleet/Dockerfile doesn't install {package}")
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--service", type=Path, help="rendered service project to validate as well")
@@ -153,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     xml.dom.minidom.parse(str(ROOT / "infra" / "platform" / "policies" / "ai-gateway.xml"))
     problems += check_workflows(sorted((ROOT / ".github" / "workflows").glob("*.yml")))
     problems += check_ops()
+    problems += check_fleet()
 
     problems += check_contract(args.service)
     if args.service:

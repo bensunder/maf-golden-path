@@ -65,7 +65,7 @@ param minReplicas int = 1
 @description('Sessions live in Cosmos DB and are locked per conversation, so any replica can serve any request.')
 param maxReplicas int = 5
 
-var tags = { 'azd-env-name': environmentName, 'agentkit-team': team, 'agentkit-service': serviceName }
+var tags = { 'azd-env-name': environmentName, 'agentkit-team': team, 'agentkit-service': serviceName, 'agentkit-environment': agentEnvironment }
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${environmentName}'
@@ -91,6 +91,7 @@ module platformAccess 'modules/platform-access.bicep' = {
     registryName: registryName
     contentSafetyName: contentSafetyName
     appInsightsName: appInsightsName
+    readTelemetry: true
   }
 }
 
@@ -124,6 +125,7 @@ module app 'modules/container-app.bicep' = {
   params: {
     name: take('ca-${serviceName}-${agentEnvironment}', 32)
     location: location
+    // the fleet view finds services by their agentkit-service / agentkit-environment tags (docs/fleet.md)
     tags: union(tags, { 'azd-service-name': 'api' })
     containerAppsEnvironmentId: containerAppsEnvironmentId
     identityId: identity.outputs.id
@@ -161,6 +163,7 @@ module app 'modules/container-app.bicep' = {
       { name: 'AGENTKIT_BUILD_COMMIT', value: buildCommit }
       { name: 'AGENTKIT_BUILD_RUN_URL', value: buildRunUrl }
       { name: 'AGENTKIT_BUILD_TIME', value: buildTime }
+      { name: 'AGENTKIT_CONSOLE_LOGS_RESOURCE', value: platformAccess.outputs.appInsightsId }
       { name: 'AGENTKIT_CONSOLE_WORKBOOK_URL', value: empty(opsWorkbookId) ? '' : 'https://portal.azure.com/#@${tenant().tenantId}/resource${opsWorkbookId}/workbook' }
       // Without Easy Auth there is no trusted user header, so every call is rejected (secure default).
       { name: 'AGENTKIT_REQUIRE_USER', value: 'true' }

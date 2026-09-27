@@ -16,51 +16,45 @@ Actions → live-validation → Run workflow        (~45–75 minutes, a few US 
 | **Live checks** (`scripts/live_check.py`) | Easy Auth refuses anonymous calls. A chat answer comes through the gateway with managed identity, with token usage. The session continues. **Prompt Shields** refuses an injection. Streaming works. A large refund pauses for approval, the paused session answers 409, a rejection resumes the run. Knowledge fails closed for a caller that isn't a user |
 | **Quality gate** | The sample's eval cases, live, 2× each, judged by the real model |
 | **Judge calibration** | The judge scored against 12 human-graded answers: agreement, kappa, false passes |
-| **Operations** | Every dashboard and alert query (`infra/platform/ops/queries.json`) runs against the real workspace; agent runs and gateway tokens must show up |
-| **Teardown** | `azd down --purge`, the platform resource group deleted, soft-deleted Cognitive Services and API Management instances purged so names and quota are released |
+| **Operations** | Every dashboard and alert query (`infra/platform/ops/queries.json`) runs against the real workspace; agent runs and gateway tokens must show up. The console's **live charts** must connect to Azure Monitor with the service's own identity and show the run's traffic |
+| **Fleet view** | `fleet/` deploys with `azd up`; it must list the sample (registry and Azure discovery), see it ready, read its console with the fleet's managed identity, and query traffic |
+| **Teardown** | `azd down --purge` (sample and fleet), the fleet's subscription-level Reader role removed, the platform resource group deleted, soft-deleted Cognitive Services and API Management instances purged so names and quota are released |
 
-Results appear on the run page (step summaries) and as an artifact: `what-if-*.txt`, `live-check.json`, `gate.json`, `calibration.json`, `telemetry-check.json`.
+Results appear on the run page (step summaries) and as an artifact: `what-if-*.txt`, `live-check.json`, `gate.json`, `calibration.json`, `telemetry-check.json`, `fleet-check.json`.
 
-## One-time setup (about 20 minutes)
+## One-time setup (one command, about 5 minutes)
 
-You need a subscription where you can create role assignments. A sandbox subscription is best.
-
-**1. An identity for the workflow, with a federated credential (no secrets):**
-
-```bash
-SUB=<subscription-id>
-APP=$(az ad app create --display-name agentkit-live-validation --query appId -o tsv)
-az ad sp create --id "$APP"
-az ad app federated-credential create --id "$APP" --parameters '{
-  "name": "live", "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:<owner>/maf-golden-path:environment:live", "audiences": ["api://AzureADTokenExchange"]}'
-# Owner on the sandbox subscription (it creates resource groups and role assignments)
-az role assignment create --assignee "$APP" --role Owner --scope "/subscriptions/$SUB"
-```
-
-**2. The Entra app that Easy Auth protects the sample with:**
+You need a subscription where you can create role assignments (a sandbox subscription is best), and permission to create app registrations in Entra ID. Then:
 
 ```bash
-API=$(az ad app create --display-name agentkit-live-api --sign-in-audience AzureADMyOrg --query appId -o tsv)
-az ad app update --id "$API" --identifier-uris "api://$API"
-az ad sp create --id "$API"
+az login && gh auth login
+scripts/setup_live_validation.sh --subscription <subscription-id> --repo <owner>/maf-golden-path --alert-email you@example.com
 ```
 
-**3. A GitHub environment named `live`** (Settings → Environments), with these **variables** (none of them are secrets):
+The script is safe to run again: it reuses what already exists, by name. It does the following, with no secrets anywhere:
+
+1. **Workflow identity** `agentkit-live-validation`: an app registration with a federated credential for this repo's `live` environment, and Owner on the subscription (it creates resource groups and role assignments).
+2. **Easy Auth app** `agentkit-live-api`, which protects the sample and the fleet view during the run (`api://<app id>`).
+3. **Resource providers** the platform uses (Container Apps, API Management, Cognitive Services, Cosmos DB, Search, …).
+4. **The GitHub environment `live`** with the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `LIVE_AUTH_CLIENT_ID`, and `LIVE_ALERT_EMAIL` if you passed one.
+
+Optional variables, set on the `live` environment yourself:
 
 | Variable | Value |
 |---|---|
-| `AZURE_CLIENT_ID` | `$APP` from step 1 |
-| `AZURE_TENANT_ID` | your tenant id |
-| `AZURE_SUBSCRIPTION_ID` | `$SUB` |
-| `LIVE_AUTH_CLIENT_ID` | `$API` from step 2 |
-| `LIVE_AUTH_RESOURCE` | optional; default `api://$LIVE_AUTH_CLIENT_ID` |
-| `LIVE_ALERT_EMAIL` | optional: send the throwaway platform's alerts here |
-| `LIVE_EVAL_USERS` | optional JSON mapping the sample's test users to real test accounts, e.g. `{"sam@contoso.example": "eval-support@yourtenant.com", "riley@contoso.example": "eval-lead@yourtenant.com"}` |
+| `LIVE_AUTH_RESOURCE` | default `api://$LIVE_AUTH_CLIENT_ID` |
+| `LIVE_EVAL_USERS` | JSON mapping the sample's test users to real test accounts, e.g. `{"sam@contoso.example": "eval-support@yourtenant.com", "riley@contoso.example": "eval-lead@yourtenant.com"}` |
 
 Add a required reviewer to the environment if you want a human to approve each run.
 
-**Without `LIVE_EVAL_USERS`**, the gate skips the cases that run as a user (the knowledge permission cases); they stay covered offline. **With it**, grant the workflow identity `GroupMember.Read.All` (command in [channels.md](channels.md#approvals-as-cards), with `$APP`'s object id). Put the eval accounts in the right groups, and set the group ids in the sample's `knowledge/acl.yaml`.
+**Without `LIVE_EVAL_USERS`**, the gate skips the cases that run as a user (the knowledge permission cases); they stay covered offline. **With it**, grant the workflow identity `GroupMember.Read.All` (command in [channels.md](channels.md#approvals-as-cards), with the workflow app's object id). Put the eval accounts in the right groups, and set the group ids in the sample's `knowledge/acl.yaml`.
+
+Then start a run:
+
+```bash
+gh workflow run live-validation.yml --repo <owner>/maf-golden-path
+gh run watch --repo <owner>/maf-golden-path
+```
 
 ## Running it
 

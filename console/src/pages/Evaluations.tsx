@@ -154,7 +154,7 @@ function NoReport() {
 function CasesSection({ cases, error, report }: { cases: EvalCase[] | null; error: string | null; report: GateReport | null }) {
   const byId = new Map((report?.cases ?? []).map((c) => [c.id, c]));
   return (
-    <section aria-labelledby="cases-title">
+    <div>
       <SectionTitle id="cases-title">Evaluation cases</SectionTitle>
       <Card>
         {error ? (
@@ -229,6 +229,6 @@ function CasesSection({ cases, error, report }: { cases: EvalCase[] | null; erro
           </Table>
         )}
       </Card>
-    </section>
+    </div>
   );
 }

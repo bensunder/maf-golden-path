@@ -4,7 +4,9 @@ import { cn } from "@/lib/format";
 
 export function Table({ children, className, label }: { children: ReactNode; className?: string; label?: string }) {
   return (
-    <div className={cn("w-full overflow-x-auto", className)}>
+    // relative: keeps absolutely positioned descendants (screen-reader labels) inside the scroll area.
+    // Focusable, so keyboard users can scroll a table that's wider than the screen.
+    <div className={cn("relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500", className)} tabIndex={0} role="region" aria-label={label}>
       <table className="w-full border-collapse text-sm" aria-label={label}>
         {children}
       </table>
