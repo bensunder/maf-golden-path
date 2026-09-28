@@ -124,7 +124,7 @@ def test_agentctl_adds_agents_and_the_fleet_behind_their_own_sign_in(stack):
     assert "fleet" not in yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
 
 
-@pytest.mark.parametrize("args", [["add", "fleet", "legal"], ["add", "Bad_Name", "legal"], ["add", "docs", "."],
+@pytest.mark.parametrize("args", [["add", "sample", "legal"], ["add", "fleet", "legal"], ["add", "Bad_Name", "legal"], ["add", "docs", "."],
                                   ["add", "x2", "legal", "--host", "agent.203-0-113-7.sslip.io"],
                                   ["add", "x3", "legal", "--env", "lower=case"], ["remove", "nobody"],
                                   ["add", "x4", "legal", "--env", "AGENTKIT_CONSOLE_ROLE=Admin"],
@@ -200,3 +200,37 @@ def test_new_host_agents_skip_ports_something_on_the_host_already_uses(stack):
         busy.listen()
         run("add", "legal", str(root / "legal"))
     assert yaml.safe_load((root / "agents.yaml").read_text())["agents"][0]["port"] == 4182
+
+
+def test_connect_gives_an_agent_gateway_urls_and_a_token_never_a_vendor_secret(stack):
+    import json
+
+    root, run = stack
+    (root / "connectors.json").write_text(json.dumps({"connectors": {
+        "crm": {"title": "Demo CRM", "url": "https://crm.example/mcp", "auth": "bearer", "secret": "gAAAA-sealed",
+                "allowed": ["find_contact", "create_note"], "approval": ["create_note"]},
+        "linear": {"title": "Linear", "url": "https://mcp.linear.app/mcp", "auth": "bearer", "secret": "gAAAA-sealed2",
+                   "allowed": ["list_issues"], "approval": []}}}))
+    run("platform", "--admins", "ben@contoso.example", "--agents-dir", str(root / "created"))
+    assert "PLATFORM_SECRET_KEY=" in (root / ".env").read_text()
+    run("add", "hr", str(root / "legal"), "--internal")
+    run("connect", "hr", "crm,linear")
+    run("connect", "sample", "crm")
+    run("connect", "hr", "nope", ok=False)
+    services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    env = services["agent-hr"]["environment"]
+    spec = json.loads(env["AGENTKIT_CONNECTORS"])
+    assert [(c["name"], c["url"], c["approval"]) for c in spec] == [
+        ("crm", "http://platform:8001/mcp/crm", ["create_note"]), ("linear", "http://platform:8001/mcp/linear", [])]
+    assert all(len(c["policy"]) == 16 for c in spec)  # the rules fingerprint the gateway checks
+    token = env["AGENTKIT_CONNECTOR_TOKEN"]
+    assert len(token) >= 32 and "sealed" not in json.dumps(services)
+    assert json.loads(services["agent"]["environment"]["AGENTKIT_CONNECTORS"])[0]["name"] == "crm"  # the sample, too
+    assert services["platform"]["environment"]["PLATFORM_SECRET_KEY"].startswith("${PLATFORM_SECRET_KEY")
+    assert "8001" in services["platform"]["expose"]
+    run("connect", "hr", "none")
+    services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    assert "AGENTKIT_CONNECTORS" not in services["agent-hr"]["environment"]
+    key_before = (root / ".env").read_text()
+    run("platform", "--admins", "ben@contoso.example", "--agents-dir", str(root / "created"))
+    assert (root / ".env").read_text().count("PLATFORM_SECRET_KEY=") == 1 and key_before == (root / ".env").read_text()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,8 @@ from .clients import create_chat_client, token_provider
 from .settings import AgentKitSettings
 
 __all__ = ["build_agent", "default_detector", "default_middleware", "load_instructions"]
+
+logger = logging.getLogger(__name__)
 
 
 def load_instructions(path: str | Path, **variables: str) -> str:
@@ -74,6 +78,19 @@ def default_middleware(
     return stack
 
 
+def _platform_connectors(settings: AgentKitSettings) -> list[Any]:
+    """Connectors assigned by the VPS platform (``AGENTKIT_CONNECTORS``): every agent gets them, with no code."""
+    if not settings.connectors:
+        return []
+    try:
+        from agentkit.tools.mcp import platform_connectors
+    except ImportError:  # pragma: no cover - agentkit-tools ships with every generated agent
+        logger.warning("AGENTKIT_CONNECTORS is set but agentkit-tools isn't installed; no connectors loaded")
+        return []
+    token = settings.connector_token.get_secret_value() if settings.connector_token else None
+    return platform_connectors(settings.connectors, token)
+
+
 def build_agent(
     *,
     name: str,
@@ -96,6 +113,7 @@ def build_agent(
     matching calls to ``approval_mode="always_require"`` tools (see ``agentkit.hosting.approve_if``).
     """
     settings = settings or AgentKitSettings()
+    tools = [*tools, *_platform_connectors(settings)]
     if isinstance(tool_policy, Mapping):
         tool_policy = ToolPolicyMiddleware(**tool_policy)
     client = client or create_chat_client(settings, agent_name=name)

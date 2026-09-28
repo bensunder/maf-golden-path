@@ -91,6 +91,11 @@ class AgentKitSettings(BaseSettings):
     #: Header a trusted router sets when it serves this service under a path (``/agents/legal``), so the
     #: console and web chat link to the right URLs. Unset (the default): pages are served from the root.
     forwarded_prefix_header: str | None = None
+    #: Connectors the VPS platform assigned to this agent (JSON, written by agentctl.py): MCP servers reached
+    #: through the platform's connector gateway, which holds the vendor credentials.
+    connectors: str | None = None
+    #: This agent's token for the connector gateway.
+    connector_token: SecretStr | None = None
 
     @model_validator(mode="after")
     def _enforce_environment_policy(self) -> AgentKitSettings:

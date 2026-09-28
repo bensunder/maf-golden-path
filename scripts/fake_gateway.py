@@ -34,11 +34,13 @@ def _reply(body: dict) -> str:
 
 _REFUND = re.compile(r"refund\s+([A-Za-z]\d{4})\s+\$?(\d+(?:\.\d+)?)", re.IGNORECASE)
 _LOOKUP = re.compile(r"(?:where is|status of)\s+(?:order\s+)?([A-Za-z]\d{4})", re.IGNORECASE)
+_USE = re.compile(r"^use\s+([A-Za-z0-9_]+)\s*(\{.*\})?\s*$", re.DOTALL)  # "use crm_find_contact {"email": "x"}"
 
 
 def _tool_step(body: dict) -> dict | None:
     """Deterministic 'model': 'refund A1002 $129' calls issue_refund when that tool is offered;
-    'where is A1001' calls lookup_order; after a tool result, it reports the result. Lets the smoke test drive approvals end to end.
+    'where is A1001' calls lookup_order; 'use <tool> {json}' calls any offered tool (connectors); after a tool
+    result, it reports the result. Lets the smoke test drive approvals end to end.
     Judge prompts (agentkit's [agentkit-judge] marker) get a score: 5 if the graded response
     contains "Refunded" or "echo", else 2, so the smoke test can exercise the quality gate."""
     messages = body.get("messages", [])
@@ -51,6 +53,11 @@ def _tool_step(body: dict) -> dict | None:
     last = messages[-1] if messages else {}
     if last.get("role") == "tool":
         return {"role": "assistant", "content": f"tool said: {_text(last)}"}
+    use = _USE.match(_text(last).strip()) if last.get("role") == "user" else None
+    if use and use.group(1) in offered:  # any offered tool, e.g. a connector's: "use <tool> <json arguments>"
+        return {"role": "assistant", "content": None, "tool_calls": [
+            {"id": f"call_{len(messages)}", "type": "function",
+             "function": {"name": use.group(1), "arguments": use.group(2) or "{}"}}]}
     lookup = _LOOKUP.search(_text(last)) if last.get("role") == "user" else None
     if lookup and "lookup_order" in offered:
         return {"role": "assistant", "content": None, "tool_calls": [

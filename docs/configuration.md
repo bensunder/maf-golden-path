@@ -97,6 +97,17 @@ Teams settings are `AGENTKIT_TEAMS_*` (bot identity, approver group, approvals c
 
 `AGENTKIT_CONSOLE_ROLE` (app role required for the console API; empty = any signed-in user), `AGENTKIT_CONSOLE_EVAL_CASES`, `AGENTKIT_CONSOLE_EVAL_REPORT` and `AGENTKIT_CONSOLE_WORKBOOK_URL`. `AGENTKIT_BUILD_COMMIT`, `_RUN_URL` and `_TIME` come from the deploy pipeline. See [console.md](console.md#settings).
 
+## Platform connectors (VPS)
+
+Written by `agentctl.py` for agents on a VPS with the platform service; you don't set them by hand. See [vps.md](vps.md#connectors).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AGENTKIT_CONNECTORS` | none | JSON list of the connectors assigned to this agent: `name`, `title`, `url` (the platform's connector gateway, never the vendor), `allowed_tools`, `approval` (tools that wait for a person) and `policy` (a fingerprint of those rules; the gateway refuses calls made under stale rules). `build_agent` adds one MCP tool per entry, with tool names prefixed `<name>_` |
+| `AGENTKIT_CONNECTOR_TOKEN` | none | This agent's token for the connector gateway (a secret). It identifies the agent; it is not the vendor's credential |
+
+A connector that can't be reached doesn't stop the agent: its tools are left out of that run, and it's tried again after a minute.
+
 ## Set by the deploy (you don't set these)
 
 The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_SESSION_STORE=cosmos` with the `AGENTKIT_COSMOS_*` values, `AGENTKIT_APPROVER_ROLE` (from `azd env`), `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). With the console enabled, also `AGENTKIT_BUILD_COMMIT`, `AGENTKIT_BUILD_RUN_URL`, `AGENTKIT_BUILD_TIME` (from `agent-deploy`) and `AGENTKIT_CONSOLE_WORKBOOK_URL` (from `AGENTKIT_OPS_WORKBOOK_ID`). With Teams enabled, also `AGENTKIT_TEAMS_APP_ID`, `AGENTKIT_TEAMS_TENANT_ID` and the `AGENTKIT_TEAMS_APPROVER_GROUP_ID` / `_APPROVALS_CHANNEL_ID` values from `azd env`. To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.

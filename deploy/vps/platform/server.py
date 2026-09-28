@@ -35,6 +35,10 @@ import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from connectors import (CONNECTOR_NAME, Activity, ConnectorError, Store, Vault, check_url, policy_of,  # noqa: E402
+                        create_gateway, list_tools, public_view, validate_entry)
+
 HOME = Path(os.getenv("PLATFORM_HOME", "/opt/maf-golden-path"))
 VPS = HOME / "deploy" / "vps"
 AGENTS_DIR = Path(os.getenv("PLATFORM_AGENTS_DIR", "/opt/agents"))
@@ -55,7 +59,7 @@ _NAME = re.compile(r"[a-z][a-z0-9-]{0,30}[a-z0-9]")
 _TITLE = re.compile(r"[A-Za-z][A-Za-z0-9 .,()&+-]{1,58}[A-Za-z0-9).]")
 _TEXT = re.compile(r"[A-Za-z0-9 .,;:!?()&+/%#@-]{0,240}")  # no quotes, braces or backslashes: it lands in code
 _TEAM = re.compile(r"[a-z][a-z0-9-]{1,30}")
-RESERVED = {"agent", "auth", "redis", "fleet", "platform", "www", "api", "console", "chat", "v1"}
+RESERVED = {"agent", "auth", "redis", "fleet", "platform", "www", "api", "console", "chat", "v1", "sample"}
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f\x7f]")
 _HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
         "transfer-encoding", "upgrade", "host", "content-length"}
@@ -76,6 +80,21 @@ def registry() -> dict:
     data = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else None) or {}
     data.setdefault("agents", [])
     return data
+
+
+def assignments() -> dict[str, dict]:
+    """Each agent's connector token and connectors (agents.yaml; "sample" is the sample agent)."""
+    data = registry()
+    out = {a["name"]: {"token": a.get("connector_token"), "connectors": a.get("connectors") or []}
+           for a in data["agents"] if isinstance(a, dict) and "name" in a}
+    sample = data.get("sample") or {}
+    out["sample"] = {"token": sample.get("connector_token"), "connectors": sample.get("connectors") or []}
+    return out
+
+
+STORE = Store(VPS / "connectors.json", Vault(os.getenv("PLATFORM_SECRET_KEY") or None))
+ACTIVITY = Activity()
+CATALOG_LOCK = asyncio.Lock()  # one change to connectors.json at a time
 
 
 def agent_names() -> set[str]:
@@ -145,13 +164,60 @@ class Builder:
         if proc.returncode != 0:
             raise RuntimeError(f"{' '.join(argv[:3])} failed (exit {proc.returncode})")
 
-    def start(self, name: str, title: str, description: str, team: str, knowledge: bool, user: str) -> Job:
+    def start(self, name: str, title: str, description: str, team: str, knowledge: bool, user: str,
+              connectors: list[str] | None = None) -> Job:
         job = Job(name, title, user)
         self._add(job)
-        self._spawn(self._create(job, description, team, knowledge))
+        self._spawn(self._create(job, description, team, knowledge, connectors or []))
         return job
 
-    async def _create(self, job: Job, description: str, team: str, knowledge: bool) -> None:
+    def start_assign(self, name: str, connectors: list[str], user: str) -> Job:
+        """Give an agent a new set of connectors: new settings and a restart, no rebuild."""
+        job = Job(name, name, user)
+        job.state = "connecting"
+        self._add(job)
+        self._spawn(self._assign(job, connectors))
+        return job
+
+    def start_refresh(self, agents: list[str], user: str, label: str) -> Job:
+        """Restart the agents using a connector whose allowed tools changed, so they pick up the change."""
+        job = Job(label, label, user)
+        job.state = "connecting"
+        self._add(job)
+        self._spawn(self._refresh(job, agents))
+        return job
+
+    @staticmethod
+    def service_of(name: str) -> str:
+        return "agent" if name == "sample" else f"agent-{name}"
+
+    async def _assign(self, job: Job, connectors: list[str]) -> None:
+        async with self.lock:
+            try:
+                await self.run(job, [sys.executable, "agentctl.py", "connect", job.name, ",".join(connectors) or "none"], VPS, 60)
+                await self.run(job, ["docker", "compose", "up", "-d", self.service_of(job.name)], VPS, 300)
+                await self.wait_ready(job, SAMPLE if job.name == "sample" else None)
+                job.state = "ready"
+            except Exception as exc:
+                job.failed_step = job.state
+                job.state, job.error = "failed", str(exc)[:300]
+            finally:
+                job.finished_at = time.time()
+
+    async def _refresh(self, job: Job, agents: list[str]) -> None:
+        async with self.lock:
+            try:
+                await self.run(job, [sys.executable, "agentctl.py", "render"], VPS, 60)
+                if agents:
+                    await self.run(job, ["docker", "compose", "up", "-d", *[self.service_of(a) for a in agents]], VPS, 300)
+                job.state = "ready"
+            except Exception as exc:
+                job.failed_step = job.state
+                job.state, job.error = "failed", str(exc)[:300]
+            finally:
+                job.finished_at = time.time()
+
+    async def _create(self, job: Job, description: str, team: str, knowledge: bool, connectors: list[str]) -> None:
         async with self.lock:
             folder = AGENTS_DIR / job.name
             generated = registered = False
@@ -171,6 +237,8 @@ class Builder:
                 registered = True  # agentctl may have written agents.yaml even if it then fails
                 await self.run(job, [sys.executable, "agentctl.py", "add", job.name, str(folder), "--internal",
                                      "--by", job.user], VPS, 60)
+                if connectors:
+                    await self.run(job, [sys.executable, "agentctl.py", "connect", job.name, ",".join(connectors)], VPS, 60)
                 job.state = "building"  # the build runs the agent's offline evals: a failing gate stops here
                 await self.run(job, ["docker", "compose", "up", "-d", "--build", f"agent-{job.name}"], VPS, BUILD_TIMEOUT)
                 job.state = "starting"
@@ -186,12 +254,13 @@ class Builder:
             finally:
                 job.finished_at = time.time()
 
-    async def wait_ready(self, job: Job) -> None:
+    async def wait_ready(self, job: Job, base: str | None = None) -> None:
         deadline = time.monotonic() + READY_TIMEOUT
+        await asyncio.sleep(1)  # a restarted container answers for a moment with its old process
         async with httpx.AsyncClient(timeout=5) as http:
             while time.monotonic() < deadline:
                 with contextlib.suppress(httpx.HTTPError):
-                    if (await http.get(UPSTREAM.format(name=job.name) + "/readyz")).status_code == 200:
+                    if (await http.get((base or UPSTREAM.format(name=job.name)) + "/readyz")).status_code == 200:
                         return
                 await asyncio.sleep(2)
         raise RuntimeError(f"agent-{job.name} didn't become ready within {int(READY_TIMEOUT)} s")
@@ -341,9 +410,10 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         data = registry()
         rows = [{"name": "sample", "title": "Order Status Agent (sample)", "path": "", "internal": True,
                  "created_by": None, "created_at": None, "service": "order-status-agent", "url": SAMPLE}]
+        rows[0]["connectors"] = (data.get("sample") or {}).get("connectors") or []
         for a in data["agents"]:
             internal = bool(a.get("internal"))
-            rows.append({"name": a["name"], "title": a.get("title") or a.get("service") or a["name"],
+            rows.append({"connectors": a.get("connectors") or [], "name": a["name"], "title": a.get("title") or a.get("service") or a["name"],
                          "path": f"/agents/{a['name']}", "internal": internal,
                          "host": None if internal else a.get("host"), "service": a.get("service"),
                          "created_by": a.get("created_by"), "created_at": a.get("created_at"),
@@ -370,7 +440,11 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         description = str(body.get("description") or "").strip()
         team = str(body.get("team") or name).strip().lower()
         knowledge = body.get("knowledge", False)
+        connectors = body.get("connectors") or []
         problems = []
+        if not isinstance(connectors, list) or not all(isinstance(c, str) and CONNECTOR_NAME.fullmatch(c) for c in connectors) \
+                or any(c not in STORE.load() for c in connectors):
+            problems.append("connectors: names of connectors that exist")
         if not _TITLE.fullmatch(title):
             problems.append("title: 3–60 letters, digits, spaces and . , ( ) & + -")
         if not _NAME.fullmatch(name) or name in RESERVED:
@@ -387,7 +461,7 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
             raise HTTPException(409, f"an agent named {name} already exists")
         if any(j.name == name and j.state not in ("ready", "failed", "removed") for j in builder.jobs.values()):
             raise HTTPException(409, f"{name} is already being created")
-        job = builder.start(name, title, description, team, knowledge, user)
+        job = builder.start(name, title, description, team, knowledge, user, connectors)
         return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
 
     @app.get("/v1/platform/jobs/{job_id}")
@@ -411,6 +485,139 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         if any(j.name == name and j.state not in ("ready", "failed", "removed") for j in builder.jobs.values()):
             raise HTTPException(409, f"{name} is being changed right now")
         job = builder.start_removal(name, user)
+        return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
+
+    # ------------------------------------------------------------------ connectors
+    def used_by(name: str) -> list[str]:
+        return sorted(a for a, v in assignments().items() if name in (v.get("connectors") or []))
+
+    async def json_body(request: Request) -> dict:
+        if not request.headers.get("content-type", "").startswith("application/json"):
+            raise HTTPException(415, "send JSON")
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(400, "invalid JSON") from None
+        if not isinstance(body, dict):
+            raise HTTPException(422, "send a JSON object")
+        return body
+
+    def busy() -> None:
+        if any(j.state not in ("ready", "failed", "removed") for j in builder.jobs.values()):
+            raise HTTPException(409, "another change is running: try again when it finishes")
+
+    @app.get("/v1/platform/connectors")
+    async def connectors_list(request: Request) -> JSONResponse:
+        user = user_of(request)
+        items = [public_view(n, e, used_by(n), admin=user in ADMINS) for n, e in sorted(STORE.load().items())]
+        return JSONResponse({"connectors": items, "can_manage": user in ADMINS, "vault": STORE.vault.ready,
+                             "vault_error": STORE.vault.error if user in ADMINS else None}, headers=_API_HEADERS)
+
+    @app.post("/v1/platform/connectors/test")
+    async def connectors_test(request: Request) -> JSONResponse:
+        admin(request)
+        body = await json_body(request)
+        try:
+            if body.get("name") and not body.get("url"):  # an existing connector, with its stored credential
+                entry = STORE.get(str(body["name"]))
+                if not entry:
+                    raise HTTPException(404, "no such connector")
+                url, headers = entry["url"], STORE.credential_headers(entry)
+            else:
+                probe = validate_entry("probe", {**body, "tools": []})
+                secret = str(body.get("secret") or "")
+                url = probe.get("url") or ""
+                headers = ({"authorization": f"Bearer {secret}"} if probe["auth"] == "bearer" and secret else
+                           {probe["header"]: secret} if probe["auth"] == "header" and secret else {})
+            tools = await list_tools(url, headers)
+        except ConnectorError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return JSONResponse({"tools": tools}, headers=_API_HEADERS)
+
+    @app.post("/v1/platform/connectors", status_code=201)
+    async def connectors_add(request: Request) -> JSONResponse:
+        user = admin(request)
+        body = await json_body(request)
+        name = str(body.get("name") or "").strip()
+        try:
+            entry = validate_entry(name, body)
+            await check_url(entry.get("url") or "")
+            secret = str(body.get("secret") or "")
+            if entry["auth"] != "none":
+                if not secret:
+                    raise ConnectorError("secret: the token or API key")
+                entry["secret"] = STORE.vault.seal(secret)
+        except ConnectorError as exc:
+            raise HTTPException(422, str(exc)) from None
+        entry.update(created_by=user, created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        async with CATALOG_LOCK:
+            current = STORE.load()
+            if name in current:
+                raise HTTPException(409, f"a connector named {name} already exists")
+            current[name] = entry
+            STORE.save(current)
+        return JSONResponse(public_view(name, entry, [], admin=True), status_code=201, headers=_API_HEADERS)
+
+    @app.patch("/v1/platform/connectors/{name}")
+    async def connectors_update(name: str, request: Request) -> JSONResponse:
+        user = admin(request)
+        body = await json_body(request)
+        async with CATALOG_LOCK:
+            current = STORE.load()
+            if name not in current:
+                raise HTTPException(404, f"no connector named {name}")
+            before = (current[name].get("allowed"), current[name].get("approval"), current[name].get("title"))
+            try:
+                entry = validate_entry(name, {k: body[k] for k in ("title", "tools", "allowed", "approval") if k in body},
+                                       existing=current[name])
+                if body.get("secret"):
+                    entry["secret"] = STORE.vault.seal(str(body["secret"]))
+            except ConnectorError as exc:
+                raise HTTPException(422, str(exc)) from None
+            agents = used_by(name)
+            changed = before != (entry.get("allowed"), entry.get("approval"), entry.get("title"))
+            if agents and changed:
+                busy()  # before saving: new tool rules must never be live without the agents restarting
+            current[name] = entry
+            STORE.save(current)
+        job = builder.start_refresh(agents, user, f"connector-{name}").view() if agents and changed else None
+        return JSONResponse({**public_view(name, entry, agents, admin=True), "job": job}, headers=_API_HEADERS)
+
+    @app.delete("/v1/platform/connectors/{name}")
+    async def connectors_remove(name: str, request: Request) -> JSONResponse:
+        admin(request)
+        if request.headers.get("x-agentkit-confirm") != name:
+            raise HTTPException(400, "confirm with the header X-Agentkit-Confirm: <name>")
+        if name not in STORE.load():
+            raise HTTPException(404, f"no connector named {name}")
+        agents = used_by(name)
+        if agents:
+            raise HTTPException(409, f"still used by {', '.join(agents)}: take it off those agents first")
+        async with CATALOG_LOCK:
+            current = STORE.load()
+            current.pop(name, None)
+            STORE.save(current)
+        return JSONResponse({"removed": name}, headers=_API_HEADERS)
+
+    @app.get("/v1/platform/connectors/{name}/activity")
+    async def connectors_activity(name: str, request: Request) -> JSONResponse:
+        user = user_of(request)
+        if user not in ADMINS:
+            raise HTTPException(403, "only platform admins can see connector activity")
+        return JSONResponse({"activity": ACTIVITY.for_connector(name)}, headers=_API_HEADERS)
+
+    @app.put("/v1/platform/agents/{name}/connectors", status_code=202)
+    async def agent_connectors(name: str, request: Request) -> JSONResponse:
+        user = admin(request)
+        body = await json_body(request)
+        wanted = body.get("connectors")
+        known = STORE.load()
+        if not isinstance(wanted, list) or not all(isinstance(c, str) and c in known for c in wanted):
+            raise HTTPException(422, "connectors: names of connectors that exist")
+        if name != "sample" and name not in agent_names():
+            raise HTTPException(404, f"no agent named {name}")
+        busy()
+        job = builder.start_assign(name, sorted(set(wanted)), user)
         return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
 
     @app.api_route("/v1/platform/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
@@ -477,6 +684,23 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         return await forward(request, SAMPLE, "/" + rest, "")
 
     return app
+
+
+def serve() -> None:
+    """The router and platform API on 8000 (for the sign-in proxy), the connector gateway on 8001 (for agents)."""
+    import uvicorn
+
+    async def main() -> None:
+        public = uvicorn.Server(uvicorn.Config(create_app(), host="0.0.0.0", port=8000, log_level="info"))
+        gateway = uvicorn.Server(uvicorn.Config(create_gateway(STORE, assignments, ACTIVITY), host="0.0.0.0",
+                                                port=8001, log_level="warning"))
+        await asyncio.gather(public.serve(), gateway.serve())
+
+    asyncio.run(main())
+
+
+if __name__ == "__main__":
+    serve()
 
 
 def __getattr__(name: str) -> Any:  # `uvicorn server:app` builds it on first use

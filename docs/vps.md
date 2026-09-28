@@ -14,10 +14,10 @@ About 20 minutes. You need Docker with Compose, a DNS name pointing at the serve
 Clone the release tag (recommended: moving to a newer tag later updates the kit and every agent at once):
 
 ```bash
-git clone --branch v0.9.3 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
+git clone --branch v0.9.4 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
 ```
 
-or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.3.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
+or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.4.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
 
 ## 2. An Entra app for sign-in
 
@@ -100,6 +100,37 @@ It then lives at `https://<AGENT_HOST>/agents/<name>/console` and `/chat`: no ne
 
 `agentctl.py platform --off` puts the stack back to one sign-in proxy in front of the sample.
 
+## Connectors
+
+With the platform service on, **Console → Connectors** is a catalog of the outside services your agents can use, like Claude's connector directory, but for your agents. It works with MCP servers that accept a service account or API token:
+
+| Preset | MCP server | Credential |
+|---|---|---|
+| Linear | `https://mcp.linear.app/mcp` | API key |
+| GitHub | `https://api.githubcopilot.com/mcp/` | fine-grained personal access token |
+| Stripe | `https://mcp.stripe.com` | restricted key (`rk_…`) |
+| Supabase | `https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true` | personal access token |
+| Any MCP server | its streamable HTTP URL | none, bearer token, or a named header |
+
+Services that only offer per-user OAuth (HubSpot, Google, Salesforce, Microsoft 365) aren't in this release.
+
+**Add one (admins):** pick a preset, paste the key, and **Connect and list tools**. The platform connects, lists the server's tools, and you choose:
+
+- which tools agents may use (read-only tools start on, tools that change things start off);
+- which of those wait for a person to approve each call.
+
+**Give it to agents:** in **Agents**, the **Connectors** button on a row (the sample included), or tick connectors in **Create agent**. The agent restarts with the connector's tools, named `<connector>_<tool>`. Its console lists them with a *Connector* tag and shows which need approval. The connector's page shows which agents use it and its recent calls (tool, agent, allowed or refused; never arguments or results). From there you can change the tools, list them again, or rotate the credential.
+
+**How it's kept safe:**
+
+- **The credential never reaches an agent.** It's stored in `connectors.json`, encrypted with `PLATFORM_SECRET_KEY` from `.env` (`agentctl.py platform` creates the key once; keep `.env` backed up, because without the key stored credentials can't be read and must be entered again). Agents talk to the platform's connector gateway (`http://platform:8001`, inside the Docker network only) with their own token, and the gateway adds the credential.
+- **The gateway enforces the rules**, not the agent. It forwards only to the connector's saved URL, never a path or query the agent chose. It passes on only the MCP methods an agent needs, rejects ambiguous messages, and re-encodes what it forwards. It refuses tools that aren't allowed and hides them from the tool list. It refuses calls made under rules that have since changed, until the agent restarts with the new ones.
+- **Only agents a connector is assigned to can use it**, and each agent's token is different.
+- **Connector URLs must be `https` and resolve to public addresses**, checked on every call, so a connector can't be pointed at the server itself or the Docker network. The URL is shown only to admins.
+- Approval uses the kit's normal human-approval flow, so write tools wait in the chat (and the Approvals page) for a person.
+
+`connectors.json` belongs to this server and is ignored by git, like `agents.yaml`. From the command line: `python3 agentctl.py connect <agent|sample> linear,github` (or `none`), then `docker compose up -d`.
+
 ## More agents, and the fleet view
 
 The same stack runs any number of agents, each at its own address with its own console, chat, sign-in cookie and Redis database, plus the [fleet view](fleet.md) across all of them.
@@ -108,7 +139,7 @@ The same stack runs any number of agents, each at its own address with its own c
 
 ```bash
 mkdir -p /opt/agents && cd /opt/agents
-copier copy --trust --vcs-ref v0.9.3 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
+copier copy --trust --vcs-ref v0.9.4 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
 ```
 
 Edit its `instructions/system.md`, `tools.py` and `evals/cases.yaml`. Put it in its own git repository: the generated CI runs its evals on every change.

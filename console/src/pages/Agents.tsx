@@ -1,4 +1,4 @@
-import { ExternalLink, Loader2, MessageSquareText, Plus, Shield, Trash2 } from "lucide-react";
+import { ExternalLink, Loader2, MessageSquareText, Plug, Plus, Shield, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { HealthDot, MoreLink, PostureList, RuntimeGrid, ToolList, useHealth } from "@/components/agent";
@@ -8,7 +8,10 @@ import { Page, PageHeader } from "@/components/ui/page";
 import { EmptyState, ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { StatusBadge, Tag } from "@/components/ui/status";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { ROOT, platformApi, type Overview, type PlatformAgent, type PlatformInfo, type PlatformJob } from "@/lib/api";
+import { ROOT, connectorsApi, platformApi, type Overview, type PlatformAgent, type PlatformInfo, type PlatformJob } from "@/lib/api";
+import { Dialog } from "@/components/ui/overlay";
+import { useJob } from "@/lib/platform";
+import { useLoad } from "@/lib/data";
 import { useOverview } from "@/lib/data";
 import { usePlatform, usePlatformAgents } from "@/lib/platform";
 import { duration, environmentLabel, number } from "@/lib/format";
@@ -24,7 +27,7 @@ export function AgentsPage() {
 // ------------------------------------------------------------------ every agent on the server (VPS platform)
 const JOB_LABEL: Partial<Record<PlatformJob["state"], string>> = {
   queued: "Queued", generating: "Generating", registering: "Registering", building: "Building and running evals",
-  starting: "Starting", removing: "Removing",
+  starting: "Starting", removing: "Removing", connecting: "Updating connectors",
 };
 
 function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
@@ -32,6 +35,7 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
   const { navigate } = useRouter();
   const [removing, setRemoving] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [editing, setEditing] = useState<PlatformAgent | null>(null);
 
   const remove = async (a: PlatformAgent) => {
     if (!window.confirm(`Remove ${a.title}? It stops and leaves this server. Its files are kept on the server (in .removed).`)) return;
@@ -75,6 +79,7 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
                 <Th>Status</Th>
                 <Th className="hidden md:table-cell">Version</Th>
                 <Th className="hidden lg:table-cell">Created by</Th>
+                <Th className="hidden md:table-cell">Connectors</Th>
                 <Th className="text-right">Open</Th>
               </tr>
             </thead>
@@ -93,6 +98,7 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
                   </Td>
                   <Td className="hidden md:table-cell">—</Td>
                   <Td className="hidden lg:table-cell text-[13px]">{j.created_by}</Td>
+                  <Td className="hidden md:table-cell">—</Td>
                   <Td className="text-right">
                     <Link to={`/agents/new?job=${encodeURIComponent(j.id)}`} className="text-[13px] text-accent-700 hover:underline">
                       Progress
@@ -119,6 +125,17 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
                     </Td>
                     <Td className="hidden font-mono text-[13px] md:table-cell">{a.version ?? "—"}</Td>
                     <Td className="hidden lg:table-cell text-[13px] text-zinc-600">{a.created_by ?? (a.name === "sample" ? "Sample" : "—")}</Td>
+                    <Td className="hidden md:table-cell">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {(a.connectors ?? []).map((c) => <Tag key={c}>{c}</Tag>)}
+                        {info.is_admin && (
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(a)} aria-label={`Choose connectors for ${a.title}`}>
+                            <Plug aria-hidden /> {(a.connectors ?? []).length ? "Edit" : "Add"}
+                          </Button>
+                        )}
+                        {!info.is_admin && !(a.connectors ?? []).length && <span className="text-[13px] text-zinc-400">None</span>}
+                      </div>
+                    </Td>
                     <Td className="text-right">
                       <div className="inline-flex items-center gap-1.5">
                         <ButtonLink size="sm" href={`${base}/console`}>Console</ButtonLink>
@@ -139,6 +156,7 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
           </Table>
         )}
       </Card>
+      {editing && <ConnectorsDialog agent={editing} onClose={(changed) => { setEditing(null); if (changed) reload(); }} />}
       <InlineNotice className="mt-4">
         {info.is_admin
           ? "You're a platform admin: you can create and remove agents here. Each agent is a Microsoft Agent Framework service with the golden path's guardrails, approvals, sessions, evals and console."
@@ -151,6 +169,70 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
         )}
       </InlineNotice>
     </Page>
+  );
+}
+
+function ConnectorsDialog({ agent, onClose }: { agent: PlatformAgent; onClose: (changed: boolean) => void }) {
+  const catalog = useLoad(connectorsApi.list);
+  const [chosen, setChosen] = useState<Set<string>>(new Set(agent.connectors ?? []));
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const { job } = useJob(jobId);
+  const done = job?.state === "ready" || job?.state === "failed";
+  const save = async () => {
+    setProblem(null);
+    try {
+      setJobId((await connectorsApi.assign(agent.name, [...chosen])).id);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "The connectors couldn't be changed.");
+    }
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose(Boolean(jobId))}
+      title={`Connectors for ${agent.title}`}
+      description="The agent restarts with the new set (no rebuild). Write tools still ask the person in the chat before they run."
+      footer={
+        jobId ? (
+          <Button variant="primary" disabled={!done} onClick={() => onClose(true)}>{done ? "Close" : <><Loader2 aria-hidden className="animate-spin" /> Restarting…</>}</Button>
+        ) : (
+          <>
+            <Button onClick={() => onClose(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => void save()} disabled={!catalog.data}>Save and restart</Button>
+          </>
+        )
+      }
+    >
+      {catalog.error ? (
+        <InlineNotice tone="bad">{catalog.error.message}</InlineNotice>
+      ) : !catalog.data ? (
+        <Skeleton className="h-4 w-1/2" />
+      ) : catalog.data.connectors.length === 0 ? (
+        <p className="text-[13px] text-zinc-600">No connectors on this server yet. <Link to="/connectors/new" className="font-medium text-accent-700 hover:underline">Add one</Link> first.</p>
+      ) : (
+        <ul className="space-y-2">
+          {catalog.data.connectors.map((c) => (
+            <li key={c.name}>
+              <label className="flex cursor-pointer gap-3 rounded-md border border-zinc-200 px-3 py-2 hover:border-zinc-300">
+                <input type="checkbox" className="mt-0.5 size-4 accent-zinc-900" checked={chosen.has(c.name)} disabled={Boolean(jobId)}
+                  onChange={(e) => setChosen((s) => { const n = new Set(s); if (e.target.checked) n.add(c.name); else n.delete(c.name); return n; })} />
+                <span>
+                  <span className="block text-sm text-zinc-900">{c.title}</span>
+                  <span className="block text-xs text-zinc-500">{c.allowed.length} tools{c.approval.length ? `, ${c.approval.length} need approval` : ""} · {c.host}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {problem && <InlineNotice tone="bad" className="mt-3">{problem}</InlineNotice>}
+      {job && (
+        <InlineNotice tone={job.state === "failed" ? "bad" : "info"} className="mt-3">
+          {job.state === "ready" ? "Done: the agent is running with its new connectors." : job.state === "failed" ? `It didn't work: ${job.error}` : "Updating its settings and restarting it…"}
+        </InlineNotice>
+      )}
+    </Dialog>
   );
 }
 

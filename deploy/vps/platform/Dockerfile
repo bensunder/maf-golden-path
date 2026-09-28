@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
     && git config --system --add safe.directory '*'
 COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
-RUN pip install "fastapi>=0.115" "uvicorn>=0.30" "httpx>=0.27" "pyyaml>=6" "copier>=9.3"
+RUN pip install "fastapi>=0.115" "uvicorn>=0.30" "httpx>=0.27" "pyyaml>=6" "copier>=9.3" "mcp>=1.30" "cryptography>=43"
 WORKDIR /app
-COPY server.py ./server.py
-EXPOSE 8000
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+COPY server.py connectors.py ./
+EXPOSE 8000 8001
+CMD ["python", "server.py"]

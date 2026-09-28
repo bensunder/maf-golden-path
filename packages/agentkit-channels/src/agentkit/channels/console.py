@@ -202,6 +202,14 @@ def describe_tools(agent: Any) -> list[dict[str, Any]]:
         props = getattr(t, "additional_properties", None) or {}
         result.append({"name": name, "description": (getattr(t, "description", "") or "")[:300], "approval": approval,
                        "kind": "knowledge" if "agentkit.knowledge" in props else "function"})
+    for server in getattr(agent, "mcp_tools", None) or []:  # connectors (MCP servers): one row per allowed tool
+        mode = getattr(server, "approval_mode", None)
+        always = set((mode or {}).get("always_require_approval") or []) if isinstance(mode, dict) else set()
+        prefix = getattr(server, "tool_name_prefix", None) or getattr(server, "name", "")
+        for tool in getattr(server, "allowed_tools", None) or []:
+            result.append({"name": f"{prefix}_{tool}", "description": f"{getattr(server, 'description', None) or server.name} "
+                           f"(connector): {tool}", "approval": "always" if (mode == "always_require" or tool in always) else "never",
+                           "kind": "connector", "connector": getattr(server, "name", None)})
     return result
 
 

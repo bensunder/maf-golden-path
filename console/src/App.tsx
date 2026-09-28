@@ -15,6 +15,7 @@ import { DeploymentsPage, KnowledgePage, SecurityPage, SettingsPage } from "@/pa
 import { TelemetryPage } from "@/pages/Telemetry";
 import { OverviewPage } from "@/pages/Overview";
 import { CreateAgentPage, PlatformPage } from "@/pages/Platform";
+import { ConnectorDetailPage, ConnectorsPage, NewConnectorPage } from "@/pages/Connectors";
 import { PlaygroundPage } from "@/pages/Playground";
 import { SessionsPage } from "@/pages/Sessions";
 import { useEffect } from "react";
@@ -32,6 +33,8 @@ const TITLES: Record<string, string> = {
   "/security": "Security",
   "/deployments": "Deployments",
   "/platform": "Platform",
+  "/connectors": "Connectors",
+  "/connectors/new": "Add connector",
   "/settings": "Settings",
 };
 
@@ -39,7 +42,7 @@ function Routes() {
   const { path } = useRouter();
 
   useEffect(() => {
-    const page = TITLES[path] ?? (path.startsWith("/agents/") ? "Agent" : "Not found");
+    const page = TITLES[path] ?? (path.startsWith("/agents/") ? "Agent" : path.startsWith("/connectors/") ? "Connector" : "Not found");
     const base = document.title.split(" · ").slice(-2).join(" · ");
     document.title = `${page} · ${base}`;
   }, [path]);
@@ -71,7 +74,12 @@ function Routes() {
       return <PlatformPage />;
     case "/settings":
       return <SettingsPage />;
+    case "/connectors":
+      return <ConnectorsPage />;
+    case "/connectors/new":
+      return <NewConnectorPage />;
   }
+  if (path.startsWith("/connectors/")) return <ConnectorDetailPage name={path.slice("/connectors/".length)} />;
   if (path.startsWith("/agents/")) {
     let name = path.slice("/agents/".length);
     try {

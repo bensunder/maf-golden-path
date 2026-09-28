@@ -29,7 +29,8 @@ export interface ToolInfo {
   name: string;
   description: string;
   approval: "never" | "always" | "rules";
-  kind: "function" | "knowledge";
+  kind: "function" | "knowledge" | "connector";
+  connector?: string;
 }
 
 export interface Overview {
@@ -323,9 +324,10 @@ export interface PlatformAgent {
   created_at: string | null;
   status: "ready" | "not_ready" | "unreachable";
   version: string | null;
+  connectors?: string[];
 }
 
-export type JobState = "queued" | "generating" | "registering" | "building" | "starting" | "ready" | "failed" | "removing" | "removed";
+export type JobState = "queued" | "generating" | "registering" | "building" | "starting" | "ready" | "failed" | "removing" | "removed" | "connecting";
 
 export interface PlatformJob {
   id: string;
@@ -347,6 +349,7 @@ export interface NewAgent {
   description: string;
   team: string;
   knowledge: boolean;
+  connectors: string[];
 }
 
 export const platformApi = {
@@ -362,8 +365,98 @@ export const platformApi = {
 export const AGENT_TITLE = /^[A-Za-z][A-Za-z0-9 .,()&+-]{1,58}[A-Za-z0-9).]$/;
 export const AGENT_TEXT = /^[A-Za-z0-9 .,;:!?()&+/%#@-]{0,240}$/;
 export const AGENT_TEAM = /^[a-z][a-z0-9-]{1,30}$/;
-export const RESERVED_NAMES = ["agent", "auth", "redis", "fleet", "platform", "www", "api", "console", "chat", "v1"];
+export const RESERVED_NAMES = ["agent", "auth", "redis", "fleet", "platform", "www", "api", "console", "chat", "v1", "sample"];
 
 export function agentSlug(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
 }
+
+// ------------------------------------------------------------------ connectors (platform): MCP servers agents may use
+export interface ConnectorTool {
+  name: string;
+  description: string;
+  read_only: boolean;
+}
+
+export interface Connector {
+  name: string;
+  title: string;
+  url: string;
+  host: string | null;
+  auth: "none" | "bearer" | "header";
+  header?: string | null;
+  has_secret: boolean;
+  tools: ConnectorTool[];
+  allowed: string[];
+  approval: string[];
+  preset?: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  used_by: string[];
+}
+
+export interface ConnectorDraft {
+  name: string;
+  title: string;
+  url: string;
+  auth: Connector["auth"];
+  header?: string;
+  secret?: string;
+  preset?: string;
+  tools: ConnectorTool[];
+  allowed: string[];
+  approval: string[];
+}
+
+export interface ConnectorActivity {
+  at: number;
+  agent: string;
+  connector: string;
+  tool: string;
+  allowed: boolean;
+}
+
+export const connectorsApi = {
+  list: () => request<{ connectors: Connector[]; can_manage: boolean; vault: boolean }>("/v1/platform/connectors"),
+  test: (body: { url?: string; auth?: string; header?: string; secret?: string; name?: string }) =>
+    request<{ tools: ConnectorTool[] }>("/v1/platform/connectors/test", { method: "POST", body: JSON.stringify(body) }),
+  add: (body: ConnectorDraft) => request<Connector>("/v1/platform/connectors", { method: "POST", body: JSON.stringify(body) }),
+  update: (name: string, body: Partial<Pick<ConnectorDraft, "title" | "tools" | "allowed" | "approval" | "secret">>) =>
+    request<Connector & { job: PlatformJob | null }>(`/v1/platform/connectors/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (name: string) =>
+    request<{ removed: string }>(`/v1/platform/connectors/${encodeURIComponent(name)}`, { method: "DELETE", headers: { "X-Agentkit-Confirm": name } }),
+  activity: (name: string) => request<{ activity: ConnectorActivity[] }>(`/v1/platform/connectors/${encodeURIComponent(name)}/activity`),
+  assign: (agent: string, connectors: string[]) =>
+    request<PlatformJob>(`/v1/platform/agents/${encodeURIComponent(agent)}/connectors`, { method: "PUT", body: JSON.stringify({ connectors }) }),
+};
+
+export const CONNECTOR_NAME = /^[a-z][a-z0-9_]{1,30}$/;
+
+/** Services with a hosted MCP server that accepts a token (checked against each vendor's docs). */
+export interface ConnectorPreset {
+  id: string;
+  title: string;
+  url: string;
+  auth: Connector["auth"];
+  header?: string;
+  secretLabel: string;
+  help: string;
+  docs: string;
+}
+
+export const CONNECTOR_PRESETS: ConnectorPreset[] = [
+  { id: "linear", title: "Linear", url: "https://mcp.linear.app/mcp", auth: "bearer", secretLabel: "Linear API key",
+    help: "Issues, projects and cycles. Create a personal API key in Linear: Settings → Security & access.", docs: "https://linear.app/docs/mcp" },
+  { id: "github", title: "GitHub", url: "https://api.githubcopilot.com/mcp/", auth: "bearer", secretLabel: "GitHub personal access token",
+    help: "Repositories, issues and pull requests. A fine-grained token scoped to the repositories the agent needs is safest.",
+    docs: "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/set-up-the-github-mcp-server" },
+  { id: "stripe", title: "Stripe", url: "https://mcp.stripe.com", auth: "bearer", secretLabel: "Stripe restricted API key",
+    help: "Customers, payments and invoices. Use a restricted key with only the permissions the agent needs.", docs: "https://docs.stripe.com/mcp" },
+  { id: "supabase", title: "Supabase", url: "https://mcp.supabase.com/mcp?project_ref=YOUR_PROJECT&read_only=true", auth: "bearer",
+    secretLabel: "Supabase personal access token",
+    help: "Your Postgres database and project. Replace YOUR_PROJECT with the project ref; keep read_only=true unless the agent must write.",
+    docs: "https://supabase.com/docs/guides/ai-tools/mcp" },
+];
+
+/** Popular services whose hosted MCP servers need each person to sign in (OAuth): not available yet. */
+export const OAUTH_ONLY = ["HubSpot", "Google Drive, Gmail and Calendar", "Salesforce", "Microsoft 365", "Notion (hosted)", "Slack"];

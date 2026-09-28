@@ -5,6 +5,7 @@
     python3 agentctl.py add hr /opt/agents/hr --internal  # an agent under the sample's host (<host>/agents/hr)
     python3 agentctl.py fleet [--internal]              # the fleet view across all of them
     python3 agentctl.py platform --admins you@contoso.com  # Create agent in the console builds and starts agents
+    python3 agentctl.py connect legal github,linear     # connectors (added in the console) this agent may use
     python3 agentctl.py list | remove legal | render
     docker compose up -d --build
 
@@ -31,13 +32,17 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 REGISTRY = HERE / "agents.yaml"
+CONNECTORS = HERE / "connectors.json"  # written by the platform service (the console's Connectors page)
+GATEWAY = "http://platform:8001/mcp/{name}"
+_CONNECTOR = re.compile(r"[a-z][a-z0-9_]{1,30}")
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{32,128}")
 BASE = HERE / "docker-compose.yml"
 OUT = HERE / "docker-compose.agents.yml"
 NGINX = HERE / "nginx"
 ENV = HERE / ".env"
 COMPOSE_FILES = "docker-compose.yml:docker-compose.agents.yml"
 FIRST_PORT = 4181
-RESERVED = {"agent", "auth", "redis", "fleet", "www", "api"}
+RESERVED = {"agent", "auth", "redis", "fleet", "www", "api", "sample", "platform"}
 _NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}[a-z0-9]$")
 _HOST = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$")
 _ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -71,7 +76,41 @@ def load(path: Path = REGISTRY) -> dict:
     data.setdefault("agents", [])
     data.setdefault("fleet", None)
     data.setdefault("platform", None)
+    data.setdefault("sample", None)
     return data
+
+
+def connectors() -> dict[str, dict]:
+    import json
+
+    if not CONNECTORS.is_file():
+        return {}
+    return dict((json.loads(CONNECTORS.read_text(encoding="utf-8") or "{}")).get("connectors") or {})
+
+
+def policy_of(connector: dict) -> str:
+    """The fingerprint of a connector's tool rules (the same as platform/connectors.py computes): the agent
+    sends it with every tools request, and the gateway refuses a stale one."""
+    import hashlib
+    import json
+
+    rules = json.dumps({"allowed": sorted(connector.get("allowed") or []), "approval": sorted(connector.get("approval") or [])},
+                       sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(rules.encode()).hexdigest()[:16]
+
+
+def connector_env(entry: dict, known: dict[str, dict]) -> dict[str, str]:
+    """AGENTKIT_CONNECTORS for an agent: gateway URLs and tool rules, never a vendor credential."""
+    import json
+
+    names = [c for c in entry.get("connectors") or [] if c in known]
+    if not names:
+        return {}
+    spec = [{"name": n, "title": known[n].get("title") or n, "url": GATEWAY.format(name=n),
+             "allowed_tools": known[n].get("allowed") or [], "approval": known[n].get("approval") or [],
+             "policy": policy_of(known[n])} for n in names]
+    return {"AGENTKIT_CONNECTORS": json.dumps(spec, separators=(",", ":")).replace("$", "$$"),
+            "AGENTKIT_CONNECTOR_TOKEN": entry["connector_token"]}
 
 
 def save(data: dict, path: Path = REGISTRY) -> None:
@@ -182,11 +221,20 @@ def validate(data: dict) -> None:
         for key in e.get("env") or {}:
             if not _ENV_KEY.fullmatch(str(key)) or _REFUSED_ENV.search(str(key)):
                 raise Problem(f"agents.yaml: env {key!r} for {name} isn't allowed here")
+        _check_connectors(name, e)
         for key in ("created_by", "created_at"):
             if key in e and not re.fullmatch(r"[A-Za-z0-9@._:+-]{1,120}", str(e[key])):
                 raise Problem(f"agents.yaml: {key} for {name} has unexpected characters")
         seen_names.add(name)
         seen_dbs.add(db)
+    if data.get("sample") is not None:
+        if not isinstance(data["sample"], dict):
+            raise Problem("agents.yaml: sample must be a mapping")
+        _check_connectors("sample", data["sample"])
+    tokens = [str(e.get("connector_token")) for e in [*data["agents"], data.get("sample") or {}]
+              if isinstance(e, dict) and e.get("connector_token")]
+    if len(tokens) != len(set(tokens)):
+        raise Problem("agents.yaml: two agents share a connector_token; remove one and run connect again")
     platform = data.get("platform")
     if platform:
         admins = platform.get("admins") if isinstance(platform, dict) else None
@@ -206,6 +254,14 @@ def _atomic_write(path: Path, text: str, mode: int | None = None) -> None:
     tmp.replace(path)
 
 
+def _check_connectors(name: str, e: dict) -> None:
+    listed = e.get("connectors") or []
+    if not isinstance(listed, list) or not all(isinstance(c, str) and _CONNECTOR.fullmatch(c) for c in listed):
+        raise Problem(f"agents.yaml: connectors for {name} must be connector names")
+    if listed and not _TOKEN.fullmatch(str(e.get("connector_token") or "")):
+        raise Problem(f"agents.yaml: {name} has connectors but no valid connector_token")
+
+
 def _private_write(path: Path, text: str) -> None:
     """agents.yaml and the generated compose file can hold per-agent settings: owner-only, like .env."""
     _atomic_write(path, text, 0o600)
@@ -219,7 +275,7 @@ def _services(base: dict) -> tuple[dict, dict]:
     return services["agent"], services["auth"]
 
 
-def agent_service(template: dict, agent: dict) -> dict:
+def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = None) -> dict:
     service = copy.deepcopy(template)
     # the agent's folder is the build context (filtered by Dockerfile.dockerignore); the kit is this checkout
     service["build"] = {"context": agent["path"], "dockerfile": str(HERE / "Dockerfile"),
@@ -231,6 +287,7 @@ def agent_service(template: dict, agent: dict) -> dict:
     env["AGENTKIT_REDIS_URL"] = f"redis://redis:6379/{agent['redis_db']}"
     for key, value in (agent.get("env") or {}).items():
         env[key] = str(value).replace("$", "$$")  # literal: Compose would otherwise interpolate it
+    env.update(connector_env(agent, known or {}))
     return service
 
 
@@ -283,10 +340,12 @@ def platform_service(platform: dict) -> dict:
             "PLATFORM_AGENTS_DIR": agents_dir,
             "PLATFORM_PUBLIC_HOST": "${AGENT_HOST}",
             "PLATFORM_TRUSTED_PEER": "auth",  # the sign-in proxy: the only caller it serves
+            # encrypts connector credentials at rest (generated into .env by `agentctl.py platform`)
+            "PLATFORM_SECRET_KEY": "${PLATFORM_SECRET_KEY:?run agentctl.py platform to create it}",
         },
         # the same paths as on the host: docker compose sends build contexts by path
         "volumes": ["/var/run/docker.sock:/var/run/docker.sock", f"{repo}:{repo}", f"{agents_dir}:{agents_dir}"],
-        "expose": ["8000"],
+        "expose": ["8000", "8001"],  # 8001: the connector gateway, for agents on this network only
         "depends_on": ["agent"],
     }
 
@@ -319,8 +378,9 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
     version = str(agent_t["environment"].get("AGENTKIT_SERVICE_VERSION", "0.0.0"))
     services: dict = {}
     sites: dict[str, str] = {}
+    known = connectors()
     for a in data["agents"]:
-        services[f"agent-{a['name']}"] = agent_service(agent_t, a)
+        services[f"agent-{a['name']}"] = agent_service(agent_t, a, known)
         if not a.get("internal"):
             services[f"auth-{a['name']}"] = auth_service(auth_t, a["name"], a["host"], a["port"], f"agent-{a['name']}")
             sites[f"agentkit-{a['name']}.conf"] = nginx_site(a["host"], a["port"])
@@ -330,6 +390,8 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
         if not f.get("internal"):
             services["auth-fleet"] = auth_service(auth_t, "fleet", f["host"], f["port"], "fleet")
             sites["agentkit-fleet.conf"] = nginx_site(f["host"], f["port"])
+    if data.get("sample") and connector_env(data["sample"], known):
+        services["agent"] = {"environment": connector_env(data["sample"], known)}  # merged into the sample's settings
     if data.get("platform"):
         services["platform"] = platform_service(data["platform"])
         # the sample's sign-in proxy now forwards to the platform router, which serves the sample at "/"
@@ -461,6 +523,44 @@ def cmd_platform(args, data, env) -> None:
     folder = Path(args.agents_dir).expanduser().resolve()
     folder.mkdir(parents=True, exist_ok=True)
     data["platform"] = {"admins": admins, "agents_dir": str(folder)}
+    ensure_secret_key()
+
+
+def ensure_secret_key(path: Path = ENV) -> None:
+    """The key the platform encrypts connector credentials with. Created once, kept in .env (owner-only)."""
+    import base64
+    import os
+
+    if read_env(path).get("PLATFORM_SECRET_KEY"):
+        return
+    key = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    _atomic_write(path, text.rstrip("\n") + ("\n" if text else "") +
+                  "# encrypts connector credentials (agentctl.py platform); keep it with your backups of connectors.json\n"
+                  f"PLATFORM_SECRET_KEY={key}\n", 0o600 if not path.exists() else None)
+
+
+def cmd_connect(args, data, env) -> None:
+    import secrets
+
+    target = args.agent
+    wanted = [] if args.connectors == "none" else [c.strip() for c in args.connectors.split(",") if c.strip()]
+    known = connectors()
+    bad = [c for c in wanted if not _CONNECTOR.fullmatch(c) or c not in known]
+    if bad:
+        raise Problem(f"not connectors on this server: {bad} (add them in the console first)")
+    if target == "sample":
+        entry = data.get("sample") or {}
+        data["sample"] = entry
+    else:
+        entry = next((a for a in data["agents"] if a["name"] == target), None)
+        if entry is None:
+            raise Problem(f"no agent named {target}")
+    entry["connectors"] = sorted(set(wanted))
+    if wanted and not _TOKEN.fullmatch(str(entry.get("connector_token") or "")):
+        entry["connector_token"] = secrets.token_urlsafe(32)  # identifies this agent to the connector gateway
+    if not wanted:
+        entry.pop("connector_token", None)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -484,6 +584,9 @@ def main(argv: list[str] | None = None) -> None:
     plat.add_argument("--off", action="store_true")
     rm = sub.add_parser("remove", help="remove an agent")
     rm.add_argument("name")
+    con = sub.add_parser("connect", help="set the connectors an agent may use (names from the console, or none)")
+    con.add_argument("agent", help="an agent's name, or sample")
+    con.add_argument("connectors", help="comma-separated connector names, or none")
     sub.add_parser("list", help="show the agents")
     sub.add_parser("render", help="write the compose and nginx files again from agents.yaml")
     args = parser.parse_args(argv)
@@ -495,7 +598,8 @@ def main(argv: list[str] | None = None) -> None:
         for a in data["agents"]:
             where = (f"https://{env.get('AGENT_HOST', '?')}/agents/{a['name']}" if a.get("internal")
                      else f"https://{a['host']}  port {a['port']}")
-            print(f"{a['name']:<8}{where}  {a['path']}  redis db {a['redis_db']}")
+            extra = f"  connectors: {', '.join(a['connectors'])}" if a.get("connectors") else ""
+            print(f"{a['name']:<8}{where}  {a['path']}  redis db {a['redis_db']}{extra}")
         if data.get("fleet"):
             f = data["fleet"]
             print("fleet   " + (f"https://{f['host']}  port {f['port']}" if f.get("host") else "")
@@ -511,6 +615,8 @@ def main(argv: list[str] | None = None) -> None:
             removed = "agentkit-fleet.conf"
     elif args.command == "platform":
         cmd_platform(args, data, env)
+    elif args.command == "connect":
+        cmd_connect(args, data, env)
     elif args.command == "remove":
         before = len(data["agents"])
         data["agents"] = [a for a in data["agents"] if a["name"] != args.name]
@@ -521,6 +627,8 @@ def main(argv: list[str] | None = None) -> None:
         if gone.get("internal"):
             removed = None
     validate(data)  # before anything is written
+    if data.get("platform"):
+        ensure_secret_key()  # also for stacks set up before connectors existed
     save(data)
     render(data, env)
     ensure_compose_file()
@@ -532,6 +640,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "platform":
         print("\nNext:\n  docker compose up -d --build" + ("" if args.off else
               f"\n  Then open https://{host}/console/agents: admins can create and launch agents there"))
+    elif args.command == "connect":
+        svc = "agent" if args.agent == "sample" else f"agent-{args.agent}"
+        print(f"\nNext:\n  docker compose up -d {svc}   (a restart with the new connectors; no rebuild)")
     elif args.command == "fleet" and args.internal:
         print(f"\nNext:\n  docker compose up -d --build --remove-orphans\n  Then open https://{host}/fleet"
               + ("" if data.get("platform") else "  (needs: python3 agentctl.py platform --admins ...)"))

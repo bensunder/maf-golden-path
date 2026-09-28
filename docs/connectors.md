@@ -134,6 +134,8 @@ TOOLS = [..., KB]
 
 MAF's MCP tool takes static headers, which go stale when the token expires, usually within about an hour. `gateway_mcp_tool` instead gives it an HTTP client that fetches a fresh token on every request, and adds the `x-agentkit-*` headers. Put MCP servers behind API Management like models, so they share auth, logging and rate limits.
 
+**Connectors picked in the console (VPS platform).** On a VPS with the platform service, an admin adds MCP connectors once in **Console → Connectors** (Linear, GitHub, Stripe, Supabase, or any MCP server URL) and picks which ones each agent gets, with no code. The platform keeps the credential and enforces the tool rules; the agent receives only `AGENTKIT_CONNECTORS` and `AGENTKIT_CONNECTOR_TOKEN`, and `build_agent` adds the tools itself. See [vps.md](vps.md#connectors).
+
 ## Testing connectors
 
 Never call real APIs from unit tests. `mock_api` swaps a client's transport and auth for a test:

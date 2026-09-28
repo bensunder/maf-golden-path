@@ -8,7 +8,8 @@ import { CopyButton } from "@/components/ui/overlay";
 import { Page, PageHeader, SectionTitle } from "@/components/ui/page";
 import { ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { StatusBadge, Tag } from "@/components/ui/status";
-import { AGENT_TEAM, AGENT_TEXT, AGENT_TITLE, RESERVED_NAMES, agentSlug, platformApi, type PlatformInfo } from "@/lib/api";
+import { AGENT_TEAM, AGENT_TEXT, AGENT_TITLE, RESERVED_NAMES, agentSlug, connectorsApi, platformApi, type PlatformInfo } from "@/lib/api";
+import { useLoad } from "@/lib/data";
 import { STEPS, stepIndex, useJob, usePlatform } from "@/lib/platform";
 import { useOverview } from "@/lib/data";
 import { cn } from "@/lib/format";
@@ -142,6 +143,8 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
   const [description, setDescription] = useState("");
   const [team, setTeam] = useState("");
   const [knowledge, setKnowledge] = useState(false);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const catalog = useLoad(connectorsApi.list);
   const [submitting, setSubmitting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -161,7 +164,7 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
     setSubmitting(true);
     setProblem(null);
     try {
-      const job = await platformApi.create({ title: title.trim(), name, description: description.trim(), team: teamValue, knowledge });
+      const job = await platformApi.create({ title: title.trim(), name, description: description.trim(), team: teamValue, knowledge, connectors: [...chosen] });
       navigate(`/agents/new?job=${encodeURIComponent(job.id)}`);
     } catch (e) {
       setProblem(e instanceof Error ? e.message : "The agent couldn't be created.");
@@ -213,6 +216,31 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
                   <span id="knowledge-note" className="mt-0.5 block text-xs text-zinc-500">Needs Azure AI Search. On this server the search tool says it can't search until one is connected.</span>
                 </span>
               </label>
+            </fieldset>
+            <fieldset>
+              <legend className="text-[13px] font-medium text-zinc-900">Connectors</legend>
+              <p className="mt-0.5 text-xs text-zinc-500">Services it may use through the platform. Write tools ask the person in the chat first.</p>
+              {catalog.data?.connectors.length ? (
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {catalog.data.connectors.map((c) => (
+                    <li key={c.name}>
+                      <label className="flex h-full cursor-pointer gap-3 rounded-md border border-zinc-200 px-3 py-2 hover:border-zinc-300">
+                        <input type="checkbox" className="mt-0.5 size-4 accent-zinc-900" checked={chosen.has(c.name)}
+                          onChange={(e) => setChosen((s) => { const n = new Set(s); if (e.target.checked) n.add(c.name); else n.delete(c.name); return n; })} />
+                        <span>
+                          <span className="block text-sm text-zinc-900">{c.title}</span>
+                          <span className="block text-xs text-zinc-500">{c.allowed.length} tools{c.approval.length ? `, ${c.approval.length} need approval` : ""}</span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-[13px] text-zinc-500">
+                  None on this server yet.{" "}
+                  {info.is_admin && <Link to="/connectors/new" className="font-medium text-accent-700 hover:underline">Add a connector</Link>}
+                </p>
+              )}
             </fieldset>
             {issues.length > 0 && <InlineNotice tone="warn">{issues.join(". ")}.</InlineNotice>}
             {problem && <InlineNotice tone="bad">{problem}</InlineNotice>}

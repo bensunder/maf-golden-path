@@ -26,6 +26,14 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.9.3 → 0.9.4 (Connectors catalog on a VPS)
+
+- **Console → Connectors** (VPS platform): add MCP connectors once (Linear, GitHub, Stripe, Supabase or any MCP server with a service token), choose allowed tools and which need approval, and assign them to agents from the Agents page or Create agent ([vps.md](vps.md#connectors)).
+- Upgrade a VPS: `git fetch --tags && git checkout v0.9.4`, `python3 agentctl.py platform --admins ...` (adds `PLATFORM_SECRET_KEY` to `.env`), `docker compose up -d --build`.
+- New settings `AGENTKIT_CONNECTORS` and `AGENTKIT_CONNECTOR_TOKEN`, written by `agentctl.py`; `build_agent` adds the connector tools when they're set. Nothing changes for agents without them or on Azure.
+- `agentkit-tools` now depends on `mcp`, and adds `platform_connectors()` and `ResilientMCPTool`: an MCP server that is down no longer fails the agent's run.
+- `sample` and `platform` are reserved agent names.
+
 ### 0.9.2 → 0.9.3 (Create agent launches agents on a VPS)
 
 - `agentctl.py platform --admins ...` adds the platform service: the console's **Create agent** generates, tests, builds and starts a new agent on the server, and the Agents page lists every agent there ([vps.md](vps.md#create-agents-from-the-console)). Nothing changes for Azure deployments or VPS stacks without it.

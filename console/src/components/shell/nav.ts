@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Layers,
   Library,
+  Plug,
   MessageSquareText,
   Rocket,
   Settings2,
@@ -14,6 +15,8 @@ import {
   UserCheck,
   type LucideIcon,
 } from "lucide-react";
+
+import { PLATFORM } from "@/lib/api";
 
 export interface NavItem {
   to: string;
@@ -26,6 +29,8 @@ export interface NavItem {
 export const PRIMARY_NAV: NavItem[] = [
   { to: "/", label: "Overview", icon: LayoutDashboard, match: (p) => p === "/" },
   { to: "/agents", label: "Agents", icon: Blocks, match: (p) => p.startsWith("/agents") },
+  // the VPS platform's catalog of MCP servers agents may use (only there)
+  ...(PLATFORM ? [{ to: "/connectors", label: "Connectors", icon: Plug } as NavItem] : []),
   { to: "/playground", label: "Playground", icon: MessageSquareText },
   { to: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
   { to: "/knowledge", label: "Knowledge", icon: Library },

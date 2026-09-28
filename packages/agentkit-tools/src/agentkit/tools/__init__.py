@@ -10,7 +10,7 @@ from .auth import (
     ToolAuth,
 )
 from .http import ApiClient, RetryPolicy, ToolHttpError
-from .mcp import DynamicAuth, gateway_mcp_tool
+from .mcp import DynamicAuth, ResilientMCPTool, gateway_mcp_tool, platform_connectors
 from .openapi import OpenApiOperation, load_spec, openapi_operations, openapi_tools
 from .shaping import Shaper
 
@@ -29,6 +29,8 @@ __all__ = [
     "ToolAuth",
     "ToolHttpError",
     "gateway_mcp_tool",
+    "platform_connectors",
+    "ResilientMCPTool",
     "load_spec",
     "openapi_operations",
     "openapi_tools",
