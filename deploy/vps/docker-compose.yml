@@ -12,13 +12,15 @@ name: agentkit
 services:
   agent:
     build:
-      context: ../..
-      dockerfile: deploy/vps/Dockerfile
+      context: ../../examples/order-status-agent  # the sample; agentctl.py adds your own agents
+      dockerfile: ../../deploy/vps/Dockerfile      # relative to the context
+      additional_contexts:
+        kit: ../..  # this checkout: the kit's packages
     restart: unless-stopped
     environment:
       AGENTKIT_ENVIRONMENT: dev  # prod requires Azure (managed identity, Prompt Shields, the AI gateway)
       AGENTKIT_SERVICE_NAME: order-status-agent
-      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.9.1}
+      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.9.2}
       AGENTKIT_TEAM: ${TEAM:-commerce}
       # the model
       AGENTKIT_GATEWAY_ENDPOINT: ${MODEL_ENDPOINT:?set MODEL_ENDPOINT in .env}
@@ -36,7 +38,7 @@ services:
       AGENTKIT_REQUIRE_USER: "true"
       AGENTKIT_USER_HEADER: x-forwarded-email
       AGENTKIT_USER_FALLBACK_HEADER: ""
-      AGENTKIT_PRINCIPAL_CLAIMS_HEADER: x-agentkit-disabled-claims
+      AGENTKIT_PRINCIPAL_CLAIMS_HEADER: ""  # no signed role claims without Easy Auth: role checks fail closed
       AGENTKIT_USER_TOKEN_HEADER: ""
       AGENTKIT_APPROVER_ROLE: ""  # roles need Easy Auth; on a VPS the requester confirms (docs/vps.md)
       # sessions survive restarts

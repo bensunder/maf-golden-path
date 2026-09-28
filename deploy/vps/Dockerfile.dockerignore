@@ -1,13 +1,11 @@
-# Used instead of the root .dockerignore for this Dockerfile (BuildKit): the VPS image needs examples/.
+# The build context is the agent's folder. This file replaces the agent's own .dockerignore for this image
+# (which leaves out tests/, and the evals run during this build). Keep secrets and local state out.
 .git
 .venv
 **/.venv
-.tools
-.results
+.env
+**/.env
 **/__pycache__
 **/node_modules
-**/.env
-console
-template
-docs
-fleet
+.pytest_cache
+evals/gate-report.json

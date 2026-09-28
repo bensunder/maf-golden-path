@@ -213,7 +213,8 @@ function RefreshButton() {
 function AgentName({ a }: { a: FleetAgent }) {
   const host = (() => {
     try {
-      return new URL(a.url).host;
+      // where people open it (the fleet may reach it at a private address)
+      return new URL(a.console_url || a.url).host;
     } catch {
       return a.url;
     }

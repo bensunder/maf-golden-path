@@ -10,13 +10,19 @@ plus live traffic per agent from Azure Monitor.
 The registry comes from any mix of:
 
 * ``AGENTKIT_FLEET_REGISTRY``: a YAML file listing agents (``url``, optional ``name``, ``audience``);
-* ``AGENTKIT_FLEET_AGENTS``: the same list as JSON, or ``url|audience|name`` entries separated by ``;``
-  (safe to pass through azd parameter files);
+* ``AGENTKIT_FLEET_AGENTS``: the same list as JSON, or ``url|audience|name|public_url`` entries separated by
+  ``;`` (safe to pass through azd parameter files). ``public_url`` is where people open the agent, when the
+  fleet reaches it at another address (a private network);
 * ``AGENTKIT_FLEET_DISCOVER=true``: Azure Resource Graph, for Container Apps tagged ``agentkit-service`` in
   this environment. The token audience comes from each app's own Easy Auth configuration, never from a tag.
 
 The fleet only ever mints tokens for ``api://<app id>`` audiences (an agent's Easy Auth app), and never
 sends one over plain http except to localhost.
+
+On a private network without Easy Auth (``deploy/vps``), ``AGENTKIT_FLEET_CALLER_HEADER`` (``name: value``,
+for example ``x-forwarded-email: fleet@agentkit.local``) is sent as the identity the fleet reads agents with,
+only to agents registered without an audience at a private address: plain http to a Docker service name
+(no dots), localhost or a private IP. Only use it where the agents can't be reached from outside.
 
 Nothing here is a copy of the agents' data: each request asks the agents (cached for 30 seconds), and an
 agent that doesn't answer is shown as unreachable, never as healthy.
@@ -77,14 +83,40 @@ class FleetAgent:
     name: str | None = None  # display name if the agent doesn't answer
     audience: str | None = None  # Easy Auth app (api://<client id>); None = call without a token (local)
     source: str = "registry"  # registry | discovered | both
+    public_url: str | None = None  # where people open it, if the fleet reaches it at a private address
 
     def __post_init__(self) -> None:
-        url = self.url.rstrip("/")
-        parsed = urlparse(url)
-        if parsed.scheme not in ("https", "http") or not parsed.netloc:
-            raise ValueError(f"fleet registry: not an http(s) URL: {self.url!r}")
-        object.__setattr__(self, "url", url)
+        for field in ("url", "public_url"):
+            value = getattr(self, field)
+            if value is None and field == "public_url":
+                continue
+            value = str(value).rstrip("/")
+            parsed = urlparse(value)
+            if parsed.scheme not in ("https", "http") or not parsed.netloc:
+                raise ValueError(f"fleet registry: not an http(s) URL: {getattr(self, field)!r}")
+            object.__setattr__(self, field, value)
         object.__setattr__(self, "audience", normalize_audience(self.audience))
+
+    @property
+    def private_address(self) -> bool:
+        """A Docker service name, localhost or a private IP, over plain http: where a caller identity may go."""
+        import ipaddress
+
+        parsed = urlparse(self.url)
+        host = parsed.hostname or ""
+        if parsed.scheme != "http":
+            return False
+        if "." not in host and ":" not in host:
+            return True  # a service name on the Docker network
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return host == "localhost"
+        return ip.is_private or ip.is_loopback
+
+    @property
+    def console_url(self) -> str:
+        return (self.public_url or self.url) + "/console"
 
     @property
     def token_allowed(self) -> bool:
@@ -99,7 +131,7 @@ class FleetAgent:
 
 def _agent(raw: dict[str, Any], source: str) -> FleetAgent:
     return FleetAgent(url=str(raw.get("url") or ""), name=raw.get("name") or None,
-                      audience=raw.get("audience") or None, source=source)
+                      audience=raw.get("audience") or None, source=source, public_url=raw.get("public_url") or None)
 
 
 def _parse_inline(value: str) -> list[dict[str, Any]]:
@@ -111,8 +143,9 @@ def _parse_inline(value: str) -> list[dict[str, Any]]:
     entries = []
     for item in value.split(";"):
         if item.strip():
-            url, audience, name = (item.split("|") + ["", ""])[:3]
-            entries.append({"url": url.strip(), "audience": audience.strip() or None, "name": name.strip() or None})
+            url, audience, name, public_url = (item.split("|") + ["", "", ""])[:4]
+            entries.append({"url": url.strip(), "audience": audience.strip() or None, "name": name.strip() or None,
+                            "public_url": public_url.strip() or None})
     return entries
 
 
@@ -156,7 +189,8 @@ class FleetRegistry:
                 seen[found.key] = found
             elif mine.source == "registry":  # listed and discovered: keep the registry's settings
                 seen[found.key] = FleetAgent(url=mine.url, name=mine.name or found.name,
-                                             audience=mine.audience or found.audience, source="both")
+                                             audience=mine.audience or found.audience, source="both",
+                                             public_url=mine.public_url)
         return list(seen.values())
 
 
@@ -234,8 +268,10 @@ def _json_object(response: httpx.Response) -> dict[str, Any] | None:
 # ------------------------------------------------------------------------------------ service
 class FleetService:
     def __init__(self, registry: FleetRegistry, token_for: TokenFor, *, logs: LogsClient | None = None,
-                 client: httpx.AsyncClient | None = None, timeout: float = 10.0, cache_seconds: float = 30.0):
+                 client: httpx.AsyncClient | None = None, timeout: float = 10.0, cache_seconds: float = 30.0,
+                 caller_header: tuple[str, str] | None = None):
         self.registry = registry
+        self.caller_header = caller_header  # identity for agents without an audience (private networks only)
         self.token_for = token_for
         self.logs = logs
         self.client = client
@@ -248,6 +284,8 @@ class FleetService:
         headers = {"Accept": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        elif self.caller_header and not agent.audience and agent.private_address:
+            headers[self.caller_header[0]] = self.caller_header[1]
         return await http.get(agent.url + path, headers=headers, timeout=self.timeout)
 
     async def _probe(self, http: httpx.AsyncClient, agent: FleetAgent) -> dict[str, Any]:
@@ -256,13 +294,13 @@ class FleetService:
                 return await self._probe_one(http, agent)
             except Exception:  # one broken agent never takes the fleet page down
                 logger.exception("fleet: probing %s failed", agent.url)
-                return {"url": agent.url, "console_url": agent.url + "/console", "source": agent.source,
+                return {"url": agent.url, "console_url": agent.console_url, "source": agent.source,
                         "name": agent.name, "status": "unreachable", "console": "error",
                         "detail": "The fleet couldn't read this agent's answer.", "overview": None, "gate": None,
                         "checked_at": time.time()}
 
     async def _probe_one(self, http: httpx.AsyncClient, agent: FleetAgent) -> dict[str, Any]:
-        entry: dict[str, Any] = {"url": agent.url, "console_url": agent.url + "/console", "source": agent.source,
+        entry: dict[str, Any] = {"url": agent.url, "console_url": agent.console_url, "source": agent.source,
                                  "name": agent.name, "status": "unreachable", "detail": None,
                                  "overview": None, "gate": None, "checked_at": time.time()}
         try:
@@ -395,6 +433,21 @@ class FleetSettings(BaseSettings):
     principal_claims_header: str = "x-ms-client-principal"
 
 
+def parse_caller_header(value: str | None) -> tuple[str, str] | None:
+    """``name: value`` → (name, value). Never an Authorization or cookie header: this is an identity for
+    agents on a private network, not a credential."""
+    if not value or not value.strip():
+        return None
+    name, sep, content = value.partition(":")
+    name, content = name.strip().lower(), content.strip()
+    if not sep or not re.fullmatch(r"[a-z0-9-]+", name) or not content:
+        raise ValueError("AGENTKIT_FLEET_CALLER_HEADER must look like 'x-forwarded-email: fleet@agentkit.local'")
+    if name not in ("x-forwarded-email", "x-forwarded-user") and not name.startswith("x-agentkit-"):
+        raise ValueError(f"AGENTKIT_FLEET_CALLER_HEADER can't set {name}: use x-forwarded-email, "
+                         "x-forwarded-user or an x-agentkit-* header")
+    return name, content
+
+
 def _token_for(settings: Any) -> TokenFor:
     from agentkit.hosting.clients import get_credential
 
@@ -447,7 +500,8 @@ def create_fleet_app(
         credential = get_credential(settings)
         if credential is not None:
             logs = AzureLogsClient.for_resource(os.environ["AGENTKIT_CONSOLE_LOGS_RESOURCE"], credential)
-    service = FleetService(registry, token_for or _token_for(settings), logs=logs, client=client)
+    service = FleetService(registry, token_for or _token_for(settings), logs=logs, client=client,
+                           caller_header=parse_caller_header(os.getenv("AGENTKIT_FLEET_CALLER_HEADER")))
 
     app = FastAPI(title=title, version=settings.service_version)
     app.add_middleware(_JsonOnly)

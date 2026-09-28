@@ -259,3 +259,76 @@ def test_a_broken_agent_never_takes_the_fleet_down_and_tokens_stay_on_https():
     assert not FleetAgent(url="http://agent.example", audience=AUD).token_allowed
     assert FleetAgent(url="https://agent.example", audience=AUD).token_allowed
     assert FleetAgent(url="http://127.0.0.1:8000", audience=AUD).token_allowed
+
+
+VPS_AGENT = {"user_header": "x-forwarded-email", "user_fallback_header": "",
+             "principal_claims_header": "", "user_token_header": ""}
+
+
+def test_private_network_fleet_reads_agents_with_its_caller_identity_and_links_to_public_urls(monkeypatch):
+    """deploy/vps: agents trust only X-Forwarded-Email (set by oauth2-proxy, or by the fleet on the private
+    network); the fleet reaches them at internal addresses but links people to their public host names."""
+    from agentkit.channels.fleet import parse_caller_header
+
+    with Server(agent_app("orders", **VPS_AGENT).app) as orders, Server(agent_app("legal", **VPS_AGENT).app) as legal:
+        inline = f"{orders}||Orders|https://orders.203-0-113-7.sslip.io; {legal}||Legal|https://legal.203-0-113-7.sslip.io/"
+        monkeypatch.setenv("AGENTKIT_FLEET_AGENTS", inline)
+        monkeypatch.setenv("AGENTKIT_FLEET_CALLER_HEADER", "x-forwarded-email: fleet@agentkit.local")
+        fleet_settings = AgentKitSettings(environment="dev", guardrail_mode="heuristic", _env_file=None, require_user=True,
+                                          **VPS_AGENT)
+        with TestClient(create_fleet_app(settings=fleet_settings, logs=FakeLogs())) as http:
+            assert http.get("/v1/fleet/agents", headers=USER).status_code == 401  # Easy Auth headers mean nothing here
+            body = http.get("/v1/fleet/agents", headers={"x-forwarded-email": "ben@contoso.example"}).json()
+        monkeypatch.delenv("AGENTKIT_FLEET_CALLER_HEADER")
+        with TestClient(create_fleet_app(settings=fleet_settings, logs=FakeLogs())) as http:
+            without = http.get("/v1/fleet/agents", headers={"x-forwarded-email": "ben@contoso.example"}).json()
+    by_name = {a["name"]: a for a in body["agents"]}
+    assert by_name["Orders"]["console"] == "ok" and by_name["Legal"]["console"] == "ok"
+    assert by_name["Orders"]["console_url"] == "https://orders.203-0-113-7.sslip.io/console"
+    assert by_name["Legal"]["console_url"] == "https://legal.203-0-113-7.sslip.io/console"
+    assert by_name["Orders"]["url"] == orders  # still probed at the private address
+    assert {a["console"] for a in without["agents"]} == {"denied"}  # no caller identity: the agents refuse
+
+    assert parse_caller_header(" X-Forwarded-Email :  fleet@x ") == ("x-forwarded-email", "fleet@x")
+    for bad in ("authorization: Bearer x", "cookie: a=b", "x-ms-client-principal-name: admin", "no-colon", "bad name: x",
+                "proxy-authorization: x", "x-forwarded-for: 1.2.3.4"):
+        with pytest.raises(ValueError):
+            parse_caller_header(bad)
+    with pytest.raises(ValueError):
+        load_registry(inline="http://agent:8000||Orders|javascript:alert(1)")
+
+
+def test_caller_identity_is_never_sent_with_a_token():
+    seen = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.headers))
+        return httpx.Response(200, json={"status": "ready"})
+
+    from agentkit.channels.fleet import FleetService
+
+    registry = FleetRegistry([FleetAgent(url="https://a.example", audience=AUD),        # a token instead
+                              FleetAgent(url="https://public.example"),                 # public: no identity
+                              FleetAgent(url="http://agent.example.com:8000")])         # plain http, but public
+    service = FleetService(registry, token_for,
+                           client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                           caller_header=("x-forwarded-email", "fleet@agentkit.local"))
+    import asyncio
+
+    asyncio.run(service.agents())
+    assert seen and all("x-forwarded-email" not in h for h in seen)
+    private = [FleetAgent(url=u).private_address for u in ("http://agent-legal:8000", "http://127.0.0.1:9", "http://10.0.0.4",
+                                                           "http://localhost:8000")]
+    public = [FleetAgent(url=u).private_address for u in ("https://agent-legal", "http://8.8.8.8", "http://agent.example.com")]
+    assert all(private) and not any(public)
+
+
+def test_on_a_private_network_role_checks_fail_closed_whatever_the_browser_sends():
+    """No Easy Auth means no signed role claims: with the claims header switched off (""), a console role can't be
+    satisfied by a forged header, even by a signed-in user."""
+    principal = base64.b64encode(json.dumps({"claims": [{"typ": "roles", "val": "Console.Read"}]}).encode()).decode()
+    app = agent_app("orders", console_role="Console.Read", **VPS_AGENT).app
+    forged = {"x-forwarded-email": "ben@contoso.example", "x-ms-client-principal": principal,
+              "x-agentkit-disabled-claims": principal, "": principal}
+    with TestClient(app) as http:
+        assert http.get("/v1/console/overview", headers={k: v for k, v in forged.items() if k}).status_code == 403

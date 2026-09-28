@@ -9,3 +9,8 @@ build/
 .results/
 node_modules/
 *.tsbuildinfo
+
+# deploy/vps: this server's own agents (agentctl.py)
+deploy/vps/agents.yaml
+deploy/vps/docker-compose.agents.yml
+deploy/vps/nginx/

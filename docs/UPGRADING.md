@@ -26,6 +26,14 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.9.1 → 0.9.2 (more agents and the fleet on a VPS)
+
+- `deploy/vps/agentctl.py` adds agents generated from the template (the console's Create agent) to the VPS stack, each at its own host name with its own sign-in, and turns on the fleet view there ([vps.md](vps.md#more-agents-and-the-fleet-view)).
+- `deploy/vps/Dockerfile` builds any agent folder (the named build context `agent`) with the kit's packages from the checkout. If you run 0.9.1's VPS stack, use the new `docker-compose.yml` (it sets that context for the sample) and `Dockerfile.dockerignore`.
+- Fleet: registry entries take a `public_url` (fourth field in the compact form), and `AGENTKIT_FLEET_CALLER_HEADER` sets the identity the fleet reads agents with on a private network. Both are optional; nothing changes on Azure.
+- VPS: `docker-compose.yml` now switches role claims off (`AGENTKIT_PRINCIPAL_CLAIMS_HEADER: ""`), so role checks fail closed instead of trusting an unsigned header.
+- The web chat redirects `/` to `/chat` when the service has no home page of its own.
+
 ### 0.9.0 → 0.9.1 (run it on a VPS)
 
 - New: `deploy/vps/` and [vps.md](vps.md). Docker Compose runs the sample agent, web chat and console on any Linux server, with Entra sign-in through oauth2-proxy and Redis sessions. Nothing changes for services on Azure.

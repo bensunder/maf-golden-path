@@ -86,7 +86,8 @@ Without `audience`, the fleet calls agents without a token, which is fine for a 
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AGENTKIT_FLEET_AGENTS` | empty | Registered agents: `url|audience|name;…` or a JSON list |
+| `AGENTKIT_FLEET_AGENTS` | empty | Registered agents: `url|audience|name|public_url;…` or a JSON list. `public_url` is where people open an agent the fleet reaches at a private address |
+| `AGENTKIT_FLEET_CALLER_HEADER` | none | `name: value` the fleet sends to agents registered without an audience, as its identity on a private network ([VPS](vps.md)). Never with a token; never `Authorization`, cookies or `x-ms-*` |
 | `AGENTKIT_FLEET_REGISTRY` | none | Registered agents (YAML file) |
 | `AGENTKIT_FLEET_DISCOVER` | `false` (`true` in the Bicep) | Find tagged agent services with Azure Resource Graph |
 | `AGENTKIT_FLEET_SUBSCRIPTIONS` | the fleet's own subscription (Bicep) | Comma-separated subscriptions to search |
