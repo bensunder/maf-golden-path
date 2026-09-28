@@ -332,3 +332,14 @@ def test_on_a_private_network_role_checks_fail_closed_whatever_the_browser_sends
               "x-agentkit-disabled-claims": principal, "": principal}
     with TestClient(app) as http:
         assert http.get("/v1/console/overview", headers={k: v for k, v in forged.items() if k}).status_code == 403
+
+
+def test_the_fleet_can_be_served_under_a_path():
+    settings = AgentKitSettings(environment="dev", guardrail_mode="heuristic", _env_file=None, require_user=True,
+                                forwarded_prefix_header="x-agentkit-prefix", **VPS_AGENT)
+    with TestClient(create_fleet_app(FleetRegistry([]), settings=settings, logs=FakeLogs())) as http:
+        page = http.get("/console", headers={"x-agentkit-prefix": "/fleet"}).text
+        root = http.get("/", headers={"x-agentkit-prefix": "/fleet"}, follow_redirects=False)
+    assert 'name="agentkit-root" content="/fleet"' in page and 'src="/fleet/console/assets/' in page
+    assert 'name="agentkit-mode" content="fleet"' in page
+    assert root.headers["location"] == "/fleet/console"

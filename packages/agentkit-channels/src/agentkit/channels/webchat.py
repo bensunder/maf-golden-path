@@ -13,9 +13,10 @@ import html
 from importlib import resources
 from typing import Any
 
+from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from agentkit.hosting import AgentKitSettings, ConversationService
+from agentkit.hosting import AgentKitSettings, ConversationService, mount_prefix
 
 __all__ = ["WebChat"]
 
@@ -37,13 +38,20 @@ class WebChat:
 
     def install(self, app: Any, service: ConversationService, settings: AgentKitSettings) -> None:
         script_path = f"{self.path}/agentkit-chat.js"
-        page = (_static("chat.html")
-                .replace("{{title}}", html.escape(self.title or settings.service_name))
-                .replace("{{endpoint}}", html.escape(self.endpoint))
-                .replace("{{script}}", html.escape(script_path)))
+        template = _static("chat.html").replace("{{title}}", html.escape(self.title or settings.service_name))
         script = _static("agentkit-chat.js")
 
-        async def chat_page() -> HTMLResponse:
+        def render(prefix: str) -> str:  # prefix: where a trusted router mounts this service ("" = the root)
+            return (template.replace("{{endpoint}}", html.escape(prefix + self.endpoint))
+                    .replace("{{script}}", html.escape(prefix + script_path)))
+
+        pages = {"": render("")}
+
+        async def chat_page(request: Request) -> HTMLResponse:
+            prefix = mount_prefix(request, settings)
+            page = pages.get(prefix) or render(prefix)
+            if prefix not in pages and len(pages) < 16:  # a router uses a handful; a client can't grow this
+                pages[prefix] = page
             return HTMLResponse(page, headers=_SECURITY_HEADERS)
 
         async def chat_script() -> Response:
@@ -53,7 +61,7 @@ class WebChat:
         app.add_api_route(script_path, chat_script, methods=["GET"], include_in_schema=False)
         # people open the bare host name: send them to the chat unless the service serves its own home page
         if not any(getattr(route, "path", None) == "/" for route in app.routes):
-            async def home() -> RedirectResponse:
-                return RedirectResponse(self.path, status_code=302)
+            async def home(request: Request) -> RedirectResponse:
+                return RedirectResponse(mount_prefix(request, settings) + self.path, status_code=302)
 
             app.add_api_route("/", home, methods=["GET"], include_in_schema=False)

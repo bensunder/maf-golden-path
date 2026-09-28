@@ -515,3 +515,41 @@ def test_traffic_errors_are_shown_not_raised():
     with TestClient(make_app(console=Console(logs=logs))) as http:
         body = http.get("/v1/console/traffic?range=1h", headers=USER).json()
     assert body == {"available": False, "range": "1h", "error": "This service isn't allowed to read the telemetry."}
+
+
+# ------------------------------------------------------------------ served under a path (deploy/vps platform router)
+def test_under_a_router_prefix_every_link_points_under_it():
+    """The VPS platform serves agents at <host>/agents/<name>/, stripping the prefix and saying it in a header."""
+    user = {"x-ms-client-principal-name": "ben@contoso.example"}
+    mounted = {**user, "x-agentkit-prefix": "/agents/legal"}
+    with TestClient(make_app(forwarded_prefix_header="x-agentkit-prefix")) as http:
+        page = http.get("/console/agents", headers=mounted).text
+        css = next(p for p in page.split('"') if p.endswith(".css"))
+        stylesheet = http.get(css.removeprefix("/agents/legal"), headers=mounted).text
+        overview = http.get("/v1/console/overview", headers=mounted).json()
+        chat = http.get("/chat", headers=mounted).text
+        home = http.get("/", headers=mounted, follow_redirects=False)
+        plain = http.get("/console", headers=user).text
+        hostile = http.get("/console", headers={**user, "x-agentkit-prefix": '/x"><script>'}).text
+    assert 'name="agentkit-root" content="/agents/legal"' in page
+    assert 'name="agentkit-platform" content=""' in page  # only the platform router marks its requests
+    with TestClient(make_app(forwarded_prefix_header="x-agentkit-prefix")) as http:
+        marked = http.get("/console", headers={**mounted, "x-agentkit-platform": "1"}).text
+    assert 'name="agentkit-platform" content="1"' in marked
+    assert 'name="agentkit-api" content="/agents/legal/v1/console"' in page
+    assert 'content="/agents/legal/console/"' in page and 'src="/agents/legal/console/assets/' in page
+    assert "/agents/legal/console/assets/" in stylesheet or "/console/assets/" not in stylesheet  # font URLs
+    assert {c["id"]: c["path"] for c in overview["channels"]} == {"api": "/agents/legal/v1/chat", "agui": "/agents/legal/v1/agui",
+                                                                  "web_chat": "/agents/legal/chat"}
+    assert overview["links"]["chat"] == "/agents/legal/chat"
+    assert 'endpoint="/agents/legal/v1/agui"' in chat and 'src="/agents/legal/chat/agentkit-chat.js"' in chat
+    assert home.status_code == 302 and home.headers["location"] == "/agents/legal/chat"
+    assert 'name="agentkit-root" content=""' in plain and 'content="/v1/console"' in plain
+    assert "<script>" not in hostile and 'name="agentkit-root" content=""' in hostile  # not a clean path: ignored
+
+
+def test_the_prefix_header_means_nothing_unless_configured():
+    with TestClient(make_app()) as http:
+        page = http.get("/console", headers={"x-agentkit-prefix": "/agents/legal"}).text
+    assert 'name="agentkit-root" content=""' in page and "/agents/legal" not in page
+    assert 'name="agentkit-platform" content=""' in page

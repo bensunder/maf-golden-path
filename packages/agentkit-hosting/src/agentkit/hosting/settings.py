@@ -88,6 +88,9 @@ class AgentKitSettings(BaseSettings):
     approval_separation: bool = True
     #: Easy Auth header with the caller's claims (base64 JSON), used to read app roles.
     principal_claims_header: str = "x-ms-client-principal"
+    #: Header a trusted router sets when it serves this service under a path (``/agents/legal``), so the
+    #: console and web chat link to the right URLs. Unset (the default): pages are served from the root.
+    forwarded_prefix_header: str | None = None
 
     @model_validator(mode="after")
     def _enforce_environment_policy(self) -> AgentKitSettings:

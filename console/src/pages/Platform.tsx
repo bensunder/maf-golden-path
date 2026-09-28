@@ -1,13 +1,15 @@
-import { ArrowDown, Check, CircleCheck, FileCode, Lock, Plus, Terminal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowDown, Check, CircleCheck, CircleX, FileCode, Loader2, Lock, MessageSquareText, Plus, Rocket, Terminal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EstimateNote, GoldenPathSummary } from "@/components/agent";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Eyebrow } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/overlay";
 import { Page, PageHeader, SectionTitle } from "@/components/ui/page";
-import { InlineNotice } from "@/components/ui/states";
-import { Tag } from "@/components/ui/status";
+import { ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
+import { StatusBadge, Tag } from "@/components/ui/status";
+import { AGENT_TEAM, AGENT_TEXT, AGENT_TITLE, RESERVED_NAMES, agentSlug, platformApi, type PlatformInfo } from "@/lib/api";
+import { STEPS, stepIndex, useJob, usePlatform } from "@/lib/platform";
 import { useOverview } from "@/lib/data";
 import { cn } from "@/lib/format";
 import { Link, useRouter } from "@/lib/router";
@@ -119,6 +121,224 @@ function shellQuote(value: string): string {
 }
 
 export function CreateAgentPage() {
+  const { info, loading } = usePlatform();
+  if (loading)
+    return (
+      <Page>
+        <PageHeader eyebrow={<Crumb />} title="Create MAF Agent" />
+        <LoadingRegion label="Loading" className="space-y-3">
+          <Skeleton className="h-4 w-1/3" />
+        </LoadingRegion>
+      </Page>
+    );
+  return info ? <LaunchAgentPage info={info} /> : <GenerateAgentPage />;
+}
+
+// ------------------------------------------------------------------ create and launch (VPS platform)
+function LaunchAgentPage({ info }: { info: PlatformInfo }) {
+  const { search, navigate } = useRouter();
+  const jobId = search.get("job");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [team, setTeam] = useState("");
+  const [knowledge, setKnowledge] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const name = agentSlug(title);
+  const teamValue = team.trim() || name;
+  const issues = [
+    title && !AGENT_TITLE.test(title.trim()) ? "Name: 3–60 letters, digits, spaces and . , ( ) & + -" : null,
+    name && (name.length < 2 || !/^[a-z]/.test(name) || RESERVED_NAMES.includes(name)) ? `"${name}" can't be used as the agent's address` : null,
+    description && !AGENT_TEXT.test(description) ? "Description: no quotes, braces or backslashes (it goes into the generated code)" : null,
+    teamValue && !AGENT_TEAM.test(teamValue) ? "Team: lowercase letters, digits and dashes" : null,
+  ].filter(Boolean) as string[];
+  const valid = AGENT_TITLE.test(title.trim()) && issues.length === 0;
+
+  if (jobId) return <LaunchProgress id={jobId} host={info.public_host} onAgain={() => navigate("/agents/new")} />;
+
+  const submit = async () => {
+    setSubmitting(true);
+    setProblem(null);
+    try {
+      const job = await platformApi.create({ title: title.trim(), name, description: description.trim(), team: teamValue, knowledge });
+      navigate(`/agents/new?job=${encodeURIComponent(job.id)}`);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "The agent couldn't be created.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const input = "h-9 w-full rounded-md border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-accent-500/20";
+  return (
+    <Page>
+      <PageHeader
+        eyebrow={<Crumb />}
+        title="Create MAF Agent"
+        description="Generate a governed Microsoft Agent Framework agent from the golden path, run its evals, and launch it on this server."
+      />
+      <form
+        className="grid gap-6 lg:grid-cols-[1fr_320px]"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid && info.is_admin && !submitting) void submit();
+        }}
+      >
+        <Card>
+          <CardBody className="space-y-5">
+            <Field id="agent-name" label="Agent name" hint={name ? <>It will live at <span className="font-mono">{info.public_host}/agents/{name}</span></> : "For example: Legal Desk"}>
+              <input id="agent-name" value={title} required maxLength={60} onChange={(e) => setTitle(e.target.value)} aria-invalid={title.length > 0 && !valid} className={input} />
+            </Field>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field id="agent-desc" label="Description" hint="One sentence: what it helps with. Used in its charter and instructions.">
+                <input id="agent-desc" value={description} maxLength={240} onChange={(e) => setDescription(e.target.value)} className={input} />
+              </Field>
+              <Field id="agent-team" label="Team" hint={<>Owning team (default: <span className="font-mono">{name || "the agent's name"}</span>).</>}>
+                <input id="agent-team" value={team} maxLength={31} onChange={(e) => setTeam(e.target.value.toLowerCase())} className={input} />
+              </Field>
+            </div>
+            <fieldset>
+              <legend className="text-[13px] font-medium text-zinc-900">Included</legend>
+              <ul className="mt-2 grid gap-1.5 text-[13px] text-zinc-600 sm:grid-cols-2">
+                {["Microsoft Agent Framework agent", "Entra sign-in (this server's)", "Guardrails and PII redaction", "Tool policy and run limits",
+                  "Human approval for risky tools", "Sessions (Redis on this server)", "Eval cases and the quality gate", "Web chat and this console"].map((t) => (
+                  <li key={t} className="flex gap-2"><CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-600" /> {t}</li>
+                ))}
+              </ul>
+              <label className="mt-4 flex cursor-pointer gap-3 rounded-md border border-zinc-200 px-3 py-2.5 hover:border-zinc-300">
+                <input type="checkbox" checked={knowledge} onChange={(e) => setKnowledge(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-zinc-900" aria-describedby="knowledge-note" />
+                <span>
+                  <span className="text-sm text-zinc-900">Knowledge (company documents with citations)</span>
+                  <span id="knowledge-note" className="mt-0.5 block text-xs text-zinc-500">Needs Azure AI Search. On this server the search tool says it can't search until one is connected.</span>
+                </span>
+              </label>
+            </fieldset>
+            {issues.length > 0 && <InlineNotice tone="warn">{issues.join(". ")}.</InlineNotice>}
+            {problem && <InlineNotice tone="bad">{problem}</InlineNotice>}
+            {!info.is_admin && (
+              <InlineNotice tone="warn">
+                {info.admins_configured
+                  ? `Only platform admins can create agents on this server (you're signed in as ${info.user}).`
+                  : "No platform admins are set up on this server yet: run agentctl.py platform --admins <your email> on the server."}
+              </InlineNotice>
+            )}
+          </CardBody>
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-100 bg-zinc-50/50 px-5 py-3">
+            {info.running_job && <span className="text-[13px] text-zinc-500">Another agent is being built: yours will start after it.</span>}
+            <Button type="submit" variant="primary" disabled={!valid || !info.is_admin || submitting}>
+              {submitting ? <Loader2 aria-hidden className="animate-spin" /> : <Rocket aria-hidden />} Create and launch
+            </Button>
+          </div>
+        </Card>
+        <div className="space-y-4">
+          <Card className="p-5">
+            <Eyebrow>What happens</Eyebrow>
+            <ol className="mt-3 space-y-3 text-[13px] text-zinc-600">
+              {STEPS.map((s, i) => (
+                <li key={s.state} className="flex gap-2.5">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-2xs font-semibold text-zinc-600">{i + 1}</span>
+                  <span><span className="font-medium text-zinc-800">{s.label}.</span> {s.detail}</span>
+                </li>
+              ))}
+            </ol>
+          </Card>
+          <InlineNotice>
+            Then make it yours: its tools, instructions and eval cases are in <span className="font-mono">{info.agents_dir ?? "/opt/agents"}/{name || "<name>"}</span> on the server.
+            Put that folder in its own git repository; its CI runs the same evals on every change.
+          </InlineNotice>
+        </div>
+      </form>
+    </Page>
+  );
+}
+
+function LaunchProgress({ id, host, onAgain }: { id: string; host: string; onAgain: () => void }) {
+  const { job, error } = useJob(id);
+  const log = useRef<HTMLPreElement>(null);
+  const lines = job?.log?.length ?? 0;
+  useEffect(() => {
+    const el = log.current;
+    if (el) el.scrollTop = el.scrollHeight; // follow the newest lines
+  }, [lines]);
+  if (error && !job) return <Page><PageHeader eyebrow={<Crumb />} title="Create MAF Agent" /><ErrorState title="Unable to follow this build" message={error.message} /></Page>;
+  if (!job)
+    return (
+      <Page>
+        <PageHeader eyebrow={<Crumb />} title="Create MAF Agent" />
+        <LoadingRegion label="Loading" className="space-y-3"><Skeleton className="h-4 w-1/3" /></LoadingRegion>
+      </Page>
+    );
+  const current = stepIndex(job.state);
+  const failedAt = job.state === "failed" && job.failed_step ? STEPS.findIndex((s) => s.state === job.failed_step) : -1;
+  return (
+    <Page>
+      <PageHeader
+        eyebrow={<Crumb />}
+        title={job.title}
+        description={job.state === "ready" ? `Live at ${host}${job.path}` : job.state === "failed" ? "The agent couldn't be created. Nothing was left half-made." : "Creating your agent. This takes a few minutes; you can leave this page."}
+        actions={
+          job.state === "ready" ? (
+            <div className="flex gap-2">
+              <ButtonLinkPrimary href={`${job.path}/console`}>Open its console</ButtonLinkPrimary>
+              <a href={`${job.path}/chat`} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-medium text-zinc-900 hover:bg-zinc-50">
+                <MessageSquareText aria-hidden className="size-4" /> Chat
+              </a>
+            </div>
+          ) : job.state === "failed" ? (
+            <Button size="sm" onClick={onAgain}>Try again</Button>
+          ) : undefined
+        }
+      />
+      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+        <Card className="p-5">
+          <ol className="space-y-4" aria-label="Progress">
+            {STEPS.map((s, i) => {
+              const done = job.state === "ready" || i < current || (failedAt >= 0 && i < failedAt);
+              const active = i === current && job.state !== "ready";
+              const failed = i === failedAt;
+              return (
+                <li key={s.state} className="flex gap-3" aria-current={active ? "step" : undefined}>
+                  <span className="mt-0.5">
+                    {failed ? <CircleX aria-label="failed" className="size-5 text-red-600" />
+                      : done ? <CircleCheck aria-label="done" className="size-5 text-emerald-600" />
+                      : active ? <Loader2 aria-label="in progress" className="size-5 animate-spin text-accent-600 motion-reduce:animate-none" />
+                      : <span aria-label="waiting" className="block size-5 rounded-full border-2 border-zinc-200" />}
+                  </span>
+                  <span>
+                    <span className={cn("block text-sm", done || active ? "font-medium text-zinc-900" : "text-zinc-500")}>{s.label}</span>
+                    <span className="block text-xs text-zinc-500">{s.detail}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="mt-5 border-t border-zinc-100 pt-4">
+            {job.state === "ready" ? <StatusBadge tone="ok">Ready</StatusBadge> : job.state === "failed" ? <StatusBadge tone="bad">Failed</StatusBadge> : <StatusBadge tone="pending">In progress</StatusBadge>}
+            <p className="mt-2 text-xs text-zinc-500">Requested by {job.created_by}</p>
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Build log" description={job.error ?? "The commands the platform runs, as they run."} />
+          <pre ref={log} tabIndex={0} aria-label="Build log" className="max-h-[480px] overflow-auto bg-zinc-950 px-5 py-4 font-mono text-[12px] leading-relaxed text-zinc-100">
+            {(job.log ?? []).slice(-120).join("\n") || "Waiting to start…"}
+          </pre>
+        </Card>
+      </div>
+    </Page>
+  );
+}
+
+function ButtonLinkPrimary({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-[13px] font-medium text-white hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2">
+      <Rocket aria-hidden className="size-4" /> {children}
+    </a>
+  );
+}
+
+// ------------------------------------------------------------------ generate a repository (no platform here)
+function GenerateAgentPage() {
   const overview = useOverview();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");

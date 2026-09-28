@@ -50,7 +50,7 @@ from fastapi.responses import JSONResponse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from agentkit.hosting import AgentKitSettings
-from agentkit.hosting.app import _JsonOnly
+from agentkit.hosting.app import _JsonOnly, mount_prefix
 from agentkit.hosting.approvals import roles_from_principal
 
 from .traffic import RANGES, AzureLogsClient, LogsClient, LogsQueryError, TrafficQueries, TtlCache
@@ -431,6 +431,7 @@ class FleetSettings(BaseSettings):
     user_header: str = "x-ms-client-principal-name"
     user_fallback_header: str = "x-ms-client-principal-id"
     principal_claims_header: str = "x-ms-client-principal"
+    forwarded_prefix_header: str | None = None  # set when a trusted router serves the fleet under a path
 
 
 def parse_caller_header(value: str | None) -> tuple[str, str] | None:
@@ -516,15 +517,25 @@ def create_fleet_app(
         return user or ""
 
     index = _bundle().joinpath("index.html").read_text(encoding="utf-8")
-    page = (index.replace("__AGENTKIT_API__", "/v1/console").replace("__AGENTKIT_TITLE__", _html_attr(title))
-            .replace('<meta name="agentkit-mode" content="agent" />', '<meta name="agentkit-mode" content="fleet" />'))
+    template = (index.replace("__AGENTKIT_TITLE__", _html_attr(title))
+                .replace('<meta name="agentkit-mode" content="agent" />', '<meta name="agentkit-mode" content="fleet" />'))
 
-    async def console_page() -> Any:
+    def render(prefix: str) -> str:
+        return (template.replace("/console/", f"{prefix}/console/").replace("__AGENTKIT_API__", _html_attr(prefix + "/v1/console"))
+                .replace("__AGENTKIT_ROOT__", _html_attr(prefix)).replace("__AGENTKIT_PLATFORM__", ""))
+
+    pages = {"": render("")}
+
+    async def console_page(request: Request) -> Any:
         from fastapi.responses import HTMLResponse
 
+        prefix = mount_prefix(request, settings)
+        page = pages.get(prefix) or render(prefix)
+        if prefix not in pages and len(pages) < 16:
+            pages[prefix] = page
         return HTMLResponse(page, headers={**_SECURITY_HEADERS, "Cache-Control": "no-cache"})
 
-    async def console_asset(name: str) -> Any:
+    async def console_asset(name: str, request: Request) -> Any:
         from fastapi.responses import Response
 
         if "/" in name or "\\" in name or name.startswith("."):
@@ -533,13 +544,17 @@ def create_fleet_app(
         if not item.is_file():
             raise HTTPException(404)
         media = _ASSET_TYPES.get(Path(name).suffix, "application/octet-stream")
-        return Response(item.read_bytes(), media_type=media,
-                        headers={**_SECURITY_HEADERS, "Cache-Control": "public, max-age=31536000, immutable"})
+        body = item.read_bytes()
+        prefix = mount_prefix(request, settings)
+        if prefix and Path(name).suffix == ".css":  # font URLs are absolute in the stylesheet
+            body = body.replace(b"/console/assets/", f"{prefix}/console/assets/".encode())
+        cache = "private, max-age=31536000, immutable" if prefix else "public, max-age=31536000, immutable"
+        return Response(body, media_type=media, headers={**_SECURITY_HEADERS, "Cache-Control": cache})
 
-    async def console_route(rest: str) -> Any:
+    async def console_route(rest: str, request: Request) -> Any:
         if rest.startswith("assets/") or "." in rest.rsplit("/", 1)[-1]:
             raise HTTPException(404)
-        return await console_page()
+        return await console_page(request)
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
@@ -550,10 +565,10 @@ def create_fleet_app(
         return {"status": "ready", "agent": "", "version": settings.service_version}
 
     @app.get("/", include_in_schema=False)
-    async def root() -> Any:
+    async def root(request: Request) -> Any:
         from fastapi.responses import RedirectResponse
 
-        return RedirectResponse("/console")
+        return RedirectResponse(mount_prefix(request, settings) + "/console")
 
     app.add_api_route("/console", console_page, methods=["GET"], include_in_schema=False)
     app.add_api_route("/console/assets/{name}", console_asset, methods=["GET"], include_in_schema=False)

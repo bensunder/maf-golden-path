@@ -14,10 +14,10 @@ About 20 minutes. You need Docker with Compose, a DNS name pointing at the serve
 Clone the release tag (recommended: moving to a newer tag later updates the kit and every agent at once):
 
 ```bash
-git clone --branch v0.9.2 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
+git clone --branch v0.9.3 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
 ```
 
-or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.2.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
+or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.3.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
 
 ## 2. An Entra app for sign-in
 
@@ -61,6 +61,45 @@ Open:
 - `https://<your host>/chat`: the web chat;
 - `https://<your host>/console`: the console.
 
+## Create agents from the console
+
+Turn on the platform service, and **Create agent** in the console builds and launches a real agent on this server. The developer never touches the server:
+
+```bash
+python3 agentctl.py platform --admins you@contoso.com,teammate@contoso.com
+python3 agentctl.py fleet --internal        # optional: the fleet view at https://<AGENT_HOST>/fleet
+docker compose up -d --build
+```
+
+Open `https://<AGENT_HOST>/console/agents`. It lists every agent on the server, with its health, version and who created it, and links to each one's console and chat.
+
+**Create agent** (admins only) runs these steps, with a live build log:
+
+1. generates a new Microsoft Agent Framework agent from the kit's template (this checkout's version);
+2. registers it;
+3. builds it: the build runs the agent's offline evals, and a failing gate stops it there;
+4. starts it and waits until it answers.
+
+It then lives at `https://<AGENT_HOST>/agents/<name>/console` and `/chat`: no new DNS name, certificate, nginx site or Entra redirect URI. Its files are in `/opt/agents/<name>` (`--agents-dir` to change). Put that folder in its own git repository and edit its tools, instructions and eval cases; its CI runs the same evals on every change.
+
+**How it's wired, and why it's safe:**
+
+- The sign-in proxy forwards to the platform service, which routes `/agents/<name>/…` to that agent, `/fleet/…` to the fleet, and everything else to the sample.
+- It tells each agent where it's mounted (`X-Agentkit-Prefix`, a setting agents read only when `AGENTKIT_FORWARDED_PREFIX_HEADER` is set), and it replaces any value a browser sends.
+- Agents receive the signed-in user (`X-Forwarded-Email`) and nothing that could be replayed: the router drops the sign-in cookie and any `Authorization` header before a request reaches an agent.
+- The sample, the agents under `/agents/…` and the platform API share one web origin. Treat the agents on one server as one trust zone: an agent you don't trust belongs on its own stack or host.
+- The platform service controls Docker on this host (it mounts the Docker socket), so:
+  - it answers only the sign-in proxy's container, not other containers on the network;
+  - only the emails in `--admins` can create or remove agents, only from the console's own page (the browser's `Origin` must be `https://<AGENT_HOST>`), and only admins see build logs;
+  - names, titles, descriptions and teams are checked against strict patterns before they reach the template (no quotes, braces or backslashes);
+  - every step runs as a fixed command with arguments, never through a shell;
+  - one build runs at a time;
+  - a failed build is rolled back (containers and registry entry), with the generated files kept in `/opt/agents/.failed/` for a look.
+- Remove (admins, in the Agents list) stops the agent and moves its files to `/opt/agents/.removed/`.
+- Agents with their own host name (`agentctl.py add` without `--internal`) keep working as before; the console lists them too.
+
+`agentctl.py platform --off` puts the stack back to one sign-in proxy in front of the sample.
+
 ## More agents, and the fleet view
 
 The same stack runs any number of agents, each at its own address with its own console, chat, sign-in cookie and Redis database, plus the [fleet view](fleet.md) across all of them.
@@ -69,7 +108,7 @@ The same stack runs any number of agents, each at its own address with its own c
 
 ```bash
 mkdir -p /opt/agents && cd /opt/agents
-copier copy --trust --vcs-ref v0.9.2 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
+copier copy --trust --vcs-ref v0.9.3 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
 ```
 
 Edit its `instructions/system.md`, `tools.py` and `evals/cases.yaml`. Put it in its own git repository: the generated CI runs its evals on every change.

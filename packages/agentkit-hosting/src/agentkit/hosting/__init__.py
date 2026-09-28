@@ -12,6 +12,8 @@ from .app import (
     approval_views,
     create_app,
     http_caller,
+    mount_prefix,
+    behind_platform,
 )
 from .approvals import approve_if, roles_from_principal
 from .conversations import (
@@ -59,6 +61,8 @@ __all__ = [
     "TurnResult",
     "approval_views",
     "http_caller",
+    "mount_prefix",
+    "behind_platform",
     "ApprovalDecision",
     "ApprovalView",
     "CosmosSessionStore",

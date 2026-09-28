@@ -9,6 +9,10 @@ function meta(name: string, fallback: string): string {
 
 export const API = meta("agentkit-api", "/v1/console").replace(/\/$/, "");
 export const BASE = meta("agentkit-base", "/console/").replace(/\/$/, "");
+/** Where this service is mounted when a router serves it under a path (e.g. "/agents/legal"); "" at the root. */
+export const ROOT = meta("agentkit-root", "").replace(/\/$/, "");
+/** Served by the VPS platform router: the server's agent list and Create agent are available. */
+export const PLATFORM = meta("agentkit-platform", "") === "1";
 /** "agent": this service's console. "fleet": the fleet service, one row per agent. */
 export const MODE = meta("agentkit-mode", "agent") === "fleet" ? "fleet" : "agent";
 
@@ -243,14 +247,14 @@ export const api = {
     }
   },
   session: (id: string) => request<SessionInfo>(`${API}/sessions/${encodeURIComponent(id)}`),
-  ready: () => request<{ status: string; agent: string; version: string }>("/readyz"),
+  ready: () => request<{ status: string; agent: string; version: string }>(`${ROOT}/readyz`),
   decide: (sessionId: string, decisions: { id: string; approved: boolean; comment?: string }[]) =>
-    request<ChatResult>(`/v1/sessions/${encodeURIComponent(sessionId)}/approvals`, {
+    request<ChatResult>(`${ROOT}/v1/sessions/${encodeURIComponent(sessionId)}/approvals`, {
       method: "POST",
       body: JSON.stringify({ decisions }),
     }),
   deleteSession: (sessionId: string) =>
-    request<void>(`/v1/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
+    request<void>(`${ROOT}/v1/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
 };
 
 // ------------------------------------------------------------------ fleet
@@ -289,7 +293,77 @@ export interface FleetTraffic {
 }
 
 export const fleetApi = {
-  me: () => request<{ user: string | null; title: string; environment: string; kit_version: string | null }>("/v1/fleet/me"),
-  agents: () => request<Fleet>("/v1/fleet/agents"),
-  traffic: (range: TrafficRange) => request<FleetTraffic>(`/v1/fleet/traffic?range=${range}`),
+  me: () => request<{ user: string | null; title: string; environment: string; kit_version: string | null }>(`${ROOT}/v1/fleet/me`),
+  agents: () => request<Fleet>(`${ROOT}/v1/fleet/agents`),
+  traffic: (range: TrafficRange) => request<FleetTraffic>(`${ROOT}/v1/fleet/traffic?range=${range}`),
 };
+
+// ------------------------------------------------------------------ platform (deploy/vps: create and launch agents)
+// Served at the host's root by the platform router, so these paths are absolute (not under ROOT). On a
+// service without the platform (Azure, a plain VPS stack) /v1/platform is a 404 and the console says so.
+export interface PlatformInfo {
+  platform: true;
+  user: string;
+  is_admin: boolean;
+  admins_configured: boolean;
+  public_host: string;
+  fleet: boolean;
+  agents_dir?: string;
+  running_job: PlatformJob | null;
+}
+
+export interface PlatformAgent {
+  name: string;
+  title: string;
+  path: string; // "" for the sample (served at the root), "/agents/<name>" otherwise
+  internal: boolean;
+  host?: string | null;
+  service: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  status: "ready" | "not_ready" | "unreachable";
+  version: string | null;
+}
+
+export type JobState = "queued" | "generating" | "registering" | "building" | "starting" | "ready" | "failed" | "removing" | "removed";
+
+export interface PlatformJob {
+  id: string;
+  name: string;
+  title: string;
+  created_by: string;
+  state: JobState;
+  error: string | null;
+  failed_step?: JobState | null;
+  created_at: number;
+  finished_at: number | null;
+  path: string;
+  log?: string[];
+}
+
+export interface NewAgent {
+  title: string;
+  name: string;
+  description: string;
+  team: string;
+  knowledge: boolean;
+}
+
+export const platformApi = {
+  info: () => request<PlatformInfo>("/v1/platform"),
+  agents: () => request<{ agents: PlatformAgent[]; jobs: PlatformJob[] }>("/v1/platform/agents"),
+  create: (body: NewAgent) => request<PlatformJob>("/v1/platform/agents", { method: "POST", body: JSON.stringify(body) }),
+  job: (id: string) => request<PlatformJob>(`/v1/platform/jobs/${encodeURIComponent(id)}`),
+  remove: (name: string) =>
+    request<PlatformJob>(`/v1/platform/agents/${encodeURIComponent(name)}`, { method: "DELETE", headers: { "X-Agentkit-Confirm": name } }),
+};
+
+// The same rules the platform enforces: what's typed lands in generated code.
+export const AGENT_TITLE = /^[A-Za-z][A-Za-z0-9 .,()&+-]{1,58}[A-Za-z0-9).]$/;
+export const AGENT_TEXT = /^[A-Za-z0-9 .,;:!?()&+/%#@-]{0,240}$/;
+export const AGENT_TEAM = /^[a-z][a-z0-9-]{1,30}$/;
+export const RESERVED_NAMES = ["agent", "auth", "redis", "fleet", "platform", "www", "api", "console", "chat", "v1"];
+
+export function agentSlug(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
+}

@@ -27,7 +27,7 @@ def make_agent(root: Path, package="legal_desk", team="legal") -> Path:
     (root / "pyproject.toml").write_text('[project]\nname = "legal-desk"\nversion = "0.1.0"\n'
                                          'dependencies = ["agentkit-hosting[redis] @ git+https://x/y@v1#subdirectory=p", "httpx>=0.27"]\n'
                                          '[project.optional-dependencies]\ndev = ["agentkit-testing>=0.9", "respx"]\n')
-    (root / ".copier-answers.yml").write_text(f"team: {team}\n")
+    (root / ".copier-answers.yml").write_text(f"team: {team}\nproject_name: Legal Desk\n")
     return root
 
 
@@ -150,3 +150,53 @@ def test_agentctl_checks_a_hand_edited_list_and_keeps_other_compose_files(stack)
         run("render", ok=False)
     (root / "agents.yaml").write_text(good)
     run("render")
+
+
+def test_platform_mode_routes_internal_agents_through_one_sign_in(stack, tmp_path):
+    root, run = stack
+    agents_dir = tmp_path / "created"
+    out = run("platform", "--admins", "Ben@Contoso.example, ops@contoso.example", "--agents-dir", str(agents_dir))
+    assert "/console/agents" in out
+    out = run("add", "hr", str(root / "legal"), "--internal", "--by", "ben@contoso.example")
+    assert "https://agent.203-0-113-7.sslip.io/agents/hr/console" in out
+    run("fleet", "--internal")
+    data = yaml.safe_load((root / "agents.yaml").read_text())
+    hr = data["agents"][0]
+    assert hr["title"] == "Legal Desk"
+    assert hr["internal"] is True and "host" not in hr and "port" not in hr and hr["created_by"] == "ben@contoso.example"
+    assert data["platform"] == {"admins": ["ben@contoso.example", "ops@contoso.example"], "agents_dir": str(agents_dir)}
+    services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    assert set(services) == {"agent-hr", "fleet", "platform", "auth"}  # no per-agent sign-in proxy or nginx site
+    assert services["auth"] == {"environment": {"OAUTH2_PROXY_UPSTREAMS": "http://platform:8000"}, "depends_on": ["platform"]}
+    platform = services["platform"]
+    assert platform["environment"]["PLATFORM_ADMINS"] == "ben@contoso.example,ops@contoso.example"
+    assert platform["environment"]["PLATFORM_TRUSTED_PEER"] == "auth" and "ports" not in platform
+    repo = str(root.parent.parent)
+    assert f"{repo}:{repo}" in platform["volumes"] and f"{agents_dir}:{agents_dir}" in platform["volumes"]
+    assert "/var/run/docker.sock:/var/run/docker.sock" in platform["volumes"]
+    assert services["fleet"]["environment"]["AGENTKIT_FORWARDED_PREFIX_HEADER"] == "x-agentkit-prefix"
+    assert "http://agent-hr:8000||hr|https://${AGENT_HOST}/agents/hr" in services["fleet"]["environment"]["AGENTKIT_FLEET_AGENTS"]
+    assert not list((root / "nginx").glob("*.conf"))
+    base = yaml.safe_load((root / "docker-compose.yml").read_text())["services"]["agent"]["environment"]
+    assert base["AGENTKIT_FORWARDED_PREFIX_HEADER"] == "x-agentkit-prefix"
+    run("remove", "hr")
+    run("platform", "--off")
+    assert set(yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]) == {"fleet"}
+
+
+def test_platform_needs_real_admin_emails(stack):
+    root, run = stack
+    run("platform", ok=False)
+    run("platform", "--admins", "not-an-email", ok=False)
+    run("platform", "--admins", "a@b.co; rm -rf /", ok=False)
+
+
+def test_new_host_agents_skip_ports_something_on_the_host_already_uses(stack):
+    import socket
+
+    root, run = stack
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 4181))
+        busy.listen()
+        run("add", "legal", str(root / "legal"))
+    assert yaml.safe_load((root / "agents.yaml").read_text())["agents"][0]["port"] == 4182

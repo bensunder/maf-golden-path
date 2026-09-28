@@ -1,4 +1,5 @@
-import { ExternalLink, MessageSquareText, Plus, Shield } from "lucide-react";
+import { ExternalLink, Loader2, MessageSquareText, Plus, Shield, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 import { HealthDot, MoreLink, PostureList, RuntimeGrid, ToolList, useHealth } from "@/components/agent";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -7,13 +8,154 @@ import { Page, PageHeader } from "@/components/ui/page";
 import { EmptyState, ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { StatusBadge, Tag } from "@/components/ui/status";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import type { Overview } from "@/lib/api";
+import { ROOT, platformApi, type Overview, type PlatformAgent, type PlatformInfo, type PlatformJob } from "@/lib/api";
 import { useOverview } from "@/lib/data";
+import { usePlatform, usePlatformAgents } from "@/lib/platform";
 import { duration, environmentLabel, number } from "@/lib/format";
 import { Link, useRouter } from "@/lib/router";
 
 // ------------------------------------------------------------------ list
 export function AgentsPage() {
+  const { info, loading } = usePlatform();
+  if (loading) return <Page><PageHeader title="Agents" /><LoadingRegion label="Loading agents" className="space-y-3"><Skeleton className="h-4 w-1/3" /></LoadingRegion></Page>;
+  return info ? <PlatformAgentsPage info={info} /> : <ServiceAgentsPage />;
+}
+
+// ------------------------------------------------------------------ every agent on the server (VPS platform)
+const JOB_LABEL: Partial<Record<PlatformJob["state"], string>> = {
+  queued: "Queued", generating: "Generating", registering: "Registering", building: "Building and running evals",
+  starting: "Starting", removing: "Removing",
+};
+
+function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
+  const { data, error, reload } = usePlatformAgents(true);
+  const { navigate } = useRouter();
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const remove = async (a: PlatformAgent) => {
+    if (!window.confirm(`Remove ${a.title}? It stops and leaves this server. Its files are kept on the server (in .removed).`)) return;
+    setRemoving(a.name);
+    setProblem(null);
+    try {
+      await platformApi.remove(a.name);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "The agent couldn't be removed.");
+    } finally {
+      setRemoving(null);
+      reload();
+    }
+  };
+
+  return (
+    <Page wide>
+      <PageHeader
+        title="Agents"
+        description="Every MAF agent on this server. Create agent generates a new one from the golden-path template, runs its evals, builds and starts it here."
+        actions={
+          <Button size="sm" variant="primary" onClick={() => navigate("/agents/new")}>
+            <Plus aria-hidden /> Create agent
+          </Button>
+        }
+      />
+      {problem && <InlineNotice tone="bad" className="mb-4">{problem}</InlineNotice>}
+      <Card>
+        {error && !data ? (
+          <ErrorState title="Unable to load the agents on this server" message={error.message} onRetry={reload} />
+        ) : !data ? (
+          <LoadingRegion label="Loading agents" className="space-y-3 p-5">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-4 w-1/2" />
+          </LoadingRegion>
+        ) : (
+          <Table label="Agents on this server">
+            <thead>
+              <tr>
+                <Th>Agent</Th>
+                <Th>Status</Th>
+                <Th className="hidden md:table-cell">Version</Th>
+                <Th className="hidden lg:table-cell">Created by</Th>
+                <Th className="text-right">Open</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.jobs.map((j) => (
+                <Tr key={j.id}>
+                  <Td>
+                    <div className="font-medium text-zinc-950">{j.title}</div>
+                    <div className="font-mono text-xs text-zinc-500">{j.path}</div>
+                  </Td>
+                  <Td>
+                    <span className="inline-flex items-center gap-1.5 text-[13px] text-accent-700">
+                      <Loader2 aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+                      {JOB_LABEL[j.state] ?? j.state}
+                    </span>
+                  </Td>
+                  <Td className="hidden md:table-cell">—</Td>
+                  <Td className="hidden lg:table-cell text-[13px]">{j.created_by}</Td>
+                  <Td className="text-right">
+                    <Link to={`/agents/new?job=${encodeURIComponent(j.id)}`} className="text-[13px] text-accent-700 hover:underline">
+                      Progress
+                    </Link>
+                  </Td>
+                </Tr>
+              ))}
+              {data.agents.map((a) => {
+                const here = a.path === ROOT;
+                const base = a.internal || !a.host ? a.path : `https://${a.host}`;
+                return (
+                  <Tr key={a.name}>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-zinc-950">{a.title}</span>
+                        {here && <Tag>This console</Tag>}
+                      </div>
+                      <div className="font-mono text-xs text-zinc-500">{info.public_host}{a.path || "/"}</div>
+                    </Td>
+                    <Td>
+                      <StatusBadge tone={a.status === "ready" ? "ok" : a.status === "not_ready" ? "warn" : "bad"}>
+                        {a.status === "ready" ? "Ready" : a.status === "not_ready" ? "Not ready" : "Unreachable"}
+                      </StatusBadge>
+                    </Td>
+                    <Td className="hidden font-mono text-[13px] md:table-cell">{a.version ?? "—"}</Td>
+                    <Td className="hidden lg:table-cell text-[13px] text-zinc-600">{a.created_by ?? (a.name === "sample" ? "Sample" : "—")}</Td>
+                    <Td className="text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        <ButtonLink size="sm" href={`${base}/console`}>Console</ButtonLink>
+                        <ButtonLink size="sm" href={`${base}/chat`}>
+                          <MessageSquareText aria-hidden className="mr-1" /> Chat
+                        </ButtonLink>
+                        {info.is_admin && a.internal && a.name !== "sample" && !here && (
+                          <Button size="sm" onClick={() => void remove(a)} disabled={removing !== null} aria-label={`Remove ${a.title}`}>
+                            {removing === a.name ? <Loader2 aria-hidden className="animate-spin" /> : <Trash2 aria-hidden />}
+                          </Button>
+                        )}
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+      <InlineNotice className="mt-4">
+        {info.is_admin
+          ? "You're a platform admin: you can create and remove agents here. Each agent is a Microsoft Agent Framework service with the golden path's guardrails, approvals, sessions, evals and console."
+          : `Signed in as ${info.user}. Only platform admins can create or remove agents on this server; anyone signed in can open them.`}
+        {info.fleet && (
+          <>
+            {" "}
+            <a href="/fleet/console" className="font-medium text-accent-700 hover:underline">Open the fleet view</a> for security posture and quality gates side by side.
+          </>
+        )}
+      </InlineNotice>
+    </Page>
+  );
+}
+
+// ------------------------------------------------------------------ this service's agent (no platform)
+function ServiceAgentsPage() {
   const { data, error, reload } = useOverview();
   const { health } = useHealth();
   const { navigate } = useRouter();

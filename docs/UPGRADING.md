@@ -26,6 +26,13 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.9.2 → 0.9.3 (Create agent launches agents on a VPS)
+
+- `agentctl.py platform --admins ...` adds the platform service: the console's **Create agent** generates, tests, builds and starts a new agent on the server, and the Agents page lists every agent there ([vps.md](vps.md#create-agents-from-the-console)). Nothing changes for Azure deployments or VPS stacks without it.
+- `agentctl.py add --internal` and `fleet --internal`: served under the sample's host (`/agents/<name>`, `/fleet`) instead of their own host names.
+- New setting `AGENTKIT_FORWARDED_PREFIX_HEADER` (off by default): the console, web chat and fleet render their links under the path a trusted router mounts them at.
+- `agentctl.py` no longer picks a port that something on the host (or an nginx site) already uses.
+
 ### 0.9.1 → 0.9.2 (more agents and the fleet on a VPS)
 
 - `deploy/vps/agentctl.py` adds agents generated from the template (the console's Create agent) to the VPS stack, each at its own host name with its own sign-in, and turns on the fleet view there ([vps.md](vps.md#more-agents-and-the-fleet-view)).

@@ -35,7 +35,7 @@ import yaml
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from agentkit.hosting import AgentKitSettings, ConversationService, http_caller
+from agentkit.hosting import AgentKitSettings, ConversationService, behind_platform, http_caller, mount_prefix
 from agentkit.hosting.approvals import APPROVALS_KEY, AUDIT_KEY, roles_from_principal
 
 from .traffic import RANGES, AzureLogsClient, LogsClient, LogsQueryError, TrafficQueries, TtlCache, shape_series
@@ -220,15 +220,15 @@ _CHANNEL_NAMES = {
 }
 
 
-def _channels(app: Any, console_path: str) -> list[dict[str, Any]]:
-    result = [{"id": "api", "name": "JSON API", "path": "/v1/chat"}]
+def _channels(app: Any, console_path: str, prefix: str = "") -> list[dict[str, Any]]:
+    result = [{"id": "api", "name": "JSON API", "path": prefix + "/v1/chat"}]
     for channel in getattr(app.state, "channels", []):
         kind = type(channel).__name__
         if kind == "Console":
             continue
         cid, name, attr = _CHANNEL_NAMES.get(kind, (kind.lower(), kind, "path"))
-        result.append({"id": cid, "name": name, "path": getattr(channel, attr, None) or
-                       ("/api/messages" if cid == "teams" else None)})
+        path = getattr(channel, attr, None) or ("/api/messages" if cid == "teams" else None)
+        result.append({"id": cid, "name": name, "path": prefix + path if path else None})
     return result
 
 
@@ -299,15 +299,25 @@ class Console:
         index = _bundle().joinpath("index.html")
         if not index.is_file():  # pragma: no cover - the wheel always carries the build
             raise RuntimeError("agentkit console bundle is missing (run `npm run build` in console/)")
-        page = (index.read_text(encoding="utf-8")
-                .replace("/console/", f"{self.path}/")
-                .replace("__AGENTKIT_API__", _html_attr(self.api))
-                .replace("__AGENTKIT_TITLE__", _html_attr(self.title or settings.service_name)))
+        template = (index.read_text(encoding="utf-8")
+                    .replace("__AGENTKIT_TITLE__", _html_attr(self.title or settings.service_name)))
 
-        async def console_page() -> HTMLResponse:
+        def render(prefix: str, platform: bool) -> str:  # prefix: where a trusted router mounts it ("" = the root)
+            return (template.replace("/console/", f"{prefix}{self.path}/")
+                    .replace("__AGENTKIT_API__", _html_attr(prefix + self.api))
+                    .replace("__AGENTKIT_ROOT__", _html_attr(prefix))
+                    .replace("__AGENTKIT_PLATFORM__", "1" if platform else ""))
+
+        pages: dict[tuple[str, bool], str] = {}
+
+        async def console_page(request: Request) -> HTMLResponse:
+            key = (mount_prefix(request, settings), behind_platform(request, settings))
+            page = pages.get(key) or render(*key)
+            if key not in pages and len(pages) < 16:  # a router uses a handful; a client can't grow this
+                pages[key] = page
             return HTMLResponse(page, headers={**_SECURITY_HEADERS, "Cache-Control": "no-cache"})
 
-        async def console_asset(name: str) -> Response:
+        async def console_asset(name: str, request: Request) -> Response:
             if "/" in name or "\\" in name or name.startswith("."):
                 raise HTTPException(404)
             item = _bundle().joinpath("assets", name)
@@ -316,15 +326,16 @@ class Console:
             suffix = Path(name).suffix
             media = _ASSET_TYPES.get(suffix) or mimetypes.guess_type(name)[0] or "application/octet-stream"
             body = item.read_bytes()
-            if suffix == ".css" and self.path != "/console":  # font URLs are absolute in the stylesheet
-                body = body.replace(b"/console/assets/", f"{self.path}/assets/".encode())
-            return Response(body, media_type=media,
-                            headers={**_SECURITY_HEADERS, "Cache-Control": "public, max-age=31536000, immutable"})
+            prefix = mount_prefix(request, settings)
+            if suffix == ".css" and (prefix or self.path != "/console"):  # font URLs are absolute in the stylesheet
+                body = body.replace(b"/console/assets/", f"{prefix}{self.path}/assets/".encode())
+            cache = "private, max-age=31536000, immutable" if prefix else "public, max-age=31536000, immutable"
+            return Response(body, media_type=media, headers={**_SECURITY_HEADERS, "Cache-Control": cache})
 
-        async def console_route(rest: str) -> HTMLResponse:  # client-side routes: /console/agents, ...
+        async def console_route(rest: str, request: Request) -> HTMLResponse:  # client-side routes: /console/agents
             if rest.startswith("assets/") or "." in rest.rsplit("/", 1)[-1]:
                 raise HTTPException(404)  # a missing file is a 404, not the app shell
-            return await console_page()
+            return await console_page(request)
 
         app.add_api_route(self.path, console_page, methods=["GET"], include_in_schema=False)
         app.add_api_route(f"{self.path}/assets/{{name}}", console_asset, methods=["GET"], include_in_schema=False)
@@ -350,6 +361,7 @@ class Console:
     async def _overview(self, request: Request) -> JSONResponse:
         caller = self._caller(request)
         s = self._settings
+        prefix = mount_prefix(request, s)
         try:
             agent = self._service.agent
         except HTTPException:
@@ -374,7 +386,7 @@ class Console:
                            "max_run_seconds": s.max_run_seconds, "session_token_budget": s.session_token_budget,
                            "session_ttl_seconds": s.session_ttl_seconds, "max_input_chars": s.max_input_chars},
             },
-            "channels": _channels(self._app, self.path),
+            "channels": _channels(self._app, self.path, prefix),
             "knowledge": _knowledge(agent),
             "security": security_posture(agent, s),
             "sessions": {"store": s.session_store, "shared": s.session_store != "memory",
@@ -384,7 +396,7 @@ class Console:
                           "approver_role": s.approver_role},
             "telemetry": {"exporter": exporter, "capture_content": s.capture_message_content,
                           "workbook_url": self.workbook_url, "live_charts": bool(self._logs or self._logs_scope)},
-            "links": {"docs": self.docs_url, "chat": _path_of(self._app, "WebChat")},
+            "links": {"docs": self.docs_url, "chat": (prefix + chat) if (chat := _path_of(self._app, "WebChat")) else None},
         }
         return JSONResponse(body, headers=_API_HEADERS)
 

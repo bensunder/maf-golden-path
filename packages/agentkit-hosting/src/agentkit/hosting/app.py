@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -36,6 +37,8 @@ __all__ = [
     "approval_views",
     "create_app",
     "http_caller",
+    "mount_prefix",
+    "behind_platform",
 ]
 
 logger = logging.getLogger(__name__)
@@ -91,6 +94,25 @@ class Channel(Protocol):
 
 def approval_views(pending: list[dict[str, Any]]) -> list[ApprovalView]:
     return [ApprovalView(id=p["id"], tool=p["tool"], arguments=p["arguments"], requested_at=p["requested_at"]) for p in pending]
+
+
+_PREFIX = re.compile(r"(/[a-z0-9][a-z0-9-]{0,62}){1,3}")
+
+
+def mount_prefix(request: Request, settings: Any) -> str:
+    """The path this service is served under by a trusted router (``/agents/legal``), or "".
+
+    Only read when ``forwarded_prefix_header`` is configured, and only a plain lowercase path is accepted,
+    so the value can go into links and HTML attributes as it is."""
+    header = getattr(settings, "forwarded_prefix_header", None)
+    value = request.headers.get(header, "") if header else ""
+    return value if _PREFIX.fullmatch(value) else ""
+
+
+def behind_platform(request: Request, settings: Any) -> bool:
+    """Served by the VPS platform router (which marks what it forwards): the console then offers the
+    server's agent list and Create agent. Only read when ``forwarded_prefix_header`` is configured."""
+    return bool(getattr(settings, "forwarded_prefix_header", None)) and request.headers.get("x-agentkit-platform") == "1"
 
 
 def http_caller(request: Request, settings: AgentKitSettings, *, channel: str = "http") -> Caller:

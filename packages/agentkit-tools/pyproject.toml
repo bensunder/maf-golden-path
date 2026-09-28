@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-tools"
-version = "0.9.2"
+version = "0.9.3"
 description = "Connectors for Microsoft Agent Framework agents: OpenAPI-to-tool generation, Entra managed-identity and on-behalf-of auth, resilient HTTP, response shaping, MCP through the gateway."
 requires-python = ">=3.10"
 dependencies = [

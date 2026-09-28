@@ -17,6 +17,7 @@ All settings are environment variables with the `AGENTKIT_` prefix, read by `Age
 |---|---|---|
 | `AGENTKIT_GATEWAY_ENDPOINT` | none | AI gateway base URL, e.g. `https://apim-ai.contoso.com`. Required outside tests |
 | `AGENTKIT_GATEWAY_STYLE` | `azure` | `azure` = `/openai/deployments/{model}/…`; `openai_v1` = `/openai/v1`; `openai` = the endpoint is the OpenAI-compatible base URL itself (OpenAI or LiteLLM, for [running outside Azure](vps.md)) |
+| `AGENTKIT_FORWARDED_PREFIX_HEADER` | none | Header a trusted router sets when it serves the service under a path (the VPS platform: `x-agentkit-prefix`). The console and web chat then link under that path. Only plain lowercase paths are accepted |
 | `AGENTKIT_MODEL` | `gpt-4.1-mini` | Deployment / model name |
 | `AGENTKIT_API_VERSION` | `2024-10-21` | Azure OpenAI API version (azure style) |
 | `AGENTKIT_AUTH_MODE` | `default` | `managed_identity`, `azure_cli`, `default` (DefaultAzureCredential) or `api_key` |
