@@ -38,10 +38,12 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from connectors import (CONNECTOR_NAME, Activity, ConnectorError, Store, Vault, check_url, policy_of,  # noqa: E402
                         create_gateway, list_tools, public_view, validate_entry)
+from templates import TEMPLATE_ID, TemplateError, apply_template, library_view, load_catalog, public, template_body  # noqa: E402
 
 HOME = Path(os.getenv("PLATFORM_HOME", "/opt/maf-golden-path"))
 VPS = HOME / "deploy" / "vps"
 AGENTS_DIR = Path(os.getenv("PLATFORM_AGENTS_DIR", "/opt/agents"))
+TEMPLATES_DIR = HOME / "agent-templates"  # template libraries for Create agent (agent-templates/README.md)
 ADMINS = {a.strip().lower() for a in os.getenv("PLATFORM_ADMINS", "").split(",") if a.strip()}
 PUBLIC_HOST = os.getenv("PLATFORM_PUBLIC_HOST", "")
 TRUSTED_PEER = os.getenv("PLATFORM_TRUSTED_PEER", "auth")
@@ -112,11 +114,12 @@ class Job:
         self.log: deque[str] = deque(maxlen=400)
         self.created_at = time.time()
         self.finished_at: float | None = None
+        self.template: str | None = None
 
     def view(self, log: bool = True) -> dict:
         body = {"id": self.id, "name": self.name, "title": self.title, "created_by": self.user, "state": self.state,
                 "error": self.error, "failed_step": self.failed_step, "created_at": self.created_at, "finished_at": self.finished_at,
-                "path": f"/agents/{self.name}"}
+                "path": f"/agents/{self.name}", "template": self.template}
         if log:
             body["log"] = list(self.log)
         return body
@@ -165,10 +168,11 @@ class Builder:
             raise RuntimeError(f"{' '.join(argv[:3])} failed (exit {proc.returncode})")
 
     def start(self, name: str, title: str, description: str, team: str, knowledge: bool, user: str,
-              connectors: list[str] | None = None) -> Job:
+              connectors: list[str] | None = None, template: str | None = None) -> Job:
         job = Job(name, title, user)
+        job.template = template
         self._add(job)
-        self._spawn(self._create(job, description, team, knowledge, connectors or []))
+        self._spawn(self._create(job, description, team, knowledge, connectors or [], template))
         return job
 
     def start_assign(self, name: str, connectors: list[str], user: str) -> Job:
@@ -217,7 +221,8 @@ class Builder:
             finally:
                 job.finished_at = time.time()
 
-    async def _create(self, job: Job, description: str, team: str, knowledge: bool, connectors: list[str]) -> None:
+    async def _create(self, job: Job, description: str, team: str, knowledge: bool, connectors: list[str],
+                      template: str | None = None) -> None:
         async with self.lock:
             folder = AGENTS_DIR / job.name
             generated = registered = False
@@ -233,6 +238,8 @@ class Builder:
                                      "--data", f"team={team}", "--data", "enable_web_chat=true",
                                      "--data", "enable_teams=false", "--data", f"enable_knowledge={str(knowledge).lower()}",
                                      str(HOME), str(folder)], VPS, 300)
+                if template:
+                    self.apply(job, folder, template)
                 job.state = "registering"
                 registered = True  # agentctl may have written agents.yaml even if it then fails
                 await self.run(job, [sys.executable, "agentctl.py", "add", job.name, str(folder), "--internal",
@@ -253,6 +260,16 @@ class Builder:
                 await self.rollback(job, folder, generated, registered)
             finally:
                 job.finished_at = time.time()
+
+    def apply(self, job: Job, folder: Path, template: str) -> None:
+        catalog = load_catalog(TEMPLATES_DIR)
+        entry = catalog["templates"].get(template)
+        library = next((lib for lib in catalog["libraries"] if entry and lib["name"] == entry["library"]), None)
+        if entry is None or library is None:
+            raise RuntimeError(f"the template {template} is no longer installed")
+        job.log.append(f"$ apply template {template}   ({library['title']}, {library['license'] or 'no license given'})")
+        for change in apply_template(folder, job.name.replace("-", "_"), entry, library):
+            job.log.append(f"  wrote {change}")
 
     async def wait_ready(self, job: Job, base: str | None = None) -> None:
         deadline = time.monotonic() + READY_TIMEOUT
@@ -441,7 +458,11 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         team = str(body.get("team") or name).strip().lower()
         knowledge = body.get("knowledge", False)
         connectors = body.get("connectors") or []
+        template = body.get("template") or None
         problems = []
+        if template is not None and not (isinstance(template, str) and TEMPLATE_ID.fullmatch(template)
+                                         and template in load_catalog(TEMPLATES_DIR)["templates"]):
+            problems.append("template: the id of an installed template")
         if not isinstance(connectors, list) or not all(isinstance(c, str) and CONNECTOR_NAME.fullmatch(c) for c in connectors) \
                 or any(c not in STORE.load() for c in connectors):
             problems.append("connectors: names of connectors that exist")
@@ -461,7 +482,7 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
             raise HTTPException(409, f"an agent named {name} already exists")
         if any(j.name == name and j.state not in ("ready", "failed", "removed") for j in builder.jobs.values()):
             raise HTTPException(409, f"{name} is already being created")
-        job = builder.start(name, title, description, team, knowledge, user, connectors)
+        job = builder.start(name, title, description, team, knowledge, user, connectors, template)
         return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
 
     @app.get("/v1/platform/jobs/{job_id}")
@@ -505,6 +526,24 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
     def busy() -> None:
         if any(j.state not in ("ready", "failed", "removed") for j in builder.jobs.values()):
             raise HTTPException(409, "another change is running: try again when it finishes")
+
+    @app.get("/v1/platform/templates")
+    async def templates(request: Request) -> JSONResponse:
+        user_of(request)
+        catalog = load_catalog(TEMPLATES_DIR)
+        return JSONResponse({"libraries": [library_view(lib) for lib in catalog["libraries"]]}, headers=_API_HEADERS)
+
+    @app.get("/v1/platform/templates/{template_id:path}")
+    async def template_detail(template_id: str, request: Request) -> JSONResponse:
+        user_of(request)
+        catalog = load_catalog(TEMPLATES_DIR)
+        entry = catalog["templates"].get(template_id) if TEMPLATE_ID.fullmatch(template_id) else None
+        if entry is None:
+            raise HTTPException(404, "no such template")
+        library = next(lib for lib in catalog["libraries"] if lib["name"] == entry["library"])
+        return JSONResponse({**public(entry), "body": template_body(entry), "library_title": library["title"],
+                             "source": library["source"], "commit": library["commit"], "license": library["license"],
+                             "rules": library["rules"], "evals": library["evals"]}, headers=_API_HEADERS)
 
     @app.get("/v1/platform/connectors")
     async def connectors_list(request: Request) -> JSONResponse:

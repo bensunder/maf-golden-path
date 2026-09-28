@@ -20,7 +20,7 @@ services:
     environment:
       AGENTKIT_ENVIRONMENT: dev  # prod requires Azure (managed identity, Prompt Shields, the AI gateway)
       AGENTKIT_SERVICE_NAME: order-status-agent
-      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.9.4}
+      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.9.5}
       AGENTKIT_TEAM: ${TEAM:-commerce}
       # the model
       AGENTKIT_GATEWAY_ENDPOINT: ${MODEL_ENDPOINT:?set MODEL_ENDPOINT in .env}

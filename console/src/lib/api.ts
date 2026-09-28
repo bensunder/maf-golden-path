@@ -340,6 +340,7 @@ export interface PlatformJob {
   created_at: number;
   finished_at: number | null;
   path: string;
+  template?: string | null;
   log?: string[];
 }
 
@@ -350,6 +351,52 @@ export interface NewAgent {
   team: string;
   knowledge: boolean;
   connectors: string[];
+  template?: string;
+}
+
+// ------------------------------------------------------------------ template libraries (Create agent)
+export interface AgentTemplate {
+  id: string; // <library>/<group>/<file>
+  name: string;
+  emoji: string;
+  vibe: string;
+  services: string[];
+  group: string;
+  library: string;
+}
+
+export interface TemplateLibrary {
+  name: string;
+  title: string;
+  publisher: string;
+  source: string;
+  commit: string;
+  license: string;
+  description: string;
+  rules: string;
+  evals: string[];
+  groups: { id: string; title: string; templates: AgentTemplate[] }[];
+}
+
+export interface TemplateDetail extends AgentTemplate {
+  body: string;
+  library_title: string;
+  source: string;
+  commit: string;
+  license: string;
+  rules: string;
+  evals: string[];
+}
+
+export const templatesApi = {
+  list: () => request<{ libraries: TemplateLibrary[] }>("/v1/platform/templates"),
+  get: (id: string) => request<TemplateDetail>(`/v1/platform/templates/${id.split("/").map(encodeURIComponent).join("/")}`),
+};
+
+/** Fit free text to what Create agent accepts (it lands in generated code). */
+export function toAgentText(value: string, max = 240): string {
+  return value.replace(/\s*[\u2013\u2014]\s*/g, ", ").replace(/[\u2018\u2019]/g, "").replace(/[^A-Za-z0-9 .,;:!?()&+/%#@-]/g, "")
+    .replace(/\s{2,}/g, " ").trim().slice(0, max).trim();
 }
 
 export const platformApi = {

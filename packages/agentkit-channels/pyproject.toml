@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-channels"
-version = "0.9.4"
+version = "0.9.5"
 description = "Channels for agentkit services: Microsoft Teams (with Adaptive Card approvals), AG-UI web chat and the operations console, on top of agentkit-hosting's conversation service."
 requires-python = ">=3.10"
 dependencies = [

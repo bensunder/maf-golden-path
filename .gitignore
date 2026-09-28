@@ -15,3 +15,8 @@ deploy/vps/agents.yaml
 deploy/vps/docker-compose.agents.yml
 deploy/vps/nginx/
 deploy/vps/connectors.json
+
+# template libraries cloned on a server (agentctl.py templates add); the vendored ones are tracked
+/agent-templates/*
+!/agent-templates/README.md
+!/agent-templates/legal-agents/

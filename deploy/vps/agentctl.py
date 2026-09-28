@@ -6,6 +6,7 @@
     python3 agentctl.py fleet [--internal]              # the fleet view across all of them
     python3 agentctl.py platform --admins you@contoso.com  # Create agent in the console builds and starts agents
     python3 agentctl.py connect legal github,linear     # connectors (added in the console) this agent may use
+    python3 agentctl.py templates add <name> <git-url>  # a template library for Create agent (agent-templates/)
     python3 agentctl.py list | remove legal | render
     docker compose up -d --build
 
@@ -563,6 +564,88 @@ def cmd_connect(args, data, env) -> None:
         entry.pop("connector_token", None)
 
 
+TEMPLATE_ROOT = HERE.parent.parent / "agent-templates"
+_GIT_URL = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?/[A-Za-z0-9._~/-]+")
+_GIT_REF = re.compile(r"[A-Za-z0-9._/-]{1,100}")
+
+
+def _license_of(folder: Path) -> str:
+    """A short name for the license file's first line, when it's a common one."""
+    for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"):
+        path = folder / name
+        if path.is_file() and not path.is_symlink():
+            first = next((line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+                          if line.strip()), "")
+            for pattern, short in (("MIT License", "MIT"), ("Apache License", "Apache-2.0"), ("BSD", "BSD"),
+                                   ("Creative Commons", "Creative Commons"), ("GNU", "GPL family"), ("Mozilla", "MPL-2.0")):
+                if pattern.lower() in first.lower():
+                    return short
+            return "see LICENSE"
+    return ""
+
+
+def cmd_templates(args) -> None:
+    """Template libraries: agent personas that Create agent can start from (agent-templates/README.md)."""
+    import shutil
+    import subprocess
+    sys.path.insert(0, str(HERE / "platform"))
+    from templates import LIBRARY_NAME, load_catalog
+
+    if args.action == "list":
+        catalog = load_catalog(TEMPLATE_ROOT)
+        if not catalog["libraries"]:
+            print(f"no template libraries in {TEMPLATE_ROOT}")
+        for lib in catalog["libraries"]:
+            count = sum(len(g["templates"]) for g in lib["groups"])
+            where = lib["source"] + (f" @ {lib['commit'][:7]}" if lib["commit"] else "")
+            print(f"{lib['name']:<18}{count:>3} templates  {lib['title']}  {where}  {lib['license'] or 'no license given'}")
+        return
+    if not LIBRARY_NAME.fullmatch(args.name or ""):
+        raise Problem("the library name: 2-41 lowercase letters, digits or dashes, starting with a letter")
+    target = TEMPLATE_ROOT / args.name
+    if args.action == "remove":
+        if not target.is_dir():
+            raise Problem(f"no template library named {args.name}")
+        if not (target / ".git").is_dir():
+            raise Problem(f"{args.name} ships with the kit; delete {target} by hand if you really want it gone")
+        shutil.rmtree(target)
+        print(f"removed {target}. Agents already made from it keep their instructions.")
+        return
+    if not args.url or not _GIT_URL.fullmatch(args.url):
+        raise Problem("the git URL: https://host/owner/repo(.git)")
+    if args.ref and (not _GIT_REF.fullmatch(args.ref) or args.ref.startswith("-")):
+        raise Problem("--ref: a tag, branch or commit")
+    if target.exists():
+        raise Problem(f"{target} already exists (templates remove {args.name} first)")
+    TEMPLATE_ROOT.mkdir(exist_ok=True)
+    import os
+    quiet = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # a private or mistyped repo fails instead of asking for a password
+    try:
+        subprocess.run(["git", "clone", "--quiet", "--no-recurse-submodules", "--", args.url, str(target)], check=True, env=quiet)
+        if args.ref:
+            subprocess.run(["git", "-C", str(target), "checkout", "--quiet", args.ref], check=True)
+        commit = subprocess.run(["git", "-C", str(target), "rev-parse", "HEAD"], check=True,
+                                capture_output=True, text=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        shutil.rmtree(target, ignore_errors=True)
+        what = "is it public, and is the ref right?" if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+        raise Problem(f"couldn't clone {args.url} ({what})") from None
+    if not (target / "library.yaml").exists():
+        meta = {"title": args.name, "source": args.url, "commit": commit}
+        license_name = _license_of(target)
+        if license_name:
+            meta["license"] = license_name
+        (target / "library.yaml").write_text(yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
+    catalog = load_catalog(TEMPLATE_ROOT)
+    count = sum(1 for t in catalog["templates"].values() if t["library"] == args.name)
+    if not count:
+        shutil.rmtree(target, ignore_errors=True)
+        raise Problem(f"{args.url} has no templates: markdown files with a `name:` in their front matter")
+    print(f"added {args.name}: {count} templates from {args.url} at {commit[:12]}")
+    print("Read them before anyone uses them: a template becomes an agent's instructions.")
+    print("They're in the console now (Agents -> Create agent); no restart needed.")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -589,7 +672,14 @@ def main(argv: list[str] | None = None) -> None:
     con.add_argument("connectors", help="comma-separated connector names, or none")
     sub.add_parser("list", help="show the agents")
     sub.add_parser("render", help="write the compose and nginx files again from agents.yaml")
+    tpl = sub.add_parser("templates", help="template libraries for Create agent: list, add <name> <git-url>, remove <name>")
+    tpl.add_argument("action", choices=["list", "add", "remove"])
+    tpl.add_argument("name", nargs="?")
+    tpl.add_argument("url", nargs="?")
+    tpl.add_argument("--ref", help="a tag, branch or commit to check out (pin one for a reviewed version)")
     args = parser.parse_args(argv)
+    if args.command == "templates":
+        return cmd_templates(args)
 
     env, data = read_env(), load()
     new_host = removed = None

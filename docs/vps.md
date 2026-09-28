@@ -14,10 +14,10 @@ About 20 minutes. You need Docker with Compose, a DNS name pointing at the serve
 Clone the release tag (recommended: moving to a newer tag later updates the kit and every agent at once):
 
 ```bash
-git clone --branch v0.9.4 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
+git clone --branch v0.9.5 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
 ```
 
-or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.4.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
+or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.5.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
 
 ## 2. An Entra app for sign-in
 
@@ -75,7 +75,7 @@ Open `https://<AGENT_HOST>/console/agents`. It lists every agent on the server, 
 
 **Create agent** (admins only) runs these steps, with a live build log:
 
-1. generates a new Microsoft Agent Framework agent from the kit's template (this checkout's version);
+1. generates a new Microsoft Agent Framework agent from the kit's template (this checkout's version), and, if you picked one, applies an agent template (below);
 2. registers it;
 3. builds it: the build runs the agent's offline evals, and a failing gate stops it there;
 4. starts it and waits until it answers.
@@ -99,6 +99,23 @@ It then lives at `https://<AGENT_HOST>/agents/<name>/console` and `/chat`: no ne
 - Agents with their own host name (`agentctl.py add` without `--internal`) keep working as before; the console lists them too.
 
 `agentctl.py platform --off` puts the stack back to one sign-in proxy in front of the sample.
+
+## Agent templates
+
+**Start from → Browse templates** in Create agent picks a specialist to start from: a role and working procedure that becomes the new agent's instructions. The kit ships one library, [judicialmind/legal-agents](https://github.com/judicialmind/legal-agents) (30 legal specialists, MIT, pinned at `20587b4`), in `agent-templates/`.
+
+The picker shows each template's scope, the rules added on top, the extra eval cases, and its full instructions to read before you use it. Choosing one fills in the name and description; the platform then:
+
+- adds the template's role and procedure to `instructions/system.md`, below the kit's own rules (tool use, boundaries), followed by the library's rules, which take precedence over the role;
+- fills the charter's scope from the template;
+- appends the library's eval cases to `evals/cases.yaml`, so they're part of the build's quality gate;
+- copies the template's license next to the instructions.
+
+For the legal library the rules say the agent isn't a lawyer and gives no legal advice, never states a case, citation or statute as fact unless a tool returned it, marks drafts for professional review, asks which jurisdiction applies, and asks only for the facts it needs. Its two eval cases check the first two (`legal-no-invented-citation` is critical).
+
+A template gives an agent expertise, not data: pair it with connectors (a contracts database, a case-law service) so it can look things up instead of saying it can't verify.
+
+**More libraries:** `python3 agentctl.py templates add <name> <git-url> --ref <tag or commit>` clones one into `agent-templates/` (pin a commit you've reviewed: a template becomes an agent's instructions). `templates list` shows what's installed, `templates remove <name>` removes a cloned one. Agents made from a template keep their instructions when it's removed or updated. The format is in [agent-templates/README.md](../agent-templates/README.md).
 
 ## Connectors
 
@@ -139,7 +156,7 @@ The same stack runs any number of agents, each at its own address with its own c
 
 ```bash
 mkdir -p /opt/agents && cd /opt/agents
-copier copy --trust --vcs-ref v0.9.4 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
+copier copy --trust --vcs-ref v0.9.5 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
 ```
 
 Edit its `instructions/system.md`, `tools.py` and `evals/cases.yaml`. Put it in its own git repository: the generated CI runs its evals on every change.

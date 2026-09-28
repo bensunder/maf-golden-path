@@ -26,6 +26,12 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.9.4 → 0.9.5 (agent templates in Create agent)
+
+- Create agent can **start from a template**: a specialist's role and procedure become the new agent's instructions, with the library's rules and eval cases added ([vps.md](vps.md#agent-templates)). The kit ships `agent-templates/legal-agents` (30 legal specialists from judicialmind/legal-agents, MIT).
+- `agentctl.py templates list | add <name> <git-url> [--ref ...] | remove <name>` manages template libraries on a server.
+- Upgrade a VPS: `git fetch --tags && git checkout v0.9.5`, `docker compose up -d --build`. Nothing changes for existing agents.
+
 ### 0.9.3 → 0.9.4 (Connectors catalog on a VPS)
 
 - **Console → Connectors** (VPS platform): add MCP connectors once (Linear, GitHub, Stripe, Supabase or any MCP server with a service token), choose allowed tools and which need approval, and assign them to agents from the Agents page or Create agent ([vps.md](vps.md#connectors)).

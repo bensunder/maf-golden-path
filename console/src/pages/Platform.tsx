@@ -1,14 +1,15 @@
-import { ArrowDown, Check, CircleCheck, CircleX, FileCode, Loader2, Lock, MessageSquareText, Plus, Rocket, Terminal } from "lucide-react";
+import { ArrowDown, Check, CircleCheck, CircleX, FileCode, LayoutTemplate, Loader2, Lock, MessageSquareText, Plus, Rocket, Terminal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EstimateNote, GoldenPathSummary } from "@/components/agent";
+import { TemplatePicker } from "@/components/templates";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Eyebrow } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/overlay";
 import { Page, PageHeader, SectionTitle } from "@/components/ui/page";
 import { ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { StatusBadge, Tag } from "@/components/ui/status";
-import { AGENT_TEAM, AGENT_TEXT, AGENT_TITLE, RESERVED_NAMES, agentSlug, connectorsApi, platformApi, type PlatformInfo } from "@/lib/api";
+import { AGENT_TEAM, AGENT_TEXT, AGENT_TITLE, RESERVED_NAMES, agentSlug, connectorsApi, platformApi, toAgentText, type AgentTemplate, type PlatformInfo, type TemplateLibrary } from "@/lib/api";
 import { useLoad } from "@/lib/data";
 import { STEPS, stepIndex, useJob, usePlatform } from "@/lib/platform";
 import { useOverview } from "@/lib/data";
@@ -144,6 +145,8 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
   const [team, setTeam] = useState("");
   const [knowledge, setKnowledge] = useState(false);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [template, setTemplate] = useState<{ t: AgentTemplate; lib: TemplateLibrary } | null>(null);
+  const [picking, setPicking] = useState(false);
   const catalog = useLoad(connectorsApi.list);
   const [submitting, setSubmitting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -164,13 +167,23 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
     setSubmitting(true);
     setProblem(null);
     try {
-      const job = await platformApi.create({ title: title.trim(), name, description: description.trim(), team: teamValue, knowledge, connectors: [...chosen] });
+      const job = await platformApi.create({
+        title: title.trim(), name, description: description.trim(), team: teamValue, knowledge, connectors: [...chosen],
+        ...(template ? { template: template.t.id } : {}),
+      });
       navigate(`/agents/new?job=${encodeURIComponent(job.id)}`);
     } catch (e) {
       setProblem(e instanceof Error ? e.message : "The agent couldn't be created.");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const pick = (t: AgentTemplate, lib: TemplateLibrary) => {
+    setTemplate({ t, lib });
+    setPicking(false);
+    if (!title.trim()) setTitle(toAgentText(t.name, 60).replace(/[^A-Za-z0-9 .,()&+-]/g, "").trim());
+    if (!description.trim()) setDescription(toAgentText(t.vibe));
   };
 
   const input = "h-9 w-full rounded-md border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-accent-500/20";
@@ -190,6 +203,28 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
       >
         <Card>
           <CardBody className="space-y-5">
+            <fieldset>
+              <legend className="text-[13px] font-medium text-zinc-900">Start from</legend>
+              {template ? (
+                <div className="mt-2 flex items-start gap-3 rounded-md border border-zinc-200 px-3 py-2.5">
+                  <span aria-hidden className="text-lg leading-6">{template.t.emoji || <LayoutTemplate className="size-5 text-zinc-500" />}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-zinc-900">{template.t.name}</span>
+                    <span className="block text-xs text-zinc-500">
+                      {template.lib.title}{template.lib.license ? ` · ${template.lib.license}` : ""} · its role and procedure become the instructions
+                      {template.lib.evals.length ? `, with ${template.lib.evals.length} extra eval cases` : ""}
+                    </span>
+                  </span>
+                  <Button type="button" size="sm" onClick={() => setPicking(true)}>Change</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setTemplate(null)}>Remove</Button>
+                </div>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-zinc-300 px-3 py-2.5">
+                  <span className="text-[13px] text-zinc-600">A blank agent, or a specialist's role and procedure from a template library.</span>
+                  <Button type="button" size="sm" onClick={() => setPicking(true)}><LayoutTemplate aria-hidden /> Browse templates</Button>
+                </div>
+              )}
+            </fieldset>
             <Field id="agent-name" label="Agent name" hint={name ? <>It will live at <span className="font-mono">{info.public_host}/agents/{name}</span></> : "For example: Legal Desk"}>
               <input id="agent-name" value={title} required maxLength={60} onChange={(e) => setTitle(e.target.value)} aria-invalid={title.length > 0 && !valid} className={input} />
             </Field>
@@ -277,6 +312,7 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
           </InlineNotice>
         </div>
       </form>
+      {picking && <TemplatePicker current={template?.t.id ?? null} onPick={pick} onClose={() => setPicking(false)} />}
     </Page>
   );
 }
