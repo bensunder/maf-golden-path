@@ -53,6 +53,12 @@ def test_page_and_script_are_served_with_a_strict_csp():
     assert "customElements.define" in script.text
 
 
+def test_the_bare_host_name_goes_to_the_chat():
+    with TestClient(make_app(ScriptedChatClient())) as http:
+        home = http.get("/", follow_redirects=False)
+    assert home.status_code == 302 and home.headers["location"] == "/chat"
+
+
 # ------------------------------------------------------------------ browser (fixture and Server in conftest)
 def open_chat(browser, url, headers=None, poll_ms=None):
     page = browser.new_page()

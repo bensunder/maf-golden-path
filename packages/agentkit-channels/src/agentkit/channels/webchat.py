@@ -13,7 +13,7 @@ import html
 from importlib import resources
 from typing import Any
 
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from agentkit.hosting import AgentKitSettings, ConversationService
 
@@ -51,3 +51,9 @@ class WebChat:
 
         app.add_api_route(self.path, chat_page, methods=["GET"], include_in_schema=False)
         app.add_api_route(script_path, chat_script, methods=["GET"], include_in_schema=False)
+        # people open the bare host name: send them to the chat unless the service serves its own home page
+        if not any(getattr(route, "path", None) == "/" for route in app.routes):
+            async def home() -> RedirectResponse:
+                return RedirectResponse(self.path, status_code=302)
+
+            app.add_api_route("/", home, methods=["GET"], include_in_schema=False)
