@@ -44,7 +44,7 @@ openssl rand -base64 32 | tr -- '+/' '-_'     # paste as COOKIE_SECRET
 nano .env
 ```
 
-- **The model.** Use Azure OpenAI with a key (`MODEL_STYLE=azure`, the resource URL, the deployment name). Or use OpenAI or any OpenAI-compatible proxy such as LiteLLM (`MODEL_STYLE=openai`, the base URL ending in `/v1`).
+- **The model.** Use Azure OpenAI with a key (`MODEL_STYLE=azure`, the resource URL, the deployment name; `MODEL_API_VERSION` defaults to one that GPT-5 deployments accept). The model must support tool calling: in Ollama, for example, `phi4` doesn't and `phi4-mini` does. Or use OpenAI or any OpenAI-compatible proxy such as LiteLLM (`MODEL_STYLE=openai`, the base URL ending in `/v1`).
 - **Sign-in.** The tenant id, client id and secret from step 2, plus `AGENT_HOST`. Set `ALLOWED_EMAIL_DOMAINS` to your domain to limit who can sign in beyond "anyone in the tenant".
 
 ## 4. Start it
@@ -56,9 +56,14 @@ docker compose logs -f agent        # "Application startup complete"
 
 The build runs the sample's offline evals, so the console's Evaluations page shows the result for exactly this build.
 
-## 5. Put Caddy in front
+## 5. Put Caddy or nginx in front
 
-Add the block from `Caddyfile.example` to your Caddyfile (it proxies to `127.0.0.1:4180`), then `caddy reload`. Open:
+- **Caddy:** add the block from `Caddyfile.example` to your Caddyfile (it proxies to `127.0.0.1:4180`), then `caddy reload`.
+- **nginx:** copy `nginx.conf.example` to `/etc/nginx/sites-available/`, set your host name, enable it, then `certbot --nginx -d <your host> --redirect`. Keep `proxy_buffering off` (chat replies stream) and the larger buffers (sign-in cookies).
+
+No DNS name yet? `agent.<your-ip-with-dashes>.sslip.io` (for example `agent.203-0-113-7.sslip.io`) resolves to your server and gets a certificate like any other name.
+
+Open:
 
 - `https://<your host>/chat`: the web chat;
 - `https://<your host>/console`: the console.
