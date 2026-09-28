@@ -1,0 +1,13 @@
+# Used instead of the root .dockerignore for this Dockerfile (BuildKit): the VPS image needs examples/.
+.git
+.venv
+**/.venv
+.tools
+.results
+**/__pycache__
+**/node_modules
+**/.env
+console
+template
+docs
+fleet
