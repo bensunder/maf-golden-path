@@ -1,130 +1,381 @@
-# 🧩 maf-golden-path 
-Save an estimated 28–46 engineer-days per enterprise MAF agent.Generate the project in ~1 minute. Write the business logic. Inherit security, approvals, sessions, telemetry, testing, evaluation, knowledge, channels, infrastructure, and CI/CD. 
-A paved road for building agents on **Microsoft Agent Framework (MAF) 1.19, Python**. Teams generate a service from the template and write only tools, instructions and eval cases. Model access, Entra auth, guardrails, telemetry, sessions, approvals, run limits, the HTTP API, **Microsoft Teams and a web chat**, **answers from company documents trimmed to what each user may read**, and CI come from versioned packages owned by the platform team.
+<div align="center">
 
-# The paved-road workflow:
+# MAF Golden Path
 
-<img width="1136" height="943" alt="image" src="https://github.com/user-attachments/assets/6f1783fd-05d2-4e15-9d8b-94c7a3903adf" />
+### The paved road for enterprise AI agents on Microsoft Agent Framework
 
-# Architecture
+Generate a governed agent in about a minute. Write the business logic.<br/>
+Inherit identity, guardrails, approvals, sessions, telemetry, evaluation, knowledge, channels, infrastructure and CI/CD.
 
-<img width="1268" height="832" alt="image" src="https://github.com/user-attachments/assets/839b979f-b776-4b0b-a590-834c604c0592" />
+[![kit-ci](https://github.com/bensunder/maf-golden-path/actions/workflows/ci.yml/badge.svg)](https://github.com/bensunder/maf-golden-path/actions/workflows/ci.yml)
+![Release](https://img.shields.io/badge/release-v0.9.5-0f172a)
+![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.19-0078D4)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB)
+![Azure](https://img.shields.io/badge/deploy-Azure%20%7C%20VPS-0089D6)
 
+**[Quick start](#-quick-start)** · **[Agent Builder](#-agent-builder)** · **[Enterprise controls](#-enterprise-controls)** · **[Architecture](#-architecture)** · **[Documentation](docs/README.md)** · **[Releases](#-releases)**
 
-     
-# 🏗️ What you actually build
+<br/>
 
-A generated service keeps the application team's surface area intentionally small.
+<img src="docs/images/console-overview.png" alt="The operations console: agent health, evaluations, approvals and security posture read from the running agent" width="920"/>
 
-Your team owns
+<sub>The operations console every generated agent ships with: health, quality gate, approvals and security posture, read from the running agent.</sub>
 
-tools.py · connectors.py · instructions · approval rules · evaluation cases · business tests
+</div>
 
-The platform owns
+<br/>
 
-authentication · model access · security · sessions · approvals · telemetry · evaluation infrastructure · knowledge access · channels · Azure deployment · CI/CD
+## Why it exists
 
-# 🧩 What's in the box
-| Path | What it is |
-|---|---|
-| `packages/agentkit-hosting` | `build_agent()`, gateway-bound client (APIM, Azure or OpenAI-v1 style), Entra credential per environment, `AgentKitSettings` with **prod policy enforcement**, **session stores (in-memory, Cosmos DB, Redis) with cross-replica locking**, **human approvals** (`approve_if`, approvals API, confirmation or separation of duties, audit), FastAPI host (JSON + SSE, session ownership, probes) |
-| `packages/agentkit-guardrails` | Prompt Shields input guard (Heuristic fallback), **tool-output injection shield**, PII redaction before the model, tool allow/deny/validators, per-session token budget |
-| `packages/agentkit-telemetry` | One-call OTel bootstrap (OTLP / App Insights), span processor that stamps user (pseudonymized), session, tenant and team on **every** MAF span, run metrics by outcome |
-| `packages/agentkit-tools` | `openapi_tools()` (OpenAPI → typed MAF tools, read-only by default), `ManagedIdentityAuth` / secretless `OnBehalfOfAuth`, `ApiClient` (safe retries, `Retry-After`, tracing, model-friendly errors), `Shaper`, `gateway_mcp_tool()`, `mock_api` for tests |
-| `packages/agentkit-channels` | **Operations console** at `/console` (overview, playground, approvals, evals, security posture read from the running agent, **live traffic charts from Azure Monitor**, deployments, create agent; real data only), the **fleet view** across all agents, **Microsoft Teams** (M365 Agents SDK: JWT-validated `/api/messages`, background turns and proactive replies, **approvals as Adaptive Cards** in an approvers channel with Entra-group approvers), **AG-UI** endpoint with approvals as interrupts, drop-in **web chat** (`/chat`, `<agentkit-chat>`), `TeamsTestClient` for offline Teams tests |
-| `packages/agentkit-knowledge` | `knowledge_tool()`: hybrid + semantic Azure AI Search **as the signed-in user** (Entra groups via Graph, nested, fail closed), numbered sources and **citations in every channel**; `agentkit-ingest` (folder or Blob, `acl.yaml`, Document Intelligence, heading-aware chunks, gateway embeddings, incremental sync); fake index that evaluates the security filter |
-| `packages/agentkit-testing` | `ScriptedChatClient` (real MAF layer stack, scripted model), span recorder, YAML eval cases that run offline in CI and live against the gateway, **LLM judge + `agentkit-gate` quality gate** (repetitions, baseline, run-page report), pytest plugin |
-| `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI and deploy callers, **`azure.yaml` + `infra/` (Bicep) for `azd up`**, `AGENTS.md`/`CLAUDE.md` |
-| `infra/platform/` | Shared platform, deployed once per environment: API Management AI gateway (Entra-only, per-identity token limits, chargeback metrics), Azure OpenAI behind a managed identity, Content Safety, Container Apps environment, registry, App Insights |
-| `console/` | Source of the console (React, TypeScript, Tailwind). The build is committed into `agentkit-channels`; CI checks it matches |
-| `fleet/` | The fleet view as an azd project: one console for every agent service (registry + Azure discovery), deployed once per environment |
-| `examples/order-status-agent` | A generated service after a team customized it (see its git history for the diff a team writes) |
-| `.github/workflows/live-validation.yml` | Manual: deploys the platform and the sample to a throwaway environment in your subscription (what-if first), runs live checks, the live gate and judge calibration, runs every dashboard/alert query, tears down |
-| `infra/platform/ops/` | The operations workbook and five alerts across every agent (spend, injection spikes, errors, approval backlog, knowledge failing closed), generated from one query file |
-| `.github/workflows/agent-ci.yml`, `agent-deploy.yml` | Reusable pipelines every generated service calls: test + build; OIDC `azd up` + smoke + live evals |
-| `skills/agentkit/SKILL.md` | Org skill so coding assistants write code the paved-road way |
-| `scripts/e2e_smoke.py` | Boots the sample and a fake gateway with uvicorn and checks the whole HTTP path |
-| `scripts/check_infra.py`, `platform_env.py` | Offline infra validation (Bicep, azd schema, actionlint, platform↔service contract); platform outputs → `azd env` / GitHub variables |
+Every team that builds an enterprise agent rebuilds the same plumbing before its first real feature: sign-in, model access, prompt-injection defences, PII handling, approvals, durable sessions, tracing, evaluation, deployment. MAF Golden Path moves that plumbing into versioned packages owned by a platform team, so application teams write only what makes their agent different.
 
+<table>
+<tr>
+<td width="33%" valign="top">
 
+**~28–46 engineer-days**<br/>
+<sub>estimated platform work saved per agent team, plus 1–3 per downstream API ([how it's estimated](docs/why-agentkit.md))</sub>
 
+</td>
+<td width="33%" valign="top">
+
+**~1 minute**<br/>
+<sub>to generate a service that passes its tests offline, with no model needed</sub>
+
+</td>
+<td width="33%" valign="top">
+
+**Enforced, not reviewed**<br/>
+<sub>production policy is checked at startup: a misconfigured agent refuses to run</sub>
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<th width="50%">Your team writes</th>
+<th width="50%">The platform provides</th>
+</tr>
+<tr>
+<td valign="top">
+
+- Tools and connectors to your APIs
+- Instructions
+- Approval rules for risky actions
+- Evaluation cases
+- Business tests
+
+</td>
+<td valign="top">
+
+- Entra authentication and managed identity
+- Model access through an AI gateway
+- Guardrails, PII redaction, tool policy, token budgets
+- Human approvals with an audit trail
+- Durable sessions with cross-replica locking
+- OpenTelemetry, dashboards and alerts
+- Evaluation, LLM judge and the deploy quality gate
+- Permission-trimmed knowledge with citations
+- Teams, web chat, AG-UI and the operations console
+- Bicep, `azd`, OIDC pipelines
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+## 🚀 Quick start
+
+<table>
+<tr>
+<th width="50%">Generate a service (Azure path)</th>
+<th width="50%">Run it on your own server (VPS path)</th>
+</tr>
+<tr>
+<td valign="top">
+
+```bash
+copier copy gh:bensunder/maf-golden-path my-agent
+cd my-agent
+pip install -e ".[dev]" && pytest   # green offline
+azd up                              # when you're ready for Azure
 ```
-copier copy gh:bensunder/maf-golden-path my-agent     # new service in ~1 minute
-cd my-agent && pip install -e ".[dev]" && pytest       # green offline, no model needed
+
+[Getting started](docs/getting-started.md): your first agent in 15 minutes.
+
+</td>
+<td valign="top">
+
+```bash
+git clone --branch v0.9.5 \
+  https://github.com/bensunder/maf-golden-path.git
+cd maf-golden-path/deploy/vps
+cp .env.example .env   # Entra app + model settings
+python3 agentctl.py platform --admins you@contoso.com
+docker compose up -d --build
 ```
 
-**New here?** Read [docs/why-agentkit.md](docs/why-agentkit.md) (what it saves you), then [docs/getting-started.md](docs/getting-started.md) (your first agent in 15 minutes). Full docs: [docs/](docs/README.md).
+[Running on a VPS](docs/vps.md): Docker Compose with Entra sign-in, before Azure.
 
-# Develop the kit
-<img width="1136" height="943" alt="image" src="https://github.com/user-attachments/assets/6d6e04d4-ff27-4fea-91d6-de18a474f2e2" />
+</td>
+</tr>
+</table>
 
+> [!TIP]
+> New here? Read [Why agentkit](docs/why-agentkit.md) for what it saves you, then [Getting started](docs/getting-started.md).
 
-# 🔐 Enterprise controls are part of the path
-Identity & Access
-Entra-aware authentication
-Managed identity in production
-Secretless enterprise API access
-User/session ownership checks
-Permission-aware document retrieval
-Security
-Prompt Shields with fail-closed behavior
-Indirect prompt-injection protection on tool output
-PII redaction before model calls and stored history
-Tool allow/deny policies
-Argument validation
-Per-session token budgets
-Human Control
-Approval-required tools
-Confirmation or separation of duties
-Entra app-role based approvers
-Approval audit trail
-Approval support across API, Teams and AG-UI
-Reliability & Operations
-Durable session abstractions
-Cross-replica locking
-OpenTelemetry
-Production probes
-Spend / error / security / approval / knowledge alerts
-Quality gates before deployment
+<br/>
 
-## What a team writes vs. what it gets
+## 🧱 Agent Builder
 
-In the sample, the team-authored code is `tools.py` (3 tools + a refund policy), a 25-line `connectors.py` (live carrier API from its OpenAPI spec), approval rules for large refunds, `instructions/system.md` and `evals/cases.yaml`. Everything below is inherited:
+On a server running the platform service, the console becomes an agent factory. Admins create, equip and launch governed agents from the browser: nobody touches the server.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Create and launch
+**Create agent** generates a new MAF agent from the template, registers it, builds it with its evals as the quality gate, starts it and waits until it answers. A failed build is rolled back; nothing is left half-made.
+
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/builder-create.png" alt="The Create MAF Agent form, started from the Contract Lifecycle Manager template" width="100%"/>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/builder-templates.png" alt="The template picker: 30 legal specialists with their scope, added rules and eval cases" width="100%"/>
+</td>
+<td width="50%" valign="top">
+
+### Start from a specialist
+**Browse templates** starts an agent from a specialist's role and procedure. The kit ships 30 legal specialists ([judicialmind/legal-agents](https://github.com/judicialmind/legal-agents), MIT, pinned), with rules and eval cases that stop the agent inventing citations or giving legal advice. Add your own libraries with `agentctl.py templates add`.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Connect it to your systems
+The **Connectors** catalog adds Linear, GitHub, Stripe, Supabase or any MCP server once. Choose the allowed tools and which need approval, then give connectors to agents with a checkbox. The platform keeps the credential encrypted and enforces the rules at its gateway: agents never see the key.
+
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/connectors-catalog.png" alt="The Connectors catalog with Linear, GitHub, Stripe, Supabase and any MCP server" width="100%"/>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/approval-in-chat.png" alt="A write tool waiting for approval in the web chat, with the email address redacted" width="100%"/>
+</td>
+<td width="50%" valign="top">
+
+### Keep a person in the loop
+Tools that change things pause for approval in the chat, the console and Teams, with an audit trail. PII is redacted before it reaches the model or the logs.
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+## 🛡️ Enterprise controls
+
+<table>
+<tr>
+<th width="25%">Identity and access</th>
+<th width="25%">Security</th>
+<th width="25%">Human control</th>
+<th width="25%">Reliability and operations</th>
+</tr>
+<tr>
+<td valign="top">
+
+- Entra sign-in
+- Managed identity in production
+- Secretless and on-behalf-of API access
+- Session ownership checks
+- Permission-aware document retrieval
+
+</td>
+<td valign="top">
+
+- Prompt Shields, fail-closed
+- Indirect injection scanning of tool output
+- PII redaction before the model and in history
+- Tool allow/deny lists and argument validation
+- Per-session token budgets
+
+</td>
+<td valign="top">
+
+- Approval-required tools
+- Confirmation or separation of duties
+- Entra app-role approvers
+- Audit trail
+- Approvals in the API, Teams and AG-UI
+
+</td>
+<td valign="top">
+
+- Durable sessions, cross-replica locking
+- OpenTelemetry on every span
+- Readiness and liveness probes
+- Spend, error, injection, approval and knowledge alerts
+- Quality gate before every deploy
+
+</td>
+</tr>
+</table>
+
+> [!IMPORTANT]
+> **Production policy is enforced at startup, not by review.** With `AGENTKIT_ENVIRONMENT=prod` an agent refuses to start unless it uses managed identity, goes through the AI gateway, runs Prompt Shields with a Content Safety endpoint, requires a signed-in user, and keeps message content out of telemetry.
+
+<details>
+<summary><b>How each concern is handled, and where</b></summary>
+<br/>
 
 | Concern | How it's handled | Where |
 |---|---|---|
-| Model access | Only via the AI gateway; `x-agentkit-team/agent/service` headers for APIM quotas and chargeback; APIM subscription key | `hosting.clients` |
+| Model access | Only via the AI gateway; `x-agentkit-team/agent/service` headers for APIM quotas and chargeback | `hosting.clients` |
 | Auth | Managed identity in prod (enforced), Azure CLI / Default locally; bearer token provider, no keys in code | `hosting.clients`, `hosting.settings` |
 | Tool-loop limits | `max_iterations`, `max_function_calls`, `max_run_seconds` → MAF `FunctionInvocationConfiguration` | `hosting.clients` |
 | Prompt injection (direct) | Prompt Shields (fail-closed), refused before any model call, streaming-safe | `guardrails.InputGuardMiddleware` |
 | Prompt injection (indirect) | Tool results scanned as *documents*; poisoned output withheld from the model | `guardrails.ToolOutputShieldMiddleware` |
-| PII | Email/SSN/card(Luhn)/phone redacted before the model and in stored history | `guardrails.PiiRedactionMiddleware` |
-| Dangerous tools | Deny list, allow list, argument validators; rejected calls never execute, model is told why | `guardrails.ToolPolicyMiddleware` |
+| PII | Email/SSN/card (Luhn)/phone redacted before the model and in stored history | `guardrails.PiiRedactionMiddleware` |
+| Dangerous tools | Deny list, allow list, argument validators; rejected calls never execute, the model is told why | `guardrails.ToolPolicyMiddleware` |
 | Runaway cost | Per-session token budget persisted in session state | `guardrails.SessionTokenBudgetMiddleware` |
 | Tracing | GenAI semconv spans from MAF + user/session/tenant/team on every span; content capture blocked in prod | `telemetry` |
 | Sessions | Serialized `AgentSession` in a TTL/LRU store behind a `SessionStore` protocol; owner-checked | `hosting.sessions`, `hosting.app` |
-| Tests | Scripted model, offline evals, HTTP contract tests, generated with the project | `testing`, `template/tests` |
-| Quality gate | Live evals 3x per deploy: judged rubric and groundedness, argument and budget checks, critical cases, baseline regressions block the deploy | `testing.gate`, `agent-deploy.yml` |
 | Scale-out | Sessions in Cosmos DB (managed identity), locked per conversation; 5 replicas | `hosting.sessions`, `template/infra` |
 | Human in the loop | Risky tools pause for approval; confirmation or separation of duties via Entra app roles; audit log; eval support | `hosting.approvals` |
+| Tests | Scripted model, offline evals, HTTP contract tests, generated with the project | `testing`, `template/tests` |
+| Quality gate | Live evals 3× per deploy: judged rubric and groundedness, argument and budget checks, critical cases; baseline regressions block the deploy | `testing.gate`, `agent-deploy.yml` |
 | Deploy | `azd up`: managed identity, least-privilege grants, Container App with Entra sign-in; OIDC pipeline with smoke check and live evals as a gate | `template/infra`, `agent-deploy.yml` |
-| Company documents | Search trimmed to the caller's groups, citations in the API, web chat and Teams, ingestion on deploy, per-service Search + Document Intelligence (Entra only, service reads only), `cites:` / `must_not_retrieve:` evals | `knowledge`, `template/infra` |
+| Company documents | Search trimmed to the caller's groups, citations in the API, web chat and Teams, ingestion on deploy, `cites:` / `must_not_retrieve:` evals | `knowledge`, `template/infra` |
 | Operating it | A console at `/console` per service: health, quality gate, approvals, sessions, posture from the live middleware stack, deploy metadata | `channels.Console` |
-| Reaching users | Teams (secretless Azure Bot, app package script) and a web chat at `/chat`, from two copier answers; every channel shares sessions, approvals and audit through one `ConversationService` | `channels`, `template/infra` |
-| Model access at org level | AI gateway: Entra-only, per-identity token limits, chargeback metrics, models behind a managed identity | `infra/platform` |
+| Reaching users | Teams (secretless Azure Bot) and a web chat at `/chat`; every channel shares sessions, approvals and audit through one `ConversationService` | `channels`, `template/infra` |
+| Org-level model access | AI gateway: Entra-only, per-identity token limits, chargeback metrics, models behind a managed identity | `infra/platform` |
 | Calling enterprise APIs | Tools generated from OpenAPI; managed-identity or secretless on-behalf-of auth; safe retries, tracing, response shaping | `tools` |
+| Platform connectors (VPS) | MCP connectors added once in the console; credential encrypted and added by the platform's gateway, which enforces allowed tools and approvals per agent | `deploy/vps/platform` |
 
-## Prod policy (enforced at startup, not by review)
+</details>
 
-`AGENTKIT_ENVIRONMENT=prod` refuses to start unless: `auth_mode=managed_identity`, a gateway endpoint is set, `guardrail_mode=prompt_shields` with a Content Safety endpoint, `require_user=true`, and message-content capture is off.
+<br/>
 
-## Develop the kit
+## 🏗️ Architecture
 
+<div align="center">
+<img width="1000" alt="Architecture: generated agent services on the shared platform (AI gateway, models, content safety, Container Apps, monitoring)" src="https://github.com/user-attachments/assets/839b979f-b776-4b0b-a590-834c604c0592" />
+</div>
+
+### The paved-road workflow
+
+<div align="center">
+<img width="900" alt="The paved-road workflow from generating a service to deploying it behind the quality gate" src="https://github.com/user-attachments/assets/6f1783fd-05d2-4e15-9d8b-94c7a3903adf" />
+</div>
+
+### On a single server
+
+```mermaid
+flowchart LR
+    U([People]) -->|Entra sign-in| P[Sign-in proxy]
+    P --> R[Platform service<br/>router · Create agent · templates]
+    R --> S[Sample agent]
+    R --> A1[Agent: Legal Desk]
+    R --> A2[Agent: Contracts Desk]
+    R --> F[Fleet view]
+    A1 & A2 -->|agent token| G[Connector gateway<br/>credential vault · tool rules]
+    G -->|HTTPS| V[(Linear · GitHub · Stripe<br/>Supabase · any MCP server)]
+    A1 & A2 & S --> M[(Model)]
+    A1 & A2 & S --> D[(Redis sessions)]
 ```
+
+<br/>
+
+## 📦 What's in the box
+
+| `agentkit-*` package | Responsibility |
+|---|---|
+| **hosting** | `build_agent()`, gateway-bound model client, Entra credentials per environment, settings with **prod policy enforcement**, session stores (in-memory, Cosmos DB, Redis) with cross-replica locking, human approvals, FastAPI host (JSON + SSE, probes) |
+| **guardrails** | Prompt Shields input guard with heuristic fallback, tool-output injection shield, PII redaction, tool allow/deny and validators, per-session token budget |
+| **telemetry** | One-call OpenTelemetry bootstrap (OTLP / Application Insights); user, session, tenant and team on every MAF span; run metrics by outcome |
+| **tools** | OpenAPI → typed MAF tools, managed-identity and on-behalf-of auth, `ApiClient` with safe retries and tracing, response shaping, MCP tools, platform connectors, API fakes for tests |
+| **channels** | Operations console, fleet view, Microsoft Teams with approvals as Adaptive Cards, AG-UI, drop-in web chat, offline Teams test client |
+| **knowledge** | Azure AI Search as the signed-in user (Entra groups, fail closed), citations in every channel, ingestion with access rules |
+| **testing** | Scripted model over the real MAF stack, YAML eval cases (offline in CI, live against the gateway), LLM judge and `agentkit-gate` |
+
+<details>
+<summary><b>Everything else in the repository</b></summary>
+<br/>
+
+| Path | What it is |
+|---|---|
+| `template/` + `copier.yml` | Service scaffold: agent, tools, instructions, charter, evals, tests, Dockerfile, CI and deploy callers, `azure.yaml` + Bicep for `azd up`, `AGENTS.md` / `CLAUDE.md` |
+| `infra/platform/` | Shared platform per environment: API Management AI gateway, Azure OpenAI behind a managed identity, Content Safety, Container Apps environment, registry, Application Insights |
+| `infra/platform/ops/` | Operations workbook and five alerts across every agent (spend, injection spikes, errors, approval backlog, knowledge failing closed) |
+| `deploy/vps/` | Run it on one server: Docker Compose, Entra sign-in, `agentctl.py`, and the platform service (router, Create agent, connector gateway, templates) |
+| `agent-templates/` | Template libraries for Create agent; ships `legal-agents` (30 specialists, MIT) |
+| `console/` | Console source (React, TypeScript, Tailwind). The build is committed into `agentkit-channels`; CI checks it matches |
+| `fleet/` | The fleet view as an azd project: one console for every agent service |
+| `examples/order-status-agent` | A generated service after a team customized it: its git history is the diff a team writes |
+| `.github/workflows/` | `kit-ci`; reusable `agent-ci` and `agent-deploy` (OIDC `azd up`, smoke, live evals); manual `live-validation` |
+| `skills/agentkit/SKILL.md` | Org skill so coding assistants write code the paved-road way |
+| `scripts/` | End-to-end smoke test, offline infra validation, platform outputs → `azd env` / GitHub variables |
+
+</details>
+
+<br/>
+
+## 📚 Documentation
+
+| Get started | Build | Run | Reference |
+|---|---|---|---|
+| [Why agentkit](docs/why-agentkit.md) | [Connectors](docs/connectors.md) | [Deploying to Azure](docs/deploy.md) | [Architecture](docs/architecture.md) |
+| [Getting started](docs/getting-started.md) | [Guardrails](docs/guardrails.md) | [Running on a VPS](docs/vps.md) | [Configuration](docs/configuration.md) |
+| [FAQ and escape hatches](docs/faq.md) | [Sessions and approvals](docs/sessions-and-approvals.md) | [Operations](docs/operations.md) | [Telemetry](docs/telemetry.md) |
+| | [Knowledge](docs/knowledge.md) | [Console](docs/console.md) | [Upgrading](docs/UPGRADING.md) |
+| | [Channels: Teams and web chat](docs/channels.md) | [Fleet view](docs/fleet.md) | |
+| | [Testing and evals](docs/testing-and-evals.md) | [Live validation](docs/live-validation.md) | |
+
+<br/>
+
+## 🗓️ Releases
+
+| Version | Highlights |
+|---|---|
+| **v0.9.5** | **Agent templates** in Create agent: start from one of 30 legal specialists, with rules and eval cases against invented citations and legal advice; `agentctl.py templates add` for more libraries |
+| **v0.9.4** | **Connectors catalog**: Linear, GitHub, Stripe, Supabase or any MCP server, with allowed tools, approvals and an encrypted credential enforced at the platform's gateway |
+| **v0.9.3** | **Create agent launches real agents** on a VPS: generate, test, build and start from the console |
+| v0.9.1 – v0.9.2 | Run it on a VPS with Docker Compose and Entra sign-in; more agents and the fleet view on one stack |
+| v0.9.0 | Fleet view across every agent; live traffic charts from Azure Monitor |
+| v0.8.0 | Operations console at `/console` for every service |
+| v0.7.0 | Live validation workflow, operations dashboard and alerts, judge calibration |
+| v0.6.0 | Knowledge: company documents searched as the signed-in user, with citations |
+| v0.2 – v0.5 | Deploy and connectors, sessions and approvals, the deploy quality gate, Teams and web chat |
+
+> [!NOTE]
+> **Where things stand.** The live-validation workflow (v0.7) is built and linted, and its checks run in every smoke test, but it hasn't been run against a subscription yet. Knowledge (v0.6) is tested offline, including the real search SDK's wire format, but not yet against a live Azure AI Search service. **Not yet included:** per-user OAuth connectors (Microsoft 365, Google, Salesforce, HubSpot), Teams SSO for on-behalf-of tools, Microsoft 365 Copilot publishing, and a .NET track. See [UPGRADING](docs/UPGRADING.md) for release notes and the MAF version policy.
+
+<br/>
+
+## 🛠️ Develop the kit
+
+```bash
 python -m venv .venv && . .venv/bin/activate
-make install     # editable installs of all packages + sample
-make browser     # optional: Playwright + Chromium, for the web chat browser tests
-make test        # packages, sample, template (both modes, with and without Teams), infra, end-to-end smoke
+make install     # editable installs of all packages + the sample
+make browser     # optional: Playwright + Chromium for the browser tests
+make test        # packages, sample, template (every mode), infra, end-to-end smoke
 ```
 
-Status: **v0.9.5**: **agent templates** in Create agent ([docs/vps.md](docs/vps.md#agent-templates)): start a new agent from one of 30 legal specialists (judicialmind/legal-agents, MIT), with rules and eval cases that stop it inventing citations or giving legal advice; add more libraries with `agentctl.py templates add`. **v0.9.4**: a **Connectors** catalog in the console ([docs/vps.md](docs/vps.md#connectors)): add Linear, GitHub, Stripe, Supabase or any MCP server once, choose the allowed tools and which need approval, and give them to agents with a checkbox; the platform holds the credential and enforces the rules. **v0.9.3**: run it on a VPS first ([docs/vps.md](docs/vps.md)): Docker Compose with Entra sign-in, before Azure. **Create agent** in the console generates, tests, builds and launches a new MAF agent on the server, and the fleet view shows them all. **v0.9.0, milestone 9**: the fleet view and live charts. One console across every agent service (health, security posture matrix, quality gates, deployments, traffic per agent), found through a registry or Azure discovery; each agent's Telemetry page draws requests, errors, latency and tokens from Azure Monitor; live validation is one setup command and now also proves both. Earlier: **v0.8.0**: the console. Every service with web chat serves an operations console at `/console`: overview, agent detail, playground with tool traces and approvals, approvals queue, evaluations, knowledge, sessions, telemetry, security posture read from the running agent, deployments, and a guided create-agent flow. It shows only what the service knows and says where the rest lives. Earlier: **v0.7.0**: prove it in Azure. A manual live-validation workflow for your subscription, an operations dashboard and alerts, and judge calibration. The workflow is built and linted, and its check script runs in every smoke test, but it hasn't been run against a subscription yet. Earlier: **v0.6.0**: knowledge. Answers from company documents, searched as the signed-in user (Entra groups, fail closed), with citations in every channel, an ingestion pipeline with access rules, and permission-aware evals. Tested offline, including the real search SDK's wire format; not yet run against a live Azure AI Search service. Earlier: Teams and web chat channels (v0.5), the deploy quality gate (v0.4), shared sessions and human approvals (v0.3), deploy and connectors (v0.2). Not yet included: Teams SSO for on-behalf-of tools, Microsoft 365 Copilot publishing, and the .NET track. See `docs/UPGRADING.md` for the MAF version policy.
+<div align="center">
+<img width="900" alt="Developing the kit" src="https://github.com/user-attachments/assets/6d6e04d4-ff27-4fea-91d6-de18a474f2e2" />
+</div>
+
+<br/>
+
+<div align="center">
+<sub>Built on <a href="https://github.com/microsoft/agent-framework">Microsoft Agent Framework</a> · Microsoft-first, not Microsoft-only</sub>
+</div>
