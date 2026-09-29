@@ -20,7 +20,7 @@ services:
     environment:
       AGENTKIT_ENVIRONMENT: dev  # prod requires Azure (managed identity, Prompt Shields, the AI gateway)
       AGENTKIT_SERVICE_NAME: order-status-agent
-      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.9.5}
+      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.10.0}
       AGENTKIT_TEAM: ${TEAM:-commerce}
       # the model
       AGENTKIT_GATEWAY_ENDPOINT: ${MODEL_ENDPOINT:?set MODEL_ENDPOINT in .env}
@@ -33,6 +33,10 @@ services:
       AGENTKIT_GUARDRAIL_MODE: ${GUARDRAIL_MODE:-heuristic}
       AGENTKIT_CONTENT_SAFETY_ENDPOINT: ${CONTENT_SAFETY_ENDPOINT:-}
       AGENTKIT_CONTENT_SAFETY_KEY: ${CONTENT_SAFETY_KEY:-}
+      # optional: traces to LangSmith as well (prompts and answers only where content capture is on)
+      AGENTKIT_LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      AGENTKIT_LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-}
+      AGENTKIT_LANGSMITH_ENDPOINT: ${LANGSMITH_OTEL_ENDPOINT:-https://api.smith.langchain.com/otel}
       # identity: only what oauth2-proxy sets. The Easy Auth headers must not count here, because nothing
       # strips them: a caller could send them through the proxy.
       AGENTKIT_REQUIRE_USER: "true"
@@ -50,11 +54,14 @@ services:
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
     depends_on: [redis]
     expose: ["8000"]
+    # no raw sockets: an agent can't forge packets as another container (the platform trusts addresses on this network)
+    cap_drop: ["NET_RAW"]
+    security_opt: ["no-new-privileges:true"]
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-ttl"]
     volumes: ["redis-data:/data"]
 
   auth:

@@ -114,6 +114,102 @@ def connector_env(entry: dict, known: dict[str, dict]) -> dict[str, str]:
             "AGENTKIT_CONNECTOR_TOKEN": entry["connector_token"]}
 
 
+REDIS_ACL = HERE / "redis" / "users.acl"
+PEER_GATEWAY = "http://platform:8001/agents/{name}"
+FLEET_READ = "http://platform:8001/read/{name}"
+DELEGATION_HEADER = "x-agentkit-delegation"
+
+
+def agent_key(secret: str, agent: str) -> str:
+    """The key an agent verifies the platform's request signatures with. Must match platform/security.py."""
+    import hashlib
+    import hmac
+
+    master = hashlib.sha256(b"agentkit-platform-v1:" + secret.encode("utf-8")).digest()
+    return hmac.new(master, ("agent:" + agent).encode("utf-8"), hashlib.sha256).digest().hex()
+
+
+def redis_user(name: str) -> str:
+    return "sample" if name == "sample" else f"agent-{name}"
+
+
+def redis_env(name: str, entry: dict) -> dict[str, str]:
+    """Each agent's own Redis user, limited to its own keys: one agent can't read or change another's sessions."""
+    return {"AGENTKIT_REDIS_URL": f"redis://{redis_user(name)}:{entry['redis_password']}@redis:6379/0",
+            "AGENTKIT_SESSION_KEY_PREFIX": f"agentkit:{name}:"}
+
+
+def redis_acl(data: dict) -> str:
+    """Redis users: the default user off, and per agent a user that may only GET, SET, DEL and EVAL (the session
+    lock's release) its own keys. Passwords are stored as SHA-256 hashes, so the file itself holds no secret."""
+    import hashlib
+
+    lines = ["user default off"]  # (Redis ACL files take no comments)
+    for name, entry in [("sample", data.get("sample") or {}), *[(a["name"], a) for a in data["agents"]]]:
+        if not entry.get("redis_password"):
+            continue
+        digest = hashlib.sha256(entry["redis_password"].encode()).hexdigest()
+        lines.append(f"user {redis_user(name)} on #{digest} ~agentkit:{name}:* resetchannels -@all "
+                     "+get +set +del +eval +ping")
+    return "\n".join(lines) + "\n"
+
+
+def ensure_redis_passwords(data: dict) -> None:
+    import secrets
+
+    if not data["agents"]:
+        return  # the sample alone: nothing to keep apart, Redis stays as docker-compose.yml sets it up
+    if not isinstance(data.get("sample"), dict):
+        data["sample"] = {}  # (agents.yaml may hold "sample: null") the sample needs a Redis user too, or it's locked out
+    for entry in [data["sample"], *data["agents"]]:
+        if isinstance(entry, dict) and not _TOKEN.fullmatch(str(entry.get("redis_password") or "")):
+            entry["redis_password"] = secrets.token_urlsafe(32)
+
+
+def signed_by_platform(data: dict, name: str, entry: dict | None, env: dict[str, str]) -> bool:
+    """Agents the platform router serves (internal ones and the sample) verify its signatures once it has a key."""
+    return bool(data.get("platform")) and bool(env.get("PLATFORM_SECRET_KEY")) and (
+        name == "sample" or bool((entry or {}).get("internal")))
+
+
+def _describe(path: str | None) -> str:
+    """An agent's one-line description, from its generated project (shown to agents that may call it)."""
+    if not path:
+        return ""
+    answers = Path(path) / ".copier-answers.yml"
+    try:
+        value = (yaml.safe_load(answers.read_text(encoding="utf-8")) or {}).get("description") if answers.is_file() else ""
+    except (yaml.YAMLError, OSError, UnicodeDecodeError):
+        return ""
+    return re.sub(r"[^A-Za-z0-9 .,;:!?()&+/%#@-]", "", str(value or ""))[:240]
+
+
+def platform_env(data: dict, name: str, entry: dict | None, env: dict[str, str]) -> dict[str, str]:
+    """The platform's key for this agent, and the agents it may call (with the token it calls them with)."""
+    import json
+
+    if not signed_by_platform(data, name, entry, env):
+        return {}
+    out = {"AGENTKIT_PLATFORM_KEY": agent_key(env["PLATFORM_SECRET_KEY"], name),
+           "AGENTKIT_DELEGATION_HEADER": DELEGATION_HEADER}
+    peers = [p for p in (entry or {}).get("peers") or [] if isinstance(p, str)]
+    if peers:
+        by_name = {a["name"]: a for a in data["agents"]}
+        spec = []
+        for p in peers:
+            if p == "sample":
+                spec.append({"name": p, "title": env.get("SAMPLE_NAME", "Order Status Agent"),
+                             "description": _describe(str(HERE.parent.parent / "examples" / "order-status-agent")),
+                             "url": PEER_GATEWAY.format(name=p)})
+            elif p in by_name:
+                a = by_name[p]
+                spec.append({"name": p, "title": a.get("title") or a.get("service") or p,
+                             "description": _describe(a.get("path")), "url": PEER_GATEWAY.format(name=p)})
+        out["AGENTKIT_PEERS"] = json.dumps(spec, separators=(",", ":")).replace("$", "$$")
+        out["AGENTKIT_CONNECTOR_TOKEN"] = entry["connector_token"]
+    return out
+
+
 def save(data: dict, path: Path = REGISTRY) -> None:
     _private_write(path, "# The agents this stack runs besides the sample (agentctl.py manages it).\n"
                    + yaml.safe_dump(data, sort_keys=False))
@@ -223,6 +319,7 @@ def validate(data: dict) -> None:
             if not _ENV_KEY.fullmatch(str(key)) or _REFUSED_ENV.search(str(key)):
                 raise Problem(f"agents.yaml: env {key!r} for {name} isn't allowed here")
         _check_connectors(name, e)
+        _check_peers(name, e, data)
         for key in ("created_by", "created_at"):
             if key in e and not re.fullmatch(r"[A-Za-z0-9@._:+-]{1,120}", str(e[key])):
                 raise Problem(f"agents.yaml: {key} for {name} has unexpected characters")
@@ -232,6 +329,10 @@ def validate(data: dict) -> None:
         if not isinstance(data["sample"], dict):
             raise Problem("agents.yaml: sample must be a mapping")
         _check_connectors("sample", data["sample"])
+        _check_peers("sample", data["sample"], data)
+    for e in [*data["agents"], data.get("sample") or {}]:
+        if isinstance(e, dict) and "redis_password" in e and not _TOKEN.fullmatch(str(e["redis_password"])):
+            raise Problem("agents.yaml: a redis_password has unexpected characters; delete it and run render")
     tokens = [str(e.get("connector_token")) for e in [*data["agents"], data.get("sample") or {}]
               if isinstance(e, dict) and e.get("connector_token")]
     if len(tokens) != len(set(tokens)):
@@ -263,6 +364,17 @@ def _check_connectors(name: str, e: dict) -> None:
         raise Problem(f"agents.yaml: {name} has connectors but no valid connector_token")
 
 
+def _check_peers(name: str, e: dict, data: dict) -> None:
+    listed = e.get("peers") or []
+    callable_ = {"sample"} | {a.get("name") for a in data["agents"] if isinstance(a, dict) and a.get("internal")}
+    if not isinstance(listed, list) or not all(isinstance(p, str) and p in callable_ and p != name for p in listed):
+        raise Problem(f"agents.yaml: peers for {name} must be other agents behind the platform (internal ones, or sample)")
+    if listed and name != "sample" and not e.get("internal"):
+        raise Problem(f"agents.yaml: {name} has its own host name, so it can't call other agents (add it with --internal)")
+    if listed and not _TOKEN.fullmatch(str(e.get("connector_token") or "")):
+        raise Problem(f"agents.yaml: {name} may call other agents but has no valid connector_token")
+
+
 def _private_write(path: Path, text: str) -> None:
     """agents.yaml and the generated compose file can hold per-agent settings: owner-only, like .env."""
     _atomic_write(path, text, 0o600)
@@ -276,7 +388,8 @@ def _services(base: dict) -> tuple[dict, dict]:
     return services["agent"], services["auth"]
 
 
-def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = None) -> dict:
+def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = None,
+                  platform: dict[str, str] | None = None) -> dict:
     service = copy.deepcopy(template)
     # the agent's folder is the build context (filtered by Dockerfile.dockerignore); the kit is this checkout
     service["build"] = {"context": agent["path"], "dockerfile": str(HERE / "Dockerfile"),
@@ -286,9 +399,12 @@ def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = N
     env["AGENTKIT_SERVICE_VERSION"] = agent.get("version") or "0.0.0"
     env["AGENTKIT_TEAM"] = agent.get("team") or agent["name"]
     env["AGENTKIT_REDIS_URL"] = f"redis://redis:6379/{agent['redis_db']}"
+    if agent.get("redis_password"):
+        env.update(redis_env(agent["name"], agent))
     for key, value in (agent.get("env") or {}).items():
         env[key] = str(value).replace("$", "$$")  # literal: Compose would otherwise interpolate it
     env.update(connector_env(agent, known or {}))
+    env.update(platform or {})
     return service
 
 
@@ -304,9 +420,14 @@ def auth_service(template: dict, name: str, host: str, port: int, upstream: str)
 
 
 def fleet_service(data: dict, env: dict[str, str], version: str) -> dict:
-    entries = [f"http://agent:8000||{env.get('SAMPLE_NAME', 'Order Status Agent')}|https://${{AGENT_HOST}}"]
-    entries += [f"http://agent-{a['name']}:8000||{a['name']}|" + (f"https://${{AGENT_HOST}}/agents/{a['name']}" if a.get("internal")
-                                                                   else f"https://{a['host']}") for a in data["agents"]]
+    def url(name: str, entry: dict | None) -> str:  # agents that only take signed requests are read through the platform
+        if signed_by_platform(data, name, entry, env):
+            return FLEET_READ.format(name=name)
+        return "http://agent:8000" if name == "sample" else f"http://agent-{name}:8000"
+
+    entries = [f"{url('sample', None)}||{env.get('SAMPLE_NAME', 'Order Status Agent')}|https://${{AGENT_HOST}}"]
+    entries += [f"{url(a['name'], a)}||{a['name']}|" + (f"https://${{AGENT_HOST}}/agents/{a['name']}" if a.get("internal")
+                                                         else f"https://{a['host']}") for a in data["agents"]]
     return {
         "build": {"context": "../..", "dockerfile": "fleet/Dockerfile"},
         "restart": "unless-stopped",
@@ -324,6 +445,8 @@ def fleet_service(data: dict, env: dict[str, str], version: str) -> dict:
             "AGENTKIT_FORWARDED_PREFIX_HEADER": PREFIX_HEADER,  # served at <host>/fleet by the platform router
         },
         "expose": ["8000"],
+        "cap_drop": ["NET_RAW"],
+        "security_opt": ["no-new-privileges:true"],
     }
 
 
@@ -381,7 +504,7 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
     sites: dict[str, str] = {}
     known = connectors()
     for a in data["agents"]:
-        services[f"agent-{a['name']}"] = agent_service(agent_t, a, known)
+        services[f"agent-{a['name']}"] = agent_service(agent_t, a, known, platform_env(data, a["name"], a, env))
         if not a.get("internal"):
             services[f"auth-{a['name']}"] = auth_service(auth_t, a["name"], a["host"], a["port"], f"agent-{a['name']}")
             sites[f"agentkit-{a['name']}.conf"] = nginx_site(a["host"], a["port"])
@@ -391,12 +514,23 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
         if not f.get("internal"):
             services["auth-fleet"] = auth_service(auth_t, "fleet", f["host"], f["port"], "fleet")
             sites["agentkit-fleet.conf"] = nginx_site(f["host"], f["port"])
-    if data.get("sample") and connector_env(data["sample"], known):
-        services["agent"] = {"environment": connector_env(data["sample"], known)}  # merged into the sample's settings
+    sample_env = {**(connector_env(data["sample"], known) if data.get("sample") else {}),
+                  **platform_env(data, "sample", data.get("sample"), env),
+                  **(redis_env("sample", data["sample"]) if (data.get("sample") or {}).get("redis_password") else {})}
+    if sample_env:
+        services["agent"] = {"environment": sample_env}  # merged into the sample's settings
     if data.get("platform"):
         services["platform"] = platform_service(data["platform"])
         # the sample's sign-in proxy now forwards to the platform router, which serves the sample at "/"
         services["auth"] = {"environment": {"OAUTH2_PROXY_UPSTREAMS": "http://platform:8000"}, "depends_on": ["platform"]}
+    if any(isinstance(e, dict) and e.get("redis_password") for e in [data.get("sample") or {}, *data["agents"]]):
+        REDIS_ACL.parent.mkdir(exist_ok=True)
+        _atomic_write(REDIS_ACL, redis_acl(data), 0o644)  # hashes only; the redis user in the container reads it
+        # capped, and when full it drops the sessions closest to expiring rather than refusing writes
+        services["redis"] = {"command": ["redis-server", "--appendonly", "yes", "--aclfile", "/etc/redis/users.acl",
+                                         "--maxmemory", "256mb",
+                                         "--maxmemory-policy", "volatile-ttl"],
+                             "volumes": [f"{REDIS_ACL}:/etc/redis/users.acl:ro"]}
     compose = {"services": services} if services else {"services": {}}
     _private_write(out, GENERATED + yaml.safe_dump(compose, sort_keys=False, width=200))
     nginx_dir.mkdir(exist_ok=True)
@@ -558,10 +692,37 @@ def cmd_connect(args, data, env) -> None:
         if entry is None:
             raise Problem(f"no agent named {target}")
     entry["connectors"] = sorted(set(wanted))
-    if wanted and not _TOKEN.fullmatch(str(entry.get("connector_token") or "")):
-        entry["connector_token"] = secrets.token_urlsafe(32)  # identifies this agent to the connector gateway
-    if not wanted:
+    _token_for(entry)
+
+
+def _token_for(entry: dict) -> None:
+    """The agent's token for the platform's gateway (connectors and agent calls): only while it uses either."""
+    import secrets
+
+    if entry.get("connectors") or entry.get("peers"):
+        if not _TOKEN.fullmatch(str(entry.get("connector_token") or "")):
+            entry["connector_token"] = secrets.token_urlsafe(32)
+    else:
         entry.pop("connector_token", None)
+
+
+def cmd_peers(args, data, env) -> None:
+    """Which agents an agent may call (both behind the platform)."""
+    target = args.agent
+    wanted = [] if args.peers == "none" else [p.strip() for p in args.peers.split(",") if p.strip()]
+    if not data.get("platform"):
+        raise Problem("agents call each other through the platform: turn it on first (agentctl.py platform --admins ...)")
+    if target == "sample":
+        entry = data.get("sample") or {}
+        data["sample"] = entry
+    else:
+        entry = next((a for a in data["agents"] if a["name"] == target), None)
+        if entry is None:
+            raise Problem(f"no agent named {target}")
+    entry["peers"] = sorted(set(wanted))
+    if not entry["peers"]:
+        entry.pop("peers")
+    _token_for(entry)
 
 
 TEMPLATE_ROOT = HERE.parent.parent / "agent-templates"
@@ -670,6 +831,9 @@ def main(argv: list[str] | None = None) -> None:
     con = sub.add_parser("connect", help="set the connectors an agent may use (names from the console, or none)")
     con.add_argument("agent", help="an agent's name, or sample")
     con.add_argument("connectors", help="comma-separated connector names, or none")
+    peers = sub.add_parser("peers", help="set which agents an agent may call (both behind the platform), or none")
+    peers.add_argument("agent", help="an agent's name, or sample")
+    peers.add_argument("peers", help="comma-separated agent names (or sample), or none")
     sub.add_parser("list", help="show the agents")
     sub.add_parser("render", help="write the compose and nginx files again from agents.yaml")
     tpl = sub.add_parser("templates", help="template libraries for Create agent: list, add <name> <git-url>, remove <name>")
@@ -689,6 +853,7 @@ def main(argv: list[str] | None = None) -> None:
             where = (f"https://{env.get('AGENT_HOST', '?')}/agents/{a['name']}" if a.get("internal")
                      else f"https://{a['host']}  port {a['port']}")
             extra = f"  connectors: {', '.join(a['connectors'])}" if a.get("connectors") else ""
+            extra += f"  may call: {', '.join(a['peers'])}" if a.get("peers") else ""
             print(f"{a['name']:<8}{where}  {a['path']}  redis db {a['redis_db']}{extra}")
         if data.get("fleet"):
             f = data["fleet"]
@@ -707,18 +872,28 @@ def main(argv: list[str] | None = None) -> None:
         cmd_platform(args, data, env)
     elif args.command == "connect":
         cmd_connect(args, data, env)
+    elif args.command == "peers":
+        cmd_peers(args, data, env)
     elif args.command == "remove":
         before = len(data["agents"])
         data["agents"] = [a for a in data["agents"] if a["name"] != args.name]
         if len(data["agents"]) == before:
             raise Problem(f"no agent named {args.name}")
+        for e in [*data["agents"], data.get("sample") or {}]:  # nobody may call an agent that's gone
+            if args.name in (e.get("peers") or []):
+                e["peers"] = [p for p in e["peers"] if p != args.name]
+                if not e["peers"]:
+                    e.pop("peers")
+                _token_for(e)
         removed = f"agentkit-{args.name}.conf"
         gone = next(a for a in load()["agents"] if a["name"] == args.name)
         if gone.get("internal"):
             removed = None
+    ensure_redis_passwords(data)  # every agent its own Redis user (sessions can't be read across agents)
     validate(data)  # before anything is written
     if data.get("platform"):
         ensure_secret_key()  # also for stacks set up before connectors existed
+        env = read_env()  # with the key, for the agents' signing keys
     save(data)
     render(data, env)
     ensure_compose_file()
@@ -730,7 +905,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "platform":
         print("\nNext:\n  docker compose up -d --build" + ("" if args.off else
               f"\n  Then open https://{host}/console/agents: admins can create and launch agents there"))
-    elif args.command == "connect":
+    elif args.command in ("connect", "peers"):
         svc = "agent" if args.agent == "sample" else f"agent-{args.agent}"
         print(f"\nNext:\n  docker compose up -d {svc}   (a restart with the new connectors; no rebuild)")
     elif args.command == "fleet" and args.internal:

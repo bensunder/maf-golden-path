@@ -58,6 +58,9 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` (or `AGENTKIT_APPINSIGHTS_CONNECTION_STRING`) | none | Sends traces, metrics and logs to Azure Monitor |
 | `AGENTKIT_JUDGE_MODEL` | agent's model | Deployment the quality gate's LLM judge uses (read by `agentkit-gate`; set it as a GitHub variable for the deploy pipeline) |
 | `AGENTKIT_CAPTURE_MESSAGE_CONTENT` | `false` | Record prompts and responses on spans. Local debugging only; forbidden in prod |
+| `LANGSMITH_API_KEY` | none | Also send traces to LangSmith (needs `agentkit-telemetry[langsmith]`). `AGENTKIT_LANGSMITH_API_KEY` works too |
+| `LANGSMITH_PROJECT` | service name | LangSmith project for the traces |
+| `LANGSMITH_OTEL_ENDPOINT` | `https://api.smith.langchain.com/otel` | LangSmith's OTel base URL (EU: `https://eu.api.smith.langchain.com/otel`) |
 
 ## HTTP host
 
@@ -107,6 +110,17 @@ Written by `agentctl.py` for agents on a VPS with the platform service; you don'
 | `AGENTKIT_CONNECTOR_TOKEN` | none | This agent's token for the connector gateway (a secret). It identifies the agent; it is not the vendor's credential |
 
 A connector that can't be reached doesn't stop the agent: its tools are left out of that run, and it's tried again after a minute.
+
+## Agent network (VPS)
+
+Also written by `agentctl.py`, for agents behind the platform. See [multi-agent.md](multi-agent.md).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AGENTKIT_PEERS` | none | JSON list of the agents this one may call: `name`, `title`, `description`, `url` (the platform's gateway). Each becomes an `ask_<name>` tool, plus `confirm_agent_action` |
+| `AGENTKIT_PLATFORM_KEY` | none | This agent's key for checking the platform's request signatures (a secret). When set, every request except `/healthz` and `/readyz` must be signed by the platform |
+| `AGENTKIT_DELEGATION_HEADER` | none | The header carrying the platform's delegation token (who the request acts for, through which agents) |
+| `AGENTKIT_SESSION_KEY_PREFIX` | `agentkit:` | Redis key prefix. On a VPS each agent gets `agentkit:<name>:`, and a Redis user limited to it |
 
 ## Set by the deploy (you don't set these)
 

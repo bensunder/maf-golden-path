@@ -91,6 +91,19 @@ def _platform_connectors(settings: AgentKitSettings) -> list[Any]:
     return platform_connectors(settings.connectors, token)
 
 
+def _platform_peers(settings: AgentKitSettings) -> list[Any]:
+    """Agents on the VPS platform this agent may call (``AGENTKIT_PEERS``), as tools."""
+    if not settings.peers:
+        return []
+    try:
+        from agentkit.tools.peers import platform_peers
+    except ImportError:  # pragma: no cover - agentkit-tools ships with every generated agent
+        logger.warning("AGENTKIT_PEERS is set but agentkit-tools isn't installed; no peer agents loaded")
+        return []
+    token = settings.connector_token.get_secret_value() if settings.connector_token else None
+    return platform_peers(settings.peers, token)
+
+
 def build_agent(
     *,
     name: str,
@@ -113,7 +126,7 @@ def build_agent(
     matching calls to ``approval_mode="always_require"`` tools (see ``agentkit.hosting.approve_if``).
     """
     settings = settings or AgentKitSettings()
-    tools = [*tools, *_platform_connectors(settings)]
+    tools = [*tools, *_platform_connectors(settings), *_platform_peers(settings)]
     if isinstance(tool_policy, Mapping):
         tool_policy = ToolPolicyMiddleware(**tool_policy)
     client = client or create_chat_client(settings, agent_name=name)

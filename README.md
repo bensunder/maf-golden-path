@@ -8,7 +8,7 @@ Generate a governed agent in about a minute. Write the business logic.<br/>
 Inherit identity, guardrails, approvals, sessions, telemetry, evaluation, knowledge, channels, infrastructure and CI/CD.
 
 [![kit-ci](https://github.com/bensunder/maf-golden-path/actions/workflows/ci.yml/badge.svg)](https://github.com/bensunder/maf-golden-path/actions/workflows/ci.yml)
-![Release](https://img.shields.io/badge/release-v0.9.5-0f172a)
+![Release](https://img.shields.io/badge/release-v0.10.0-0f172a)
 ![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.19-0078D4)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB)
 ![Azure](https://img.shields.io/badge/deploy-Azure%20%7C%20VPS-0089D6)
@@ -109,7 +109,7 @@ azd up                              # when you're ready for Azure
 <td valign="top">
 
 ```bash
-git clone --branch v0.9.5 \
+git clone --branch v0.10.0 \
   https://github.com/bensunder/maf-golden-path.git
 cd maf-golden-path/deploy/vps
 cp .env.example .env   # Entra app + model settings
@@ -137,7 +137,7 @@ On a server running the platform service, the console becomes an agent factory. 
 <td width="50%" valign="top">
 
 ### Create and launch
-**Create agent** generates a new MAF agent from the template, registers it, builds it with its evals as the quality gate, starts it and waits until it answers. A failed build is rolled back; nothing is left half-made.
+**Create agent** generates a new agent from the template, built with Microsoft Agent Framework or **LangGraph**, registers it, builds it with its evals as the quality gate, starts it and waits until it answers. A failed build is rolled back; nothing is left half-made.
 
 </td>
 <td width="50%" valign="top">
@@ -177,6 +177,28 @@ Tools that change things pause for approval in the chat, the console and Teams, 
 
 </td>
 </tr>
+<tr>
+<td width="50%" valign="top">
+
+### Agents that work together
+One agent asks another for help, acting for the same signed-in person. Admins choose who may call whom. Every call is signed by the platform, stays within limits (no loops, 3 deep, 8 calls per request), runs the other agent's own guardrails, and brings its approvals back to the person. **MAF and LangGraph agents call each other both ways**, and the whole chain is one trace, in LangSmith too.
+
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/agent-network.png" alt="The Agent network page: Claims Desk may call the Order Status Agent, with recent calls and their outcomes" width="100%"/>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/nist-coverage.png" alt="NIST AI RMF references on the Security page, each backed by the agent's live controls" width="100%"/>
+</td>
+<td width="50%" valign="top">
+
+### Evidence for NIST
+The Security page maps each agent's running controls to **NIST AI RMF**, the **GenAI Profile (AI 600-1)**, **CSF 2.0** and **SP 800-53 Rev. 5**, and shows which references are supported, with the live controls as evidence.
+
+</td>
+</tr>
 </table>
 
 <br/>
@@ -198,6 +220,7 @@ Tools that change things pause for approval in the chat, the console and Teams, 
 - Secretless and on-behalf-of API access
 - Session ownership checks
 - Permission-aware document retrieval
+- Signed, delegated calls between agents
 
 </td>
 <td valign="top">
@@ -207,6 +230,7 @@ Tools that change things pause for approval in the chat, the console and Teams, 
 - PII redaction before the model and in history
 - Tool allow/deny lists and argument validation
 - Per-session token budgets
+- Per-agent Redis users and signed requests on a VPS
 
 </td>
 <td valign="top">
@@ -225,6 +249,8 @@ Tools that change things pause for approval in the chat, the console and Teams, 
 - Readiness and liveness probes
 - Spend, error, injection, approval and knowledge alerts
 - Quality gate before every deploy
+- LangSmith traces and eval experiments
+- NIST AI RMF, CSF 2.0 and SP 800-53 mapping
 
 </td>
 </tr>
@@ -259,6 +285,8 @@ Tools that change things pause for approval in the chat, the console and Teams, 
 | Reaching users | Teams (secretless Azure Bot) and a web chat at `/chat`; every channel shares sessions, approvals and audit through one `ConversationService` | `channels`, `template/infra` |
 | Org-level model access | AI gateway: Entra-only, per-identity token limits, chargeback metrics, models behind a managed identity | `infra/platform` |
 | Calling enterprise APIs | Tools generated from OpenAPI; managed-identity or secretless on-behalf-of auth; safe retries, tracing, response shaping | `tools` |
+| Agents calling agents (VPS) | Platform-signed delegation for the signed-in person, admin allow-list, loop, depth and fan-out limits, the other agent's approvals matched exactly before anything runs, per-agent request signing | `deploy/vps/platform`, `tools.platform_peers` |
+| LangGraph | A graph run as a MAF agent: the kit's model client, tool middleware, interrupts for approvals, checkpoints in the session store read back with a strict allow-list | `langgraph` |
 | Platform connectors (VPS) | MCP connectors added once in the console; credential encrypted and added by the platform's gateway, which enforces allowed tools and approvals per agent | `deploy/vps/platform` |
 
 </details>
@@ -289,6 +317,7 @@ flowchart LR
     R --> F[Fleet view]
     A1 & A2 -->|agent token| G[Connector gateway<br/>credential vault · tool rules]
     G -->|HTTPS| V[(Linear · GitHub · Stripe<br/>Supabase · any MCP server)]
+    A1 <-->|signed, for the same person| A2
     A1 & A2 & S --> M[(Model)]
     A1 & A2 & S --> D[(Redis sessions)]
 ```
@@ -301,11 +330,12 @@ flowchart LR
 |---|---|
 | **hosting** | `build_agent()`, gateway-bound model client, Entra credentials per environment, settings with **prod policy enforcement**, session stores (in-memory, Cosmos DB, Redis) with cross-replica locking, human approvals, FastAPI host (JSON + SSE, probes) |
 | **guardrails** | Prompt Shields input guard with heuristic fallback, tool-output injection shield, PII redaction, tool allow/deny and validators, per-session token budget |
-| **telemetry** | One-call OpenTelemetry bootstrap (OTLP / Application Insights); user, session, tenant and team on every MAF span; run metrics by outcome |
+| **langgraph** | LangGraph graphs as MAF agents: the same tools, guardrails, approvals (as interrupts), sessions, telemetry and console |
+| **telemetry** | One-call OpenTelemetry bootstrap (OTLP / Application Insights / LangSmith); user, session, tenant and team on every MAF span; run metrics by outcome |
 | **tools** | OpenAPI → typed MAF tools, managed-identity and on-behalf-of auth, `ApiClient` with safe retries and tracing, response shaping, MCP tools, platform connectors, API fakes for tests |
 | **channels** | Operations console, fleet view, Microsoft Teams with approvals as Adaptive Cards, AG-UI, drop-in web chat, offline Teams test client |
 | **knowledge** | Azure AI Search as the signed-in user (Entra groups, fail closed), citations in every channel, ingestion with access rules |
-| **testing** | Scripted model over the real MAF stack, YAML eval cases (offline in CI, live against the gateway), LLM judge and `agentkit-gate` |
+| **testing** | Scripted model over the real MAF stack, YAML eval cases (offline in CI, live against the gateway), LLM judge, `agentkit-gate`, eval runs to LangSmith |
 
 <details>
 <summary><b>Everything else in the repository</b></summary>
@@ -337,6 +367,8 @@ flowchart LR
 | [Getting started](docs/getting-started.md) | [Guardrails](docs/guardrails.md) | [Running on a VPS](docs/vps.md) | [Configuration](docs/configuration.md) |
 | [FAQ and escape hatches](docs/faq.md) | [Sessions and approvals](docs/sessions-and-approvals.md) | [Operations](docs/operations.md) | [Telemetry](docs/telemetry.md) |
 | | [Knowledge](docs/knowledge.md) | [Console](docs/console.md) | [Upgrading](docs/UPGRADING.md) |
+| | [Agents calling agents](docs/multi-agent.md) | [NIST frameworks](docs/nist.md) | |
+| | [LangGraph agents](docs/langgraph.md) | | |
 | | [Channels: Teams and web chat](docs/channels.md) | [Fleet view](docs/fleet.md) | |
 | | [Testing and evals](docs/testing-and-evals.md) | [Live validation](docs/live-validation.md) | |
 
@@ -346,6 +378,7 @@ flowchart LR
 
 | Version | Highlights |
 |---|---|
+| **v0.10.0** | **Agents that work together**: signed, delegated calls between agents with approvals carried back to the person; **LangGraph agents** alongside MAF; **LangSmith** traces and eval experiments; **NIST** AI RMF, GenAI Profile, CSF 2.0 and SP 800-53 mapping on the Security page |
 | **v0.9.5** | **Agent templates** in Create agent: start from one of 30 legal specialists, with rules and eval cases against invented citations and legal advice; `agentctl.py templates add` for more libraries |
 | **v0.9.4** | **Connectors catalog**: Linear, GitHub, Stripe, Supabase or any MCP server, with allowed tools, approvals and an encrypted credential enforced at the platform's gateway |
 | **v0.9.3** | **Create agent launches real agents** on a VPS: generate, test, build and start from the console |
@@ -357,7 +390,7 @@ flowchart LR
 | v0.2 – v0.5 | Deploy and connectors, sessions and approvals, the deploy quality gate, Teams and web chat |
 
 > [!NOTE]
-> **Where things stand.** The live-validation workflow (v0.7) is built and linted, and its checks run in every smoke test, but it hasn't been run against a subscription yet. Knowledge (v0.6) is tested offline, including the real search SDK's wire format, but not yet against a live Azure AI Search service. **Not yet included:** per-user OAuth connectors (Microsoft 365, Google, Salesforce, HubSpot), Teams SSO for on-behalf-of tools, Microsoft 365 Copilot publishing, and a .NET track. See [UPGRADING](docs/UPGRADING.md) for release notes and the MAF version policy.
+> **Where things stand.** The live-validation workflow (v0.7) is built and linted, and its checks run in every smoke test, but it hasn't been run against a subscription yet. Knowledge (v0.6) is tested offline, including the real search SDK's wire format, but not yet against a live Azure AI Search service. LangSmith export and eval upload (v0.10) are tested offline, not yet against a live LangSmith account. **Not yet included:** agent-to-agent calls on Azure (they're on the VPS platform today), per-user OAuth connectors (Microsoft 365, Google, Salesforce, HubSpot), Teams SSO for on-behalf-of tools, Microsoft 365 Copilot publishing, and a .NET track. See [UPGRADING](docs/UPGRADING.md) for release notes and the MAF version policy.
 
 <br/>
 

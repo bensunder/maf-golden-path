@@ -29,8 +29,9 @@ export interface ToolInfo {
   name: string;
   description: string;
   approval: "never" | "always" | "rules";
-  kind: "function" | "knowledge" | "connector";
+  kind: "function" | "knowledge" | "connector" | "agent";
   connector?: string;
+  agent?: string;
 }
 
 export interface Overview {
@@ -55,6 +56,9 @@ export interface Overview {
     model: string;
     gateway: boolean;
     auth_mode: string;
+    framework?: "maf" | "langgraph";
+    peers?: string[];
+    platform_signed?: boolean;
     tools: ToolInfo[];
     limits: {
       max_iterations: number;
@@ -80,7 +84,7 @@ export interface Overview {
   security: Control[];
   sessions: { store: "memory" | "redis" | "cosmos"; shared: boolean; ttl_seconds: number };
   approvals: { mode: "confirmation" | "approver" | "separation"; approver_role: string | null };
-  telemetry: { exporter: "app_insights" | "otlp" | null; capture_content: boolean; workbook_url: string | null; live_charts: boolean };
+  telemetry: { exporter: "app_insights" | "otlp" | null; langsmith?: boolean; capture_content: boolean; workbook_url: string | null; live_charts: boolean };
   links: { docs: string | null; chat: string | null };
 }
 
@@ -325,6 +329,26 @@ export interface PlatformAgent {
   status: "ready" | "not_ready" | "unreachable";
   version: string | null;
   connectors?: string[];
+  peers?: string[]; // agents this one may call
+}
+
+export interface AgentCall {
+  at: number;
+  user?: string;
+  caller: string;
+  callee: string;
+  chain: string[];
+  outcome: "answered" | "approval_requested" | "approved" | "rejected" | "blocked" | "refused" | "error";
+  detail?: string | null;
+  ms?: number;
+}
+
+export interface AgentNetwork {
+  agents: { name: string; title: string; peers: string[] }[];
+  edges: { from: string; to: string }[];
+  calls: AgentCall[];
+  all_calls: boolean;
+  limits: { depth: number; calls_per_request: number };
 }
 
 export type JobState = "queued" | "generating" | "registering" | "building" | "starting" | "ready" | "failed" | "removing" | "removed" | "connecting";
@@ -341,6 +365,7 @@ export interface PlatformJob {
   finished_at: number | null;
   path: string;
   template?: string | null;
+  framework?: "maf" | "langgraph";
   log?: string[];
 }
 
@@ -352,6 +377,7 @@ export interface NewAgent {
   knowledge: boolean;
   connectors: string[];
   template?: string;
+  framework?: "maf" | "langgraph";
 }
 
 // ------------------------------------------------------------------ template libraries (Create agent)
@@ -475,6 +501,12 @@ export const connectorsApi = {
   activity: (name: string) => request<{ activity: ConnectorActivity[] }>(`/v1/platform/connectors/${encodeURIComponent(name)}/activity`),
   assign: (agent: string, connectors: string[]) =>
     request<PlatformJob>(`/v1/platform/agents/${encodeURIComponent(agent)}/connectors`, { method: "PUT", body: JSON.stringify({ connectors }) }),
+};
+
+export const networkApi = {
+  get: () => request<AgentNetwork>("/v1/platform/network"),
+  setPeers: (agent: string, peers: string[]) =>
+    request<PlatformJob>(`/v1/platform/agents/${encodeURIComponent(agent)}/peers`, { method: "PUT", body: JSON.stringify({ peers }) }),
 };
 
 export const CONNECTOR_NAME = /^[a-z][a-z0-9_]{1,30}$/;

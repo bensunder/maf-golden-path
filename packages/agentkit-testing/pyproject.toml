@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-testing"
-version = "0.9.5"
+version = "0.10.0"
 description = "Offline test doubles, span capture and eval-case runner for Microsoft Agent Framework agents."
 requires-python = ">=3.10"
 dependencies = [
@@ -15,8 +15,12 @@ dependencies = [
     "pytest-asyncio>=0.23",
 ]
 
+[project.optional-dependencies]
+langsmith = ["langsmith>=0.4"]
+
 [project.scripts]
 agentkit-gate = "agentkit.testing.gate:main"
+agentkit-langsmith = "agentkit.testing.langsmith:main"
 
 [project.entry-points.pytest11]
 agentkit = "agentkit.testing.plugin"

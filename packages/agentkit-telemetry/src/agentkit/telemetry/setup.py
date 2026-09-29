@@ -11,7 +11,7 @@ from opentelemetry.sdk.trace import TracerProvider
 
 from .processor import RunContextSpanProcessor
 
-__all__ = ["setup_telemetry"]
+__all__ = ["langsmith_exporter", "setup_telemetry"]
 
 logger = logging.getLogger(__name__)
 _CONFIGURED = False
@@ -36,6 +36,22 @@ def _azure_monitor_exporters(connection_string: str) -> list[Any]:
     ]
 
 
+def langsmith_exporter(api_key: str, *, project: str, endpoint: str = "https://api.smith.langchain.com/otel") -> Any:
+    """An OTLP/HTTP trace exporter to LangSmith (``endpoint`` is the OTel base: EU, APAC or self-hosted differ).
+
+    LangSmith maps the GenAI span conventions MAF emits (models, tokens, tools), so every agent run shows up as a
+    trace; one person's request across several agents is one trace, because calls between agents carry W3C
+    trace context. Prompts and answers are only included where content capture is on (never in prod)."""
+    try:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    except ImportError as exc:  # pragma: no cover - depends on optional extra
+        raise RuntimeError("LANGSMITH_API_KEY is set but the OTLP exporter isn't installed. "
+                           "Install agentkit-telemetry[langsmith].") from exc
+    # the in-code exporter takes the full signal URL (only the env-var form appends /v1/traces itself)
+    return OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces",
+                            headers={"x-api-key": api_key, "Langsmith-Project": project})
+
+
 def setup_telemetry(
     *,
     service_name: str,
@@ -48,13 +64,17 @@ def setup_telemetry(
     console: bool = False,
     pseudonymize_user_ids: bool = True,
     exporters: list[Any] | None = None,
+    langsmith_api_key: str | None = None,
+    langsmith_project: str | None = None,
+    langsmith_endpoint: str = "https://api.smith.langchain.com/otel",
 ) -> None:
     """Configure tracing, metrics and logs once per process.
 
     Policy enforced here so teams do not have to remember it:
     * prompt/response content capture is refused in ``prod``;
     * every span carries service, environment, team and request context;
-    * Azure Monitor is used when a connection string is present, OTLP when an endpoint is.
+    * Azure Monitor is used when a connection string is present, OTLP when an endpoint is, LangSmith when an
+      API key is (any combination).
     """
     global _CONFIGURED
     if _CONFIGURED:
@@ -70,6 +90,9 @@ def setup_telemetry(
     all_exporters = list(exporters or [])
     if appinsights_connection_string:
         all_exporters.extend(_azure_monitor_exporters(appinsights_connection_string))
+    if langsmith_api_key:
+        all_exporters.append(langsmith_exporter(langsmith_api_key, project=langsmith_project or service_name,
+                                                endpoint=langsmith_endpoint))
 
     resource_attributes = {"deployment.environment.name": environment}
     if team:

@@ -43,6 +43,14 @@ owner_email:
   help: Accountable owner for the agent charter
   default: owner@example.com
 
+framework:
+  type: str
+  help: How the agent is built (both get the same host, guardrails, approvals, sessions, evals and platform)
+  default: maf
+  choices:
+    "Microsoft Agent Framework (an agent with tools)": maf
+    "LangGraph (a graph you shape - nodes, edges, state)": langgraph
+
 enable_web_chat:
   type: bool
   help: Chat page at /chat and an AG-UI endpoint at /v1/agui (Entra sign-in via Easy Auth)
@@ -85,4 +93,4 @@ agentkit_repo:
 agentkit_ref:
   type: str
   help: Blessed kit version (git tag)
-  default: v0.9.5
+  default: v0.10.0

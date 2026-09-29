@@ -147,6 +147,7 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [template, setTemplate] = useState<{ t: AgentTemplate; lib: TemplateLibrary } | null>(null);
   const [picking, setPicking] = useState(false);
+  const [framework, setFramework] = useState<"maf" | "langgraph">("maf");
   const catalog = useLoad(connectorsApi.list);
   const [submitting, setSubmitting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -170,6 +171,7 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
       const job = await platformApi.create({
         title: title.trim(), name, description: description.trim(), team: teamValue, knowledge, connectors: [...chosen],
         ...(template ? { template: template.t.id } : {}),
+        framework,
       });
       navigate(`/agents/new?job=${encodeURIComponent(job.id)}`);
     } catch (e) {
@@ -225,6 +227,23 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
                 </div>
               )}
             </fieldset>
+            <fieldset>
+              <legend className="text-[13px] font-medium text-zinc-900">Built with</legend>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Framework">
+                {([
+                  ["maf", "Microsoft Agent Framework", "An agent with tools: the model decides which tool to call next."],
+                  ["langgraph", "LangGraph", "A graph you shape: nodes, edges and state, in graph.py. Same guardrails and approvals."],
+                ] as const).map(([id, label, hint]) => (
+                  <label key={id} className={`flex cursor-pointer gap-3 rounded-md border px-3 py-2.5 ${framework === id ? "border-zinc-900 bg-zinc-50" : "border-zinc-200 hover:border-zinc-300"}`}>
+                    <input type="radio" name="framework" value={id} checked={framework === id} onChange={() => setFramework(id)} className="mt-0.5 size-4 accent-zinc-900" />
+                    <span>
+                      <span className="block text-sm text-zinc-900">{label}</span>
+                      <span className="block text-xs text-zinc-500">{hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <Field id="agent-name" label="Agent name" hint={name ? <>It will live at <span className="font-mono">{info.public_host}/agents/{name}</span></> : "For example: Legal Desk"}>
               <input id="agent-name" value={title} required maxLength={60} onChange={(e) => setTitle(e.target.value)} aria-invalid={title.length > 0 && !valid} className={input} />
             </Field>
@@ -239,7 +258,7 @@ function LaunchAgentPage({ info }: { info: PlatformInfo }) {
             <fieldset>
               <legend className="text-[13px] font-medium text-zinc-900">Included</legend>
               <ul className="mt-2 grid gap-1.5 text-[13px] text-zinc-600 sm:grid-cols-2">
-                {["Microsoft Agent Framework agent", "Entra sign-in (this server's)", "Guardrails and PII redaction", "Tool policy and run limits",
+                {[framework === "langgraph" ? "LangGraph graph, hosted like every MAF agent" : "Microsoft Agent Framework agent", "Entra sign-in (this server's)", "Guardrails and PII redaction", "Tool policy and run limits",
                   "Human approval for risky tools", "Sessions (Redis on this server)", "Eval cases and the quality gate", "Web chat and this console"].map((t) => (
                   <li key={t} className="flex gap-2"><CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-600" /> {t}</li>
                 ))}

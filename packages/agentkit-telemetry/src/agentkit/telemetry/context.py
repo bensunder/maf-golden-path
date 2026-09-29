@@ -21,6 +21,9 @@ class RunContext:
     #: The caller's own access token, for on-behalf-of calls to downstream APIs.
     #: Never exported to telemetry and excluded from repr.
     user_assertion: str | None = field(default=None, repr=False)
+    #: The platform's delegation token for this request (who it acts for, through which agents), passed back
+    #: when this agent calls another one. Never exported to telemetry and excluded from repr.
+    delegation: str | None = field(default=None, repr=False)
 
 
 _CURRENT: contextvars.ContextVar[RunContext | None] = contextvars.ContextVar("agentkit_run_context", default=None)
@@ -38,6 +41,7 @@ def run_context(
     tenant_id: str | None = None,
     request_id: str | None = None,
     user_assertion: str | None = None,
+    delegation: str | None = None,
     **attributes: Any,
 ) -> Iterator[RunContext]:
     """Set request context for everything inside the block (nested blocks merge)."""
@@ -50,6 +54,7 @@ def run_context(
         request_id=request_id or parent.request_id,
         attributes={**parent.attributes, **attributes},
         user_assertion=user_assertion or parent.user_assertion,
+        delegation=delegation or parent.delegation,
     )
     token = _CURRENT.set(ctx)
     try:

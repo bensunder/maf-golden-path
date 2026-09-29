@@ -39,7 +39,16 @@ Resource attributes: `service.name`, `service.version`, `deployment.environment.
 |---|---|
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure Monitor / Application Insights (traces, metrics, logs) |
 | `AGENTKIT_OTLP_ENDPOINT` | Any OTLP collector. Locally, the .NET Aspire dashboard: `docker run -p 18888:18888 -p 4317:18889 mcr.microsoft.com/dotnet/aspire-dashboard` |
-| neither | Nothing is exported (tests, quick local runs) |
+| `LANGSMITH_API_KEY` | [LangSmith](#langsmith), alongside either of the above |
+| none of these | Nothing is exported (tests, quick local runs) |
+
+### LangSmith
+
+Install `agentkit-telemetry[langsmith]` (the generated `pyproject.toml` and the VPS image already do) and set `LANGSMITH_API_KEY`. Spans go to LangSmith's OpenTelemetry endpoint as well as to any other destination. They land in the project `LANGSMITH_PROJECT`, or the service name if that's unset. Agent, model and tool spans carry `langsmith.span.kind`, so LangSmith shows them as chain, LLM and tool runs. MAF and [LangGraph](langgraph.md) agents look the same there, and a request that goes through [several agents](multi-agent.md) is one trace across all of them.
+
+EU region: `LANGSMITH_OTEL_ENDPOINT=https://eu.api.smith.langchain.com/otel`. Self-hosted: `https://<your host>/api/v1/otel`. Message content follows `AGENTKIT_CAPTURE_MESSAGE_CONTENT`, like every other destination.
+
+To record eval results in LangSmith as well, see [testing-and-evals.md](testing-and-evals.md#langsmith).
 
 ## Why a span processor, not middleware
 

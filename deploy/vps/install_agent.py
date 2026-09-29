@@ -18,8 +18,8 @@ import tomllib
 from pathlib import Path
 
 _NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-KIT = {"agentkit-channels", "agentkit-guardrails", "agentkit-hosting", "agentkit-knowledge", "agentkit-telemetry",
-       "agentkit-testing", "agentkit-tools"}  # installed from this checkout before the agent
+KIT = {"agentkit-channels", "agentkit-guardrails", "agentkit-hosting", "agentkit-knowledge", "agentkit-langgraph",
+       "agentkit-telemetry", "agentkit-testing", "agentkit-tools"}  # installed from this checkout before the agent
 
 
 def requirement_name(requirement: str) -> str:

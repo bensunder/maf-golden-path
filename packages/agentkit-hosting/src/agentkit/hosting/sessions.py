@@ -288,7 +288,8 @@ def session_store_from_settings(settings: Any, credential: Any = None) -> Sessio
     if kind == "memory":
         return InMemorySessionStore()
     if kind == "redis":
-        return RedisSessionStore.from_url(settings.redis_url.get_secret_value())
+        return RedisSessionStore.from_url(settings.redis_url.get_secret_value(),
+                                          prefix=getattr(settings, "session_key_prefix", "agentkit:"))
     if kind == "cosmos":
         from azure.cosmos.aio import CosmosClient
 

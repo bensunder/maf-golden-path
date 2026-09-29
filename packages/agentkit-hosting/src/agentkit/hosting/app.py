@@ -23,6 +23,7 @@ from agentkit.telemetry import setup_telemetry
 
 from .approvals import install_maf_noise_filter, roles_from_principal
 from .conversations import ApprovalPending, Caller, ConversationError, ConversationService, Decision, TurnResult
+from .platform import PlatformSignatureMiddleware, delegation_claims
 from .sessions import SessionLockTimeout, SessionStore, session_store_from_settings
 from .settings import AgentKitSettings
 
@@ -127,12 +128,17 @@ def http_caller(request: Request, settings: AgentKitSettings, *, channel: str = 
     if raw:
         assertion = raw[7:].strip() if raw.lower().startswith("bearer ") else raw.strip()
     roles = roles_from_principal(request.headers.get(settings.principal_claims_header))
+    delegation = request.headers.get(settings.delegation_header) if settings.delegation_header else None
+    chain = delegation_claims(delegation).get("c") if delegation else None
+    via = tuple(str(a) for a in chain if isinstance(a, str)) if isinstance(chain, list) else ()
     return Caller(
         user_id=user,
         tenant_id=request.headers.get(settings.tenant_header),
         is_approver=bool(settings.approver_role) and settings.approver_role in roles,
         user_assertion=assertion,
         channel=channel,
+        delegation=delegation,
+        via=via,
     )
 
 
@@ -199,6 +205,9 @@ def create_app(
                 otlp_endpoint=settings.otlp_endpoint,
                 appinsights_connection_string=settings.appinsights_connection_string,
                 capture_message_content=settings.capture_message_content,
+                langsmith_api_key=(settings.langsmith_api_key.get_secret_value() or None) if settings.langsmith_api_key else None,
+                langsmith_project=settings.langsmith_project or settings.service_name,
+                langsmith_endpoint=settings.langsmith_endpoint,
             )
         state["agent"] = agent_factory(settings)
         for channel in channels:
@@ -213,6 +222,8 @@ def create_app(
 
     app = FastAPI(title=settings.service_name, version=settings.service_version, lifespan=lifespan)
     app.add_middleware(_JsonOnly)
+    if settings.platform_key:  # added last, so it runs first: nothing unsigned reaches the JSON check or a route
+        app.add_middleware(PlatformSignatureMiddleware, key_hex=settings.platform_key.get_secret_value())
     app.state.session_store = store
     app.state.conversations = service
     app.state.channels = list(channels)

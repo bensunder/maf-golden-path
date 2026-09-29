@@ -10,6 +10,6 @@ COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 RUN pip install "fastapi>=0.115" "uvicorn>=0.30" "httpx>=0.27" "pyyaml>=6" "copier>=9.3" "mcp>=1.30" "cryptography>=43"
 WORKDIR /app
-COPY server.py connectors.py templates.py ./
+COPY server.py connectors.py templates.py security.py agentcalls.py ./
 EXPOSE 8000 8001
 CMD ["python", "server.py"]

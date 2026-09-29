@@ -139,6 +139,7 @@ export function ToolList({ tools }: { tools: ToolInfo[] }) {
               <span className="font-mono text-[13px] text-zinc-900">{t.name}</span>
               {t.kind === "knowledge" && <Tag>Knowledge</Tag>}
               {t.kind === "connector" && <Tag>Connector</Tag>}
+              {t.kind === "agent" && <Tag>Agent</Tag>}
             </div>
             {t.description && <p className="mt-0.5 line-clamp-2 text-[13px] text-zinc-500">{t.description}</p>}
           </div>

@@ -264,6 +264,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--score-tolerance", type=float, default=0.5)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--summary", type=Path, default=os.getenv("GITHUB_STEP_SUMMARY") or None)
+    parser.add_argument("--langsmith-dataset", default=os.getenv("AGENTKIT_LANGSMITH_DATASET") or None,
+                        help="also record the results in LangSmith: cases as this dataset, the run as an experiment "
+                             "(needs LANGSMITH_API_KEY and agentkit-testing[langsmith])")
     args = parser.parse_args(argv)
     if args.calibrate:
         return _calibrate(args)
@@ -301,6 +304,14 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(markdown)
     if args.report:
         args.report.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    if args.langsmith_dataset:
+        from .langsmith import upload_report
+
+        try:
+            done = upload_report(report.to_dict(), cases, dataset=args.langsmith_dataset)
+            print(f"LangSmith: results recorded in experiment '{done['experiment']}'")
+        except Exception as exc:  # the gate's verdict never depends on LangSmith being reachable
+            print(f"warning: couldn't record the results in LangSmith: {exc}", file=sys.stderr)
     if args.update_baseline:
         if not args.baseline:
             raise SystemExit("--update-baseline needs --baseline PATH")

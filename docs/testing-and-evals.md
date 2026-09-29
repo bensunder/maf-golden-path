@@ -181,6 +181,16 @@ Use `AGENTKIT_JUDGE_MODEL` to judge with a different deployment than the agent's
 - **Intentional behaviour change** (a new policy, say): update the cases, run with `--update-baseline`, and commit the new `baseline.json` in the same PR, so the reviewer sees the quality change next to the code change.
 - **Model or MAF upgrade:** run the gate against the new version with the old baseline. A regression is exactly what you want to find out before production.
 
+### LangSmith
+
+To see eval runs in LangSmith, next to the traces, install `agentkit-testing[langsmith]` and set `LANGSMITH_API_KEY`. Then either add `--langsmith-dataset <name>` to `agentkit-gate` (or set `AGENTKIT_LANGSMITH_DATASET`), or upload a report you already have:
+
+```bash
+agentkit-langsmith --report gate-report.json --cases evals/cases.yaml --dataset claims-desk-evals
+```
+
+The cases become the dataset's examples, matched by case id (new cases are added). Each run becomes an experiment, with each case's pass rate, pass or fail, judge scores and failures as feedback. The gate's verdict never depends on LangSmith: if the upload fails, the gate prints a warning and keeps its result.
+
 ## The HTTP contract
 
 `tests/test_app.py` drives the real FastAPI app with `TestClient` and a scripted model. Use it for anything about sessions, identity headers or response shape. It also runs a turn through the AG-UI endpoint when web chat is on.

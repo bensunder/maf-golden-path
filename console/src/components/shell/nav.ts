@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Layers,
   Library,
+  Network,
   Plug,
   MessageSquareText,
   Rocket,
@@ -31,6 +32,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { to: "/agents", label: "Agents", icon: Blocks, match: (p) => p.startsWith("/agents") },
   // the VPS platform's catalog of MCP servers agents may use (only there)
   ...(PLATFORM ? [{ to: "/connectors", label: "Connectors", icon: Plug } as NavItem] : []),
+  ...(PLATFORM ? [{ to: "/network", label: "Agent network", icon: Network } as NavItem] : []),
   { to: "/playground", label: "Playground", icon: MessageSquareText },
   { to: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
   { to: "/knowledge", label: "Knowledge", icon: Library },

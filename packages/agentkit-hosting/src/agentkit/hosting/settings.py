@@ -62,6 +62,16 @@ class AgentKitSettings(BaseSettings):
         validation_alias=AliasChoices("AGENTKIT_APPINSIGHTS_CONNECTION_STRING", "APPLICATIONINSIGHTS_CONNECTION_STRING"),
     )
     capture_message_content: bool = False
+    #: Also send traces to LangSmith (agentkit-telemetry[langsmith]). The project defaults to the service name.
+    langsmith_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("AGENTKIT_LANGSMITH_API_KEY", "LANGSMITH_API_KEY"))
+    langsmith_project: str | None = Field(
+        default=None, validation_alias=AliasChoices("AGENTKIT_LANGSMITH_PROJECT", "LANGSMITH_PROJECT"))
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com/otel",
+        validation_alias=AliasChoices("AGENTKIT_LANGSMITH_ENDPOINT", "LANGSMITH_OTEL_ENDPOINT"),
+        description="LangSmith's OTel base URL: https://eu.api.smith.langchain.com/otel in the EU, "
+                    "<your host>/api/v1/otel self-hosted")
 
     # HTTP hosting: identity comes from platform auth (Container Apps / App Service Easy Auth, APIM)
     user_header: str = "x-ms-client-principal-name"
@@ -77,6 +87,8 @@ class AgentKitSettings(BaseSettings):
     # sessions (shared stores allow more than one replica)
     session_store: Literal["memory", "redis", "cosmos"] = "memory"
     redis_url: SecretStr | None = None
+    #: Key prefix in Redis. On a shared Redis each agent gets its own prefix and a Redis user limited to it.
+    session_key_prefix: str = Field(default="agentkit:", pattern=r"^[A-Za-z0-9_.:-]{1,64}$")
     cosmos_endpoint: str | None = None
     cosmos_database: str = "agentkit"
     cosmos_container: str | None = None
@@ -94,8 +106,17 @@ class AgentKitSettings(BaseSettings):
     #: Connectors the VPS platform assigned to this agent (JSON, written by agentctl.py): MCP servers reached
     #: through the platform's connector gateway, which holds the vendor credentials.
     connectors: str | None = None
-    #: This agent's token for the connector gateway.
+    #: This agent's token for the platform's gateway (connectors and calls to other agents).
     connector_token: SecretStr | None = None
+    #: Other agents on the VPS platform this agent may call (JSON, written by agentctl.py). Each becomes a tool.
+    peers: str | None = None
+    #: This agent's key for verifying the platform's request signatures (written by agentctl.py). When set,
+    #: every request except the probes must be signed by the platform: nothing else on the network can
+    #: pose as a user or as another agent.
+    platform_key: SecretStr | None = None
+    #: Header with the platform's delegation token (who a request acts for, through which agents). Only set
+    #: behind the VPS platform, which issues and checks it.
+    delegation_header: str | None = None
 
     @model_validator(mode="after")
     def _enforce_environment_policy(self) -> AgentKitSettings:

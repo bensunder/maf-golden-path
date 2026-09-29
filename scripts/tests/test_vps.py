@@ -1,6 +1,7 @@
 """deploy/vps: the agent installer the image runs, and agentctl.py (more agents and the fleet on one host)."""
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -89,15 +90,18 @@ def test_agentctl_adds_agents_and_the_fleet_behind_their_own_sign_in(stack):
     run("fleet")
     run("add", "hr", str(root / "legal"), "--env", "AGENTKIT_MODEL=gpt-5-mini", "--env", "AGENTKIT_TEAM=people$ops")
     services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
-    assert set(services) == {"agent-legal", "auth-legal", "fleet", "auth-fleet", "agent-hr", "auth-hr"}
+    # plus the sample's and Redis's overrides: every agent (the sample too) gets its own Redis user
+    assert set(services) == {"agent", "redis", "agent-legal", "auth-legal", "fleet", "auth-fleet", "agent-hr", "auth-hr"}
+    assert services["agent"]["environment"]["AGENTKIT_REDIS_URL"].startswith("redis://sample:")
     legal, auth = services["agent-legal"], services["auth-legal"]
     assert legal["build"]["context"] == str(root / "legal") and legal["build"]["dockerfile"] == str(root / "Dockerfile")
     assert legal["build"]["additional_contexts"]["kit"] == str(root.parent.parent)
     assert legal["environment"]["AGENTKIT_SERVICE_NAME"] == "legal-desk" and legal["environment"]["AGENTKIT_TEAM"] == "legal"
     assert legal["environment"]["AGENTKIT_SERVICE_VERSION"] == "0.1.0" and legal["environment"]["AGENTKIT_PRINCIPAL_CLAIMS_HEADER"] == ""
     assert legal["environment"]["AGENTKIT_USER_HEADER"] == "x-forwarded-email"  # same identity rules as the sample
-    assert legal["environment"]["AGENTKIT_REDIS_URL"] == "redis://redis:6379/1"
-    assert services["agent-hr"]["environment"]["AGENTKIT_REDIS_URL"] == "redis://redis:6379/2"
+    assert re.fullmatch(r"redis://agent-legal:[A-Za-z0-9_-]{43}@redis:6379/0", legal["environment"]["AGENTKIT_REDIS_URL"])
+    assert legal["environment"]["AGENTKIT_SESSION_KEY_PREFIX"] == "agentkit:legal:"
+    assert re.fullmatch(r"redis://agent-hr:[A-Za-z0-9_-]{43}@redis:6379/0", services["agent-hr"]["environment"]["AGENTKIT_REDIS_URL"])
     assert services["agent-hr"]["environment"]["AGENTKIT_MODEL"] == "gpt-5-mini"
     assert services["agent-hr"]["environment"]["AGENTKIT_TEAM"] == "people$$ops"  # literal, not interpolated
     assert "ports" not in legal
@@ -166,7 +170,25 @@ def test_platform_mode_routes_internal_agents_through_one_sign_in(stack, tmp_pat
     assert hr["internal"] is True and "host" not in hr and "port" not in hr and hr["created_by"] == "ben@contoso.example"
     assert data["platform"] == {"admins": ["ben@contoso.example", "ops@contoso.example"], "agents_dir": str(agents_dir)}
     services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
-    assert set(services) == {"agent-hr", "fleet", "platform", "auth"}  # no per-agent sign-in proxy or nginx site
+    assert set(services) == {"agent", "agent-hr", "fleet", "platform", "auth", "redis"}  # no per-agent sign-in proxy or nginx site
+    # every agent behind the router gets its own key for the platform's signatures (the sample too)
+    import importlib.util as _u
+    spec = _u.spec_from_file_location("security_t", VPS / "platform" / "security.py")
+    sec = _u.module_from_spec(spec)
+    spec.loader.exec_module(sec)
+    secret = next(line.split("=", 1)[1] for line in (root / ".env").read_text().splitlines()
+                  if line.startswith("PLATFORM_SECRET_KEY="))
+    assert services["agent-hr"]["environment"]["AGENTKIT_PLATFORM_KEY"] == sec.agent_key(secret, "hr")
+    assert services["agent"]["environment"]["AGENTKIT_PLATFORM_KEY"] == sec.agent_key(secret, "sample") != sec.agent_key(secret, "hr")
+    assert services["agent-hr"]["environment"]["AGENTKIT_DELEGATION_HEADER"] == "x-agentkit-delegation"
+    # every agent its own Redis user and key prefix; the ACL file holds only password hashes
+    hr_env = services["agent-hr"]["environment"]
+    assert hr_env["AGENTKIT_REDIS_URL"].startswith("redis://agent-hr:") and hr_env["AGENTKIT_SESSION_KEY_PREFIX"] == "agentkit:hr:"
+    assert services["agent"]["environment"]["AGENTKIT_REDIS_URL"].startswith("redis://sample:")
+    assert "--aclfile" in services["redis"]["command"]
+    acl = (root / "redis" / "users.acl").read_text()
+    assert "user default off" in acl and "~agentkit:hr:*" in acl and hr_env["AGENTKIT_REDIS_URL"].split(":")[2].split("@")[0] not in acl
+    assert services["agent-hr"]["cap_drop"] == ["NET_RAW"] and services["fleet"]["cap_drop"] == ["NET_RAW"]
     assert services["auth"] == {"environment": {"OAUTH2_PROXY_UPSTREAMS": "http://platform:8000"}, "depends_on": ["platform"]}
     platform = services["platform"]
     assert platform["environment"]["PLATFORM_ADMINS"] == "ben@contoso.example,ops@contoso.example"
@@ -175,13 +197,16 @@ def test_platform_mode_routes_internal_agents_through_one_sign_in(stack, tmp_pat
     assert f"{repo}:{repo}" in platform["volumes"] and f"{agents_dir}:{agents_dir}" in platform["volumes"]
     assert "/var/run/docker.sock:/var/run/docker.sock" in platform["volumes"]
     assert services["fleet"]["environment"]["AGENTKIT_FORWARDED_PREFIX_HEADER"] == "x-agentkit-prefix"
-    assert "http://agent-hr:8000||hr|https://${AGENT_HOST}/agents/hr" in services["fleet"]["environment"]["AGENTKIT_FLEET_AGENTS"]
+    # signed agents are read through the platform's read-only window
+    assert "http://platform:8001/read/hr||hr|https://${AGENT_HOST}/agents/hr" in services["fleet"]["environment"]["AGENTKIT_FLEET_AGENTS"]
+    assert "http://platform:8001/read/sample||" in services["fleet"]["environment"]["AGENTKIT_FLEET_AGENTS"]
     assert not list((root / "nginx").glob("*.conf"))
     base = yaml.safe_load((root / "docker-compose.yml").read_text())["services"]["agent"]["environment"]
     assert base["AGENTKIT_FORWARDED_PREFIX_HEADER"] == "x-agentkit-prefix"
     run("remove", "hr")
     run("platform", "--off")
-    assert set(yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]) == {"fleet"}
+    # the sample keeps its own Redis user once it has one
+    assert set(yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]) == {"fleet", "agent", "redis"}
 
 
 def test_platform_needs_real_admin_emails(stack):

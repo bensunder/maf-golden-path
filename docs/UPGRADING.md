@@ -26,6 +26,24 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.9.5 → 0.10.0 (agents calling agents, LangGraph, LangSmith, NIST)
+
+- **Agents call other agents** on a VPS with the platform: **Can call** on the Agents page, or `agentctl.py peers <agent> <a,b>`. Each call acts for the signed-in person (a delegation the platform signs), stays within an admin's allow-list (no loops, 3 deep, 8 calls per request), runs the called agent's own guardrails, and brings its approvals back to the person ([multi-agent.md](multi-agent.md)). The **Agent network** page shows who may call whom, and every call.
+- **LangGraph agents**: `agentkit-langgraph` runs a LangGraph graph as a MAF agent with the kit's tools, guardrails, approvals, sessions and telemetry ([langgraph.md](langgraph.md)). Create agent and the template have **Built with: LangGraph** (`--data framework=langgraph`).
+- **LangSmith**: set `LANGSMITH_API_KEY` to send traces there too (`agentkit-telemetry[langsmith]`), and `agentkit-gate --langsmith-dataset` or `agentkit-langsmith` to record eval runs as datasets and experiments ([telemetry.md](telemetry.md#langsmith), [testing-and-evals.md](testing-and-evals.md#langsmith)).
+- **NIST**: the console's Security page maps the running controls to NIST AI RMF, the GenAI Profile (AI 600-1), CSF 2.0 and SP 800-53 Rev. 5 ([nist.md](nist.md)).
+- **VPS hardening**, on for every agent behind the platform: the router signs each request with that agent's key and agents refuse anything unsigned (`AGENTKIT_PLATFORM_KEY`). Each agent has its own Redis user limited to its own keys. Redis is capped at 256 MB. Containers run without `NET_RAW` and with `no-new-privileges`. The fleet reads agents through the platform.
+- Upgrade a VPS:
+
+  ```bash
+  git fetch --tags && git checkout v0.10.0
+  python3 agentctl.py platform --admins <the same admins>   # writes the keys, Redis users and signing settings
+  docker compose up -d --build
+  ```
+
+  Open conversations and pending approvals are dropped once, because sessions move to per-agent Redis users. Agents added with their own host name (without `--internal`) aren't behind the platform: they keep working, but can't join the agent network until they're re-added with `--internal`. Optional: `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT` in `.env`.
+- Services generated from the template: `copier update` adds `agentkit-telemetry[langsmith]` and `agentkit-testing[langsmith]`. Nothing changes on Azure unless you set `LANGSMITH_API_KEY`.
+
 ### 0.9.4 → 0.9.5 (agent templates in Create agent)
 
 - Create agent can **start from a template**: a specialist's role and procedure become the new agent's instructions, with the library's rules and eval cases added ([vps.md](vps.md#agent-templates)). The kit ships `agent-templates/legal-agents` (30 legal specialists from judicialmind/legal-agents, MIT).

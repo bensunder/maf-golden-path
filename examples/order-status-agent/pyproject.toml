@@ -8,16 +8,16 @@ version = "0.1.0"
 description = "Answers order, shipping and small-refund questions for customer support staff."
 requires-python = ">=3.11"
 dependencies = [
-    "agentkit-hosting[cosmos,redis]>=0.9,<0.10",
-    "agentkit-telemetry[azure]>=0.9,<0.10",
-    "agentkit-tools>=0.9,<0.10",
-    "agentkit-knowledge[blob]>=0.9,<0.10",
-    "agentkit-channels[teams]>=0.9,<0.10",
+    "agentkit-hosting[cosmos,redis]>=0.10,<0.11",
+    "agentkit-telemetry[azure]>=0.10,<0.11",
+    "agentkit-tools>=0.10,<0.11",
+    "agentkit-knowledge[blob]>=0.10,<0.11",
+    "agentkit-channels[teams]>=0.10,<0.11",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "agentkit-testing>=0.9,<0.10",
+    "agentkit-testing>=0.10,<0.11",
 ]
 
 [tool.hatch.build.targets.wheel]

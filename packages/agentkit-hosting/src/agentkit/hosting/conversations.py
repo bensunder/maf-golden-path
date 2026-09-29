@@ -93,6 +93,10 @@ class Caller:
     user_assertion: str | None = None
     display_name: str | None = None
     channel: str = "http"
+    #: The platform's delegation token (VPS platform only), passed on when this agent calls another agent.
+    delegation: str | None = field(default=None, repr=False)
+    #: The agents this request came through, first caller first (empty for a person talking directly).
+    via: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -295,8 +299,12 @@ class ConversationService:
             else:
                 session = self._agent().create_session(session_id=session_key)
             new_meta = {**(record.meta if record else {}), **(meta or {})}
+            if caller.via:
+                new_meta["via"] = list(caller.via)  # which agent(s) asked on the user's behalf
+            chain = {"caller_chain": " > ".join(caller.via)} if caller.via else {}
             with run_context(user_id=caller.user_id, session_id=session_key, tenant_id=caller.tenant_id,
-                             request_id=str(uuid.uuid4()), user_assertion=caller.user_assertion):
+                             request_id=str(uuid.uuid4()), user_assertion=caller.user_assertion,
+                             delegation=caller.delegation, **chain):
                 response = None
                 if stream:
                     updates = self._agent().run(message, session=session, stream=True)
@@ -339,7 +347,8 @@ class ConversationService:
                 audit.append({"id": item["id"], "tool": item["tool"], "arguments": item["arguments"],
                               "approved": decision.approved, "decided_by": caller.user_id,
                               "decided_by_name": caller.display_name, "channel": caller.channel,
-                              "comment": decision.comment, "requested_by": record.owner, "decided_at": now})
+                              "comment": decision.comment, "requested_by": record.owner, "decided_at": now,
+                              **({"via": list(caller.via)} if caller.via else {})})
                 approvals_decided.add(1, {"tool": item["tool"], "decision": "approved" if decision.approved else "rejected"})
                 logger.info("approval %s for tool %s: %s", item["id"], item["tool"],
                             "approved" if decision.approved else "rejected")
@@ -347,9 +356,10 @@ class ConversationService:
             session = AgentSession.from_dict(record.data)
             message = approval_message(pending, {k: v.approved for k, v in decisions.items()})
             # The conversation stays attributed to its owner; tools run with the approver's delegated token.
+            chain = {"caller_chain": " > ".join(caller.via)} if caller.via else {}
             with run_context(user_id=record.owner, session_id=session_id, tenant_id=caller.tenant_id,
                              request_id=str(uuid.uuid4()), user_assertion=caller.user_assertion,
-                             approved_by=caller.user_id or "unknown"):
+                             delegation=caller.delegation, approved_by=caller.user_id or "unknown", **chain):
                 if stream:
                     updates = self._agent().run(message, session=session, stream=True)
                     async for update in updates:

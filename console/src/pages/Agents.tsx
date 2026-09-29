@@ -1,4 +1,4 @@
-import { ExternalLink, Loader2, MessageSquareText, Plug, Plus, Shield, Trash2 } from "lucide-react";
+import { ExternalLink, Loader2, MessageSquareText, Network, Plug, Plus, Shield, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { HealthDot, MoreLink, PostureList, RuntimeGrid, ToolList, useHealth } from "@/components/agent";
@@ -8,7 +8,7 @@ import { Page, PageHeader } from "@/components/ui/page";
 import { EmptyState, ErrorState, InlineNotice, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { StatusBadge, Tag } from "@/components/ui/status";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { ROOT, connectorsApi, platformApi, type Overview, type PlatformAgent, type PlatformInfo, type PlatformJob } from "@/lib/api";
+import { ROOT, connectorsApi, networkApi, platformApi, type Overview, type PlatformAgent, type PlatformInfo, type PlatformJob } from "@/lib/api";
 import { Dialog } from "@/components/ui/overlay";
 import { useJob } from "@/lib/platform";
 import { useLoad } from "@/lib/data";
@@ -27,7 +27,7 @@ export function AgentsPage() {
 // ------------------------------------------------------------------ every agent on the server (VPS platform)
 const JOB_LABEL: Partial<Record<PlatformJob["state"], string>> = {
   queued: "Queued", generating: "Generating", registering: "Registering", building: "Building and running evals",
-  starting: "Starting", removing: "Removing", connecting: "Updating connectors",
+  starting: "Starting", removing: "Removing", connecting: "Updating settings",
 };
 
 function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
@@ -36,6 +36,8 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
   const [removing, setRemoving] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlatformAgent | null>(null);
+  const [peering, setPeering] = useState<PlatformAgent | null>(null);
+  const titleOf = (name: string) => data?.agents.find((a) => a.name === name)?.title ?? name;
 
   const remove = async (a: PlatformAgent) => {
     if (!window.confirm(`Remove ${a.title}? It stops and leaves this server. Its files are kept on the server (in .removed).`)) return;
@@ -80,6 +82,7 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
                 <Th className="hidden md:table-cell">Version</Th>
                 <Th className="hidden lg:table-cell">Created by</Th>
                 <Th className="hidden md:table-cell">Connectors</Th>
+                <Th className="hidden lg:table-cell">Can call</Th>
                 <Th className="text-right">Open</Th>
               </tr>
             </thead>
@@ -136,6 +139,21 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
                         {!info.is_admin && !(a.connectors ?? []).length && <span className="text-[13px] text-zinc-400">None</span>}
                       </div>
                     </Td>
+                    <Td className="hidden lg:table-cell">
+                      {a.internal ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {(a.peers ?? []).map((p) => <Tag key={p}>{titleOf(p)}</Tag>)}
+                          {info.is_admin && (
+                            <Button size="sm" variant="ghost" onClick={() => setPeering(a)} aria-label={`Choose the agents ${a.title} may call`}>
+                              <Network aria-hidden /> {(a.peers ?? []).length ? "Edit" : "Add"}
+                            </Button>
+                          )}
+                          {!info.is_admin && !(a.peers ?? []).length && <span className="text-[13px] text-zinc-400">None</span>}
+                        </div>
+                      ) : (
+                        <span className="text-[13px] text-zinc-400" title="Agents with their own host name don't go through the platform, so they can't call or be called">Own host</span>
+                      )}
+                    </Td>
                     <Td className="text-right">
                       <div className="inline-flex items-center gap-1.5">
                         <ButtonLink size="sm" href={`${base}/console`}>Console</ButtonLink>
@@ -157,6 +175,9 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
         )}
       </Card>
       {editing && <ConnectorsDialog agent={editing} onClose={(changed) => { setEditing(null); if (changed) reload(); }} />}
+      {peering && data && (
+        <PeersDialog agent={peering} agents={data.agents} onClose={(changed) => { setPeering(null); if (changed) reload(); }} />
+      )}
       <InlineNotice className="mt-4">
         {info.is_admin
           ? "You're a platform admin: you can create and remove agents here. Each agent is a Microsoft Agent Framework service with the golden path's guardrails, approvals, sessions, evals and console."
@@ -169,6 +190,67 @@ function PlatformAgentsPage({ info }: { info: PlatformInfo }) {
         )}
       </InlineNotice>
     </Page>
+  );
+}
+
+function PeersDialog({ agent, agents, onClose }: { agent: PlatformAgent; agents: PlatformAgent[]; onClose: (changed: boolean) => void }) {
+  const candidates = agents.filter((a) => a.internal && a.name !== agent.name);
+  const [chosen, setChosen] = useState<Set<string>>(new Set(agent.peers ?? []));
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const { job } = useJob(jobId);
+  const done = job?.state === "ready" || job?.state === "failed";
+  const save = async () => {
+    setProblem(null);
+    try {
+      setJobId((await networkApi.setPeers(agent.name, [...chosen])).id);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "The change couldn't be made.");
+    }
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose(Boolean(jobId))}
+      title={`Agents ${agent.title} may call`}
+      description="Each becomes a tool it can use. Calls go through the platform as the same signed-in person; the other agent's own guardrails and approvals apply, and its approvals come back to that person."
+      footer={
+        jobId ? (
+          <Button variant="primary" disabled={!done} onClick={() => onClose(true)}>{done ? "Close" : <><Loader2 aria-hidden className="animate-spin" /> Restarting…</>}</Button>
+        ) : (
+          <>
+            <Button onClick={() => onClose(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => void save()}>Save and restart</Button>
+          </>
+        )
+      }
+    >
+      {candidates.length === 0 ? (
+        <p className="text-[13px] text-zinc-600">No other agents behind the platform yet. Create one first.</p>
+      ) : (
+        <ul className="space-y-2">
+          {candidates.map((c) => (
+            <li key={c.name}>
+              <label className="flex cursor-pointer gap-3 rounded-md border border-zinc-200 px-3 py-2 hover:border-zinc-300">
+                <input type="checkbox" className="mt-0.5 size-4 accent-zinc-900" checked={chosen.has(c.name)} disabled={Boolean(jobId)}
+                  onChange={(e) => setChosen((s) => { const n = new Set(s); if (e.target.checked) n.add(c.name); else n.delete(c.name); return n; })} />
+                <span>
+                  <span className="block text-sm text-zinc-900">{c.title}</span>
+                  <span className="block font-mono text-xs text-zinc-500">ask_{c.name.replace(/-/g, "_")}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-xs text-zinc-500">Chains stop at 3 agents deep and 8 calls per request, and never loop back.</p>
+      {problem && <InlineNotice tone="bad" className="mt-3">{problem}</InlineNotice>}
+      {job && (
+        <InlineNotice tone={job.state === "failed" ? "bad" : "info"} className="mt-3">
+          {job.state === "ready" ? "Done: the agent is running with its new list." : job.state === "failed" ? `It didn't work: ${job.error}` : "Updating its settings and restarting it…"}
+        </InlineNotice>
+      )}
+    </Dialog>
   );
 }
 

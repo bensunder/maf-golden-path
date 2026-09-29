@@ -14,10 +14,10 @@ About 20 minutes. You need Docker with Compose, a DNS name pointing at the serve
 Clone the release tag (recommended: moving to a newer tag later updates the kit and every agent at once):
 
 ```bash
-git clone --branch v0.9.5 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
+git clone --branch v0.10.0 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
 ```
 
-or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.9.5.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
+or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.10.0.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
 
 ## 2. An Entra app for sign-in
 
@@ -75,7 +75,7 @@ Open `https://<AGENT_HOST>/console/agents`. It lists every agent on the server, 
 
 **Create agent** (admins only) runs these steps, with a live build log:
 
-1. generates a new Microsoft Agent Framework agent from the kit's template (this checkout's version), and, if you picked one, applies an agent template (below);
+1. generates a new agent from the kit's template (this checkout's version), built with Microsoft Agent Framework or [LangGraph](langgraph.md) (**Built with**), and, if you picked one, applies an agent template (below);
 2. registers it;
 3. builds it: the build runs the agent's offline evals, and a failing gate stops it there;
 4. starts it and waits until it answers.
@@ -87,6 +87,7 @@ It then lives at `https://<AGENT_HOST>/agents/<name>/console` and `/chat`: no ne
 - The sign-in proxy forwards to the platform service, which routes `/agents/<name>/…` to that agent, `/fleet/…` to the fleet, and everything else to the sample.
 - It tells each agent where it's mounted (`X-Agentkit-Prefix`, a setting agents read only when `AGENTKIT_FORWARDED_PREFIX_HEADER` is set), and it replaces any value a browser sends.
 - Agents receive the signed-in user (`X-Forwarded-Email`) and nothing that could be replayed: the router drops the sign-in cookie and any `Authorization` header before a request reaches an agent.
+- The router signs every request it forwards with that agent's own key (derived from `PLATFORM_SECRET_KEY`), and agents refuse requests that aren't signed for them. Something else on the Docker network can't pose as a signed-in person.
 - The sample, the agents under `/agents/…` and the platform API share one web origin. Treat the agents on one server as one trust zone: an agent you don't trust belongs on its own stack or host.
 - The platform service controls Docker on this host (it mounts the Docker socket), so:
   - it answers only the sign-in proxy's container, not other containers on the network;
@@ -99,6 +100,12 @@ It then lives at `https://<AGENT_HOST>/agents/<name>/console` and `/chat`: no ne
 - Agents with their own host name (`agentctl.py add` without `--internal`) keep working as before; the console lists them too.
 
 `agentctl.py platform --off` puts the stack back to one sign-in proxy in front of the sample.
+
+## Agents that call other agents
+
+With the platform on, an agent can ask another for help, with the person's identity, guardrails, approvals and audit carried through the whole chain. In the console, set **Can call** on the Agents page. The **Agent network** page shows who may call whom, and every call. On the command line, `python3 agentctl.py peers <agent> <a,b>` does the same. MAF and LangGraph agents call each other both ways. The details, and how it's secured, are in [multi-agent.md](multi-agent.md).
+
+The fleet view reads agents through the platform (`/read/<agent>/…`, the read-only overview, health and eval report only), so it works with signed agents too.
 
 ## Agent templates
 
@@ -156,7 +163,7 @@ The same stack runs any number of agents, each at its own address with its own c
 
 ```bash
 mkdir -p /opt/agents && cd /opt/agents
-copier copy --trust --vcs-ref v0.9.5 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
+copier copy --trust --vcs-ref v0.10.0 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
 ```
 
 Edit its `instructions/system.md`, `tools.py` and `evals/cases.yaml`. Put it in its own git repository: the generated CI runs its evals on every change.
@@ -183,7 +190,7 @@ python3 agentctl.py fleet                                # the fleet view → ht
 - **The fleet reads agents inside the Docker network.** It identifies itself with `X-Forwarded-Email: fleet@agentkit.local` (`AGENTKIT_FLEET_CALLER_HEADER`), and it links people to each agent's public address. It reads only the read-only overview and eval report: never conversations or approvals.
 - **Other commands:** `python3 agentctl.py list`, `remove <name>`, `fleet --off`, and `render` (rewrite the files after editing `agents.yaml` by hand; it checks every entry first). `remove` prints the nginx clean-up, because a site left enabled for a removed agent stops nginx from reloading.
 - **Caddy instead of nginx:** add one block per host, `legal.<your domain> { reverse_proxy 127.0.0.1:<port> }`, with the port from `python3 agentctl.py list`.
-- **Isolation between agents:** agents share one Docker network and one Redis (a database each). Inside the network they trust `X-Forwarded-Email`, so treat the agents on one stack as one trust zone. Run agents that must be isolated from each other on separate stacks or hosts, or on Azure.
+- **Isolation between agents:** agents share one Docker network and one Redis. Each has its own Redis user, limited to its own keys (`agentkit:<name>:`), so it can't read another agent's conversations. Behind the platform, each agent also accepts only requests the platform signed for it. Agents on one stack still share one host, so run agents that must not share a machine on separate hosts, or on Azure.
 
 `agents.yaml`, `docker-compose.agents.yml` and `nginx/` belong to this server and are ignored by git.
 
@@ -199,7 +206,7 @@ The console shows these honestly as *Partial*, so nothing here is hidden.
 | Approvals | Confirmation, or an approver role with separation of duties | Confirmation only: the person who asked confirms. Approver roles need Easy Auth's signed role claims |
 | Sessions | Cosmos DB | Redis in a Docker volume |
 | Knowledge | Azure AI Search, trimmed per user | Off: the search tool reports that it can't search and the agent says so |
-| Live charts | Azure Monitor, managed identity | Not available (the Telemetry page says why). `APPLICATIONINSIGHTS_CONNECTION_STRING` still sends traces to Application Insights if you want them |
+| Live charts | Azure Monitor, managed identity | Not available (the Telemetry page says why). `APPLICATIONINSIGHTS_CONNECTION_STRING` still sends traces to Application Insights, and `LANGSMITH_API_KEY` to [LangSmith](telemetry.md#langsmith), for every agent on the server |
 | Fleet view | Azure discovery and Easy Auth tokens | `agentctl.py fleet`: the agents in this stack, read inside the Docker network. Its Traffic page needs Azure Monitor |
 | Environment | `prod`, enforced policy | `dev`: the prod policy requires Azure, so the service doesn't claim it |
 
@@ -208,6 +215,8 @@ The console shows these honestly as *Partial*, so nothing here is hidden.
 - **Identity comes only from oauth2-proxy.** The agent reads the user from `X-Forwarded-Email`, which oauth2-proxy sets after sign-in, replacing anything the browser sent. The Easy Auth headers are switched off, so sending `X-MS-CLIENT-PRINCIPAL-NAME` gets you nothing (tested).
 - **Keep the agents private.** Never publish port 8000. If an agent were reachable directly, anyone could send `X-Forwarded-Email`. The compose files publish only the sign-in proxies, and only on 127.0.0.1. The same goes for anything else you run on the Docker network: agents trust `X-Forwarded-Email` from inside it (that's how the fleet reads them).
 - **No roles on a VPS.** Without Easy Auth nothing signs role claims, so the stack switches role claims off (`AGENTKIT_PRINCIPAL_CLAIMS_HEADER` is empty) and any role check fails closed. Don't set `AGENTKIT_APPROVER_ROLE`, `AGENTKIT_CONSOLE_ROLE` or `AGENTKIT_FLEET_ROLE`: they would lock everyone out. `agentctl.py` refuses them.
+- **Redis** has no default user. Each agent logs in as its own user, with a password `agentctl.py` generates (only hashes go into `redis/users.acl`). Redis is capped at 256 MB and drops the sessions closest to expiring first when full.
+- **Containers** run with `no-new-privileges` and without `NET_RAW`.
 - `.env` holds secrets (model key, client secret, cookie secret). Keep it out of git and readable only by you (`chmod 600 .env`).
 
 ## Updating

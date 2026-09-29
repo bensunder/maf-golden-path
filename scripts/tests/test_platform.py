@@ -258,3 +258,21 @@ def test_a_fleet_restart_failure_doesnt_undo_a_healthy_agent(platform, monkeypat
         done = wait_for(http, created["id"])
     assert done["state"] == "ready" and done["name"] == "hr-bot-2-0"
     assert any("fleet view didn't restart" in line for line in done["log"])
+
+
+def test_create_a_langgraph_agent(platform, monkeypatch):
+    write_registry(platform, [])
+    recorder = Recorder()
+    builder = platform.Builder(runner=recorder)
+
+    async def ready(job, base=None):
+        return None
+
+    monkeypatch.setattr(builder, "wait_ready", ready)
+    with TestClient(platform.create_app(builder, trusted_peer=None, client=upstreams([]))) as http:
+        bad = http.post("/v1/platform/agents", headers=ADMIN_W, json={"title": "Claims Desk", "framework": "autogen"})
+        created = http.post("/v1/platform/agents", headers=ADMIN_W, json={"title": "Claims Desk", "framework": "langgraph"})
+        done = wait_for(http, created.json()["id"])
+    assert bad.status_code == 422 and "framework" in bad.text
+    assert done["state"] == "ready" and done["framework"] == "langgraph"
+    assert "framework=langgraph" in recorder.calls[0]

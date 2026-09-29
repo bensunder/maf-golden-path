@@ -12,6 +12,8 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 | [Architecture](architecture.md) | Request flow, middleware order, gateway contract, sessions, HTTP API |
 | [Deploying](deploy.md) | Shared platform (AI gateway, models, safety), `azd up` per service, OIDC pipeline, offline validation, troubleshooting |
 | [Running on a VPS](vps.md) | Try the sample agent, web chat and console on your own Linux server with Docker Compose and Entra sign-in, before Azure |
+| [Agents calling agents](multi-agent.md) | On a VPS: one agent asks another, acting for the same person, with guardrails, approvals and audit across the chain |
+| [LangGraph agents](langgraph.md) | A LangGraph graph run as a MAF agent: same tools, guardrails, approvals, sessions, telemetry and console |
 | [Fleet view](fleet.md) | One console for every agent service: health, security posture matrix, quality gates, deployments, traffic per agent. Registry plus Azure discovery |
 | [Console](console.md) | The operations console at `/console`: overview, playground, approvals, evals, security posture, deployments, create agent. Real data only |
 | [Channels: Teams and web chat](channels.md) | Teams bot with approval cards in an approvers channel, AG-UI endpoint, drop-in web chat, offline Teams tests, your own channel |
@@ -22,7 +24,8 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 | [Operations](operations.md) | The platform dashboard and alerts, the metrics every agent emits, judge calibration |
 | [Configuration](configuration.md) | Every `AGENTKIT_*` setting and the prod policy |
 | [Guardrails](guardrails.md) | Prompt Shields, indirect injection, PII, tool policy, token budgets, custom guardrails |
-| [Telemetry](telemetry.md) | Spans, attributes, metrics, destinations, KQL queries |
+| [Telemetry](telemetry.md) | Spans, attributes, metrics, destinations (Application Insights, OTLP, LangSmith), KQL queries |
+| [NIST frameworks](nist.md) | The Security page's mapping to NIST AI RMF, the GenAI Profile, CSF 2.0 and SP 800-53, with live evidence |
 | [Testing and evals](testing-and-evals.md) | `ScriptedChatClient`, eval case format, offline vs live |
 | [FAQ and escape hatches](faq.md) | Stepping off the paved road safely |
 | [Upgrading](UPGRADING.md) | MAF version policy, for the platform team |

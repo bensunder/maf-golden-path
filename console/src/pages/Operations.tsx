@@ -3,6 +3,7 @@ import { ExternalLink, GitCommitHorizontal, Library, Lock, Rocket, Shield, Termi
 import type { ReactNode } from "react";
 
 import { HealthDot, MoreLink, PostureList, postureSummary, useHealth } from "@/components/agent";
+import { FrameworkCoverage } from "@/components/nist";
 import { Card, CardBody, CardHeader, KeyValue } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/overlay";
 import { Page, PageHeader } from "@/components/ui/page";
@@ -13,6 +14,7 @@ import { api, type Overview } from "@/lib/api";
 import { safeUrl } from "@/lib/agui";
 import { useLoad, useOverview } from "@/lib/data";
 import { dateTime, duration, environmentLabel, number, timeAgo } from "@/lib/format";
+import { gateControl } from "@/lib/nist";
 
 /** Renders the page body once the overview is loaded, with shared loading and error states. */
 function WithOverview({ title, children }: { title: string; children: (data: Overview) => ReactNode }) {
@@ -150,13 +152,17 @@ function Perm({ title, on, children }: { title: string; on: boolean; children: R
 
 // ------------------------------------------------------------------ security
 export function SecurityPage() {
+  const evals = useLoad(api.evals);
   return (
     <Page>
       <PageHeader title="Security" description="Controls in force for this agent, read from its middleware stack and settings at runtime." />
       <WithOverview title="Security">
         {(data) => {
           const s = postureSummary(data.security);
+          const report = evals.data?.report;
+          const evidence = [...data.security, gateControl(report ? { passed: !!report.passed, live: !!report.live, pass_rate: report.pass_rate ?? 0 } : null)];
           return (
+            <div className="space-y-6">
             <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
               <Card>
                 <CardHeader title="Security posture" icon={<Shield aria-hidden />} action={<StatusBadge tone={s.tone}>{s.label}</StatusBadge>} />
@@ -181,6 +187,8 @@ export function SecurityPage() {
                   model access goes through the gateway with managed identity, and prompt content stays out of telemetry.
                 </InlineNotice>
               </div>
+            </div>
+            <FrameworkCoverage controls={evidence} />
             </div>
           );
         }}

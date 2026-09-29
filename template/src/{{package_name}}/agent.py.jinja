@@ -1,7 +1,7 @@
 """{{ project_name }}: agent definition.
 
-Most changes to this service happen in ``tools.py`` and ``instructions/system.md``.
-Model access, auth, guardrails, telemetry, sessions and run limits come from agentkit.
+Most changes to this service happen in ``tools.py`` and ``instructions/system.md``{% if framework == 'langgraph' %} (and ``graph.py``, the shape of
+the graph){% endif %}. Model access, auth, guardrails, telemetry, sessions and run limits come from agentkit.
 """
 
 from __future__ import annotations
@@ -9,7 +9,14 @@ from __future__ import annotations
 from importlib.resources import files
 
 from agent_framework import Agent, SupportsChatGetResponse
+{%- if framework == 'langgraph' %}
+from agentkit.hosting import AgentKitSettings, load_instructions
+from agentkit.langgraph import build_graph_agent
+
+from .graph import build_graph
+{%- else %}
 from agentkit.hosting import AgentKitSettings, build_agent, load_instructions
+{%- endif %}
 
 from .tools import APPROVAL_RULES, TOOL_POLICY, TOOLS
 
@@ -21,6 +28,20 @@ INSTRUCTIONS = files(__package__) / "instructions" / "system.md"
 def create_agent(settings: AgentKitSettings | None = None, client: SupportsChatGetResponse | None = None) -> Agent:
     """Build the agent. Tests pass a ``ScriptedChatClient``; the service uses the gateway client."""
     settings = settings or AgentKitSettings()
+{%- if framework == 'langgraph' %}
+    # A LangGraph graph, run as a MAF agent: the same guardrails, approvals, sessions and telemetry as every agent.
+    return build_graph_agent(
+        name=AGENT_NAME,
+        description=DESCRIPTION,
+        instructions=load_instructions(INSTRUCTIONS),
+        tools=TOOLS,
+        graph=build_graph,
+        tool_policy=TOOL_POLICY,
+        approval_rules=APPROVAL_RULES,
+        settings=settings,
+        client=client,
+    )
+{%- else %}
     return build_agent(
         name=AGENT_NAME,
         description=DESCRIPTION,
@@ -31,3 +52,4 @@ def create_agent(settings: AgentKitSettings | None = None, client: SupportsChatG
         settings=settings,
         client=client,
     )
+{%- endif %}

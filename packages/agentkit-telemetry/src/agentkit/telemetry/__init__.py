@@ -3,7 +3,7 @@
 from .context import RunContext, get_run_context, run_context
 from .middleware import AgentRunMetricsMiddleware
 from .processor import RunContextSpanProcessor
-from .setup import setup_telemetry
+from .setup import langsmith_exporter, setup_telemetry
 
 __all__ = [
     "AgentRunMetricsMiddleware",
@@ -12,4 +12,5 @@ __all__ = [
     "get_run_context",
     "run_context",
     "setup_telemetry",
+    "langsmith_exporter",
 ]

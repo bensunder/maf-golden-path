@@ -38,6 +38,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from connectors import (CONNECTOR_NAME, Activity, ConnectorError, Store, Vault, check_url, policy_of,  # noqa: E402
                         create_gateway, list_tools, public_view, validate_entry)
+from agentcalls import MAX_CALLS as MAX_CALLS_LIMIT, MAX_DEPTH as MAX_DEPTH_LIMIT, CallLog, install_agent_calls  # noqa: E402
+from security import DELEGATION_HEADER, NONCE_HEADER, SIGNATURE_HEADER, SIGNED_AT_HEADER, delegation_key, mint, signed_headers  # noqa: E402
 from templates import TEMPLATE_ID, TemplateError, apply_template, library_view, load_catalog, public, template_body  # noqa: E402
 
 HOME = Path(os.getenv("PLATFORM_HOME", "/opt/maf-golden-path"))
@@ -61,13 +63,18 @@ _NAME = re.compile(r"[a-z][a-z0-9-]{0,30}[a-z0-9]")
 _TITLE = re.compile(r"[A-Za-z][A-Za-z0-9 .,()&+-]{1,58}[A-Za-z0-9).]")
 _TEXT = re.compile(r"[A-Za-z0-9 .,;:!?()&+/%#@-]{0,240}")  # no quotes, braces or backslashes: it lands in code
 _TEAM = re.compile(r"[a-z][a-z0-9-]{1,30}")
+FRAMEWORKS = {"maf", "langgraph"}  # Microsoft Agent Framework, or a LangGraph graph run on the same host
 RESERVED = {"agent", "auth", "redis", "fleet", "platform", "www", "api", "console", "chat", "v1", "sample"}
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f\x7f]")
 _HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
         "transfer-encoding", "upgrade", "host", "content-length"}
 # agents get the signed-in user (X-Forwarded-Email) and nothing that could be replayed: not the sign-in cookie,
 # not credentials, not the router's own markers as a browser sent them
-_NOT_FORWARDED = {"cookie", "authorization", "x-agentkit-prefix", "x-agentkit-platform"}
+_NOT_FORWARDED = {"cookie", "authorization", "x-agentkit-prefix", "x-agentkit-platform",
+                  DELEGATION_HEADER, SIGNATURE_HEADER, SIGNED_AT_HEADER, NONCE_HEADER}
+MAX_FORWARDED_BODY = 8 * 1024 * 1024  # what an agent verifies a signature over (chat and approval requests are small)
+DELEGATION_SECONDS = 600  # a person's request, and every agent call made for it, must finish within this
+DECIDE_SECONDS = 120  # the request in which the person approves: its decision must reach the other agent quickly
 MAX_JOBS = 50
 _API_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
@@ -94,8 +101,10 @@ def assignments() -> dict[str, dict]:
     return out
 
 
-STORE = Store(VPS / "connectors.json", Vault(os.getenv("PLATFORM_SECRET_KEY") or None))
+SECRET = os.getenv("PLATFORM_SECRET_KEY") or ""
+STORE = Store(VPS / "connectors.json", Vault(SECRET or None))
 ACTIVITY = Activity()
+CALLS = CallLog()  # agent-to-agent calls
 CATALOG_LOCK = asyncio.Lock()  # one change to connectors.json at a time
 
 
@@ -115,11 +124,12 @@ class Job:
         self.created_at = time.time()
         self.finished_at: float | None = None
         self.template: str | None = None
+        self.framework = "maf"
 
     def view(self, log: bool = True) -> dict:
         body = {"id": self.id, "name": self.name, "title": self.title, "created_by": self.user, "state": self.state,
                 "error": self.error, "failed_step": self.failed_step, "created_at": self.created_at, "finished_at": self.finished_at,
-                "path": f"/agents/{self.name}", "template": self.template}
+                "path": f"/agents/{self.name}", "template": self.template, "framework": self.framework}
         if log:
             body["log"] = list(self.log)
         return body
@@ -168,11 +178,12 @@ class Builder:
             raise RuntimeError(f"{' '.join(argv[:3])} failed (exit {proc.returncode})")
 
     def start(self, name: str, title: str, description: str, team: str, knowledge: bool, user: str,
-              connectors: list[str] | None = None, template: str | None = None) -> Job:
+              connectors: list[str] | None = None, template: str | None = None, framework: str = "maf") -> Job:
         job = Job(name, title, user)
         job.template = template
+        job.framework = framework
         self._add(job)
-        self._spawn(self._create(job, description, team, knowledge, connectors or [], template))
+        self._spawn(self._create(job, description, team, knowledge, connectors or [], template, framework))
         return job
 
     def start_assign(self, name: str, connectors: list[str], user: str) -> Job:
@@ -181,6 +192,14 @@ class Builder:
         job.state = "connecting"
         self._add(job)
         self._spawn(self._assign(job, connectors))
+        return job
+
+    def start_peers(self, name: str, peers: list[str], user: str) -> Job:
+        """Set which agents an agent may call: new settings and a restart, no rebuild."""
+        job = Job(name, name, user)
+        job.state = "connecting"
+        self._add(job)
+        self._spawn(self._assign(job, peers, command="peers"))
         return job
 
     def start_refresh(self, agents: list[str], user: str, label: str) -> Job:
@@ -195,10 +214,10 @@ class Builder:
     def service_of(name: str) -> str:
         return "agent" if name == "sample" else f"agent-{name}"
 
-    async def _assign(self, job: Job, connectors: list[str]) -> None:
+    async def _assign(self, job: Job, connectors: list[str], command: str = "connect") -> None:
         async with self.lock:
             try:
-                await self.run(job, [sys.executable, "agentctl.py", "connect", job.name, ",".join(connectors) or "none"], VPS, 60)
+                await self.run(job, [sys.executable, "agentctl.py", command, job.name, ",".join(connectors) or "none"], VPS, 60)
                 await self.run(job, ["docker", "compose", "up", "-d", self.service_of(job.name)], VPS, 300)
                 await self.wait_ready(job, SAMPLE if job.name == "sample" else None)
                 job.state = "ready"
@@ -222,7 +241,7 @@ class Builder:
                 job.finished_at = time.time()
 
     async def _create(self, job: Job, description: str, team: str, knowledge: bool, connectors: list[str],
-                      template: str | None = None) -> None:
+                      template: str | None = None, framework: str = "maf") -> None:
         async with self.lock:
             folder = AGENTS_DIR / job.name
             generated = registered = False
@@ -237,6 +256,7 @@ class Builder:
                                      "--data", f"description={description}",
                                      "--data", f"team={team}", "--data", "enable_web_chat=true",
                                      "--data", "enable_teams=false", "--data", f"enable_knowledge={str(knowledge).lower()}",
+                                     "--data", f"framework={framework}",
                                      str(HOME), str(folder)], VPS, 300)
                 if template:
                     self.apply(job, folder, template)
@@ -428,9 +448,10 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         rows = [{"name": "sample", "title": "Order Status Agent (sample)", "path": "", "internal": True,
                  "created_by": None, "created_at": None, "service": "order-status-agent", "url": SAMPLE}]
         rows[0]["connectors"] = (data.get("sample") or {}).get("connectors") or []
+        rows[0]["peers"] = (data.get("sample") or {}).get("peers") or []
         for a in data["agents"]:
             internal = bool(a.get("internal"))
-            rows.append({"connectors": a.get("connectors") or [], "name": a["name"], "title": a.get("title") or a.get("service") or a["name"],
+            rows.append({"connectors": a.get("connectors") or [], "peers": a.get("peers") or [], "name": a["name"], "title": a.get("title") or a.get("service") or a["name"],
                          "path": f"/agents/{a['name']}", "internal": internal,
                          "host": None if internal else a.get("host"), "service": a.get("service"),
                          "created_by": a.get("created_by"), "created_at": a.get("created_at"),
@@ -459,7 +480,10 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         knowledge = body.get("knowledge", False)
         connectors = body.get("connectors") or []
         template = body.get("template") or None
+        framework = body.get("framework") or "maf"
         problems = []
+        if framework not in FRAMEWORKS:
+            problems.append("framework: maf or langgraph")
         if template is not None and not (isinstance(template, str) and TEMPLATE_ID.fullmatch(template)
                                          and template in load_catalog(TEMPLATES_DIR)["templates"]):
             problems.append("template: the id of an installed template")
@@ -482,7 +506,7 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
             raise HTTPException(409, f"an agent named {name} already exists")
         if any(j.name == name and j.state not in ("ready", "failed", "removed") for j in builder.jobs.values()):
             raise HTTPException(409, f"{name} is already being created")
-        job = builder.start(name, title, description, team, knowledge, user, connectors, template)
+        job = builder.start(name, title, description, team, knowledge, user, connectors, template, framework)
         return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
 
     @app.get("/v1/platform/jobs/{job_id}")
@@ -659,12 +683,46 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         job = builder.start_assign(name, sorted(set(wanted)), user)
         return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
 
+    # ------------------------------------------------------------------ agent network
+    def callable_agents() -> dict[str, dict]:
+        data = registry()
+        out = {"sample": {"title": "Order Status Agent (sample)", "peers": (data.get("sample") or {}).get("peers") or []}}
+        for a in data["agents"]:
+            if isinstance(a, dict) and a.get("internal"):
+                out[a["name"]] = {"title": a.get("title") or a.get("service") or a["name"], "peers": a.get("peers") or []}
+        return out
+
+    @app.get("/v1/platform/network")
+    async def network(request: Request) -> JSONResponse:
+        user = user_of(request)
+        agents = callable_agents()
+        edges = [{"from": a, "to": p} for a, v in agents.items() for p in v["peers"] if p in agents]
+        calls = CALLS.recent(None if user in ADMINS else user)
+        return JSONResponse({"agents": [{"name": n, "title": v["title"], "peers": v["peers"]} for n, v in agents.items()],
+                             "edges": edges, "calls": calls, "all_calls": user in ADMINS,
+                             "limits": {"depth": MAX_DEPTH_LIMIT, "calls_per_request": MAX_CALLS_LIMIT}},
+                            headers=_API_HEADERS)
+
+    @app.put("/v1/platform/agents/{name}/peers", status_code=202)
+    async def agent_peers(name: str, request: Request) -> JSONResponse:
+        user = admin(request)
+        body = await json_body(request)
+        wanted = body.get("peers")
+        agents = callable_agents()
+        if name not in agents:
+            raise HTTPException(404, f"no agent named {name} behind the platform (agents with their own host name can't join)")
+        if not isinstance(wanted, list) or not all(isinstance(p, str) and p in agents and p != name for p in wanted):
+            raise HTTPException(422, "peers: names of other agents on this server")
+        busy()
+        job = builder.start_peers(name, sorted(set(wanted)), user)
+        return JSONResponse(job.view(), status_code=202, headers=_API_HEADERS)
+
     @app.api_route("/v1/platform/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
     async def platform_other(rest: str) -> Response:  # never falls through to an agent
         raise HTTPException(404, "not a platform endpoint")
 
     # ------------------------------------------------------------------ router
-    async def forward(request: Request, base: str, path: str, prefix: str) -> Response:
+    async def forward(request: Request, base: str, path: str, prefix: str, agent: str | None = None) -> Response:
         listed = {h.strip().lower() for h in request.headers.get("connection", "").split(",") if h.strip()}
         headers = [(k, v) for k, v in request.headers.items()
                    if k.lower() not in _HOP and k.lower() not in _NOT_FORWARDED and k.lower() not in listed]
@@ -673,7 +731,36 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
         if prefix:
             headers.append((PREFIX_HEADER, prefix))
         url = base + path + (("?" + request.url.query) if request.url.query else "")
-        upstream = http.build_request(request.method, url, headers=headers, content=request.stream())
+        content: Any = request.stream()
+        if agent and SECRET:
+            # Signed for this agent: the method, path, user, delegation and body. The delegation token says whom
+            # the request acts for; the agent passes it back if it calls another agent, and nothing else can.
+            content = b""
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                declared = request.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > MAX_FORWARDED_BODY:
+                    raise HTTPException(413, "request too large")
+                chunks, size = [], 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_FORWARDED_BODY:
+                        raise HTTPException(413, "request too large")
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+            user = next((v for k, v in headers if k.lower() == USER_HEADER), "")
+            # Only requests that can run the agent get a delegation (pages, assets and probes don't), and only the
+            # one in which the person submits an approval may carry a decision on to another agent.
+            if user and request.method == "POST":
+                kind = "decide" if _is_approval(path, content) else "turn"
+                lifetime = DECIDE_SECONDS if kind == "decide" else DELEGATION_SECONDS
+                delegation = mint(delegation_key(SECRET), user=user, audience=agent, chain=[], root=uuid.uuid4().hex,
+                                  expires=time.time() + lifetime, kind=kind)
+                headers.append((DELEGATION_HEADER, delegation))
+        upstream = http.build_request(request.method, url, headers=headers, content=content)
+        if agent and SECRET:
+            user = upstream.headers.get(USER_HEADER, "")
+            upstream.headers.update(signed_headers(SECRET, agent, request.method, upstream.url.raw_path.decode("ascii"),
+                                                   user, upstream.headers.get(DELEGATION_HEADER, ""), content))
         try:
             response = await http.send(upstream, stream=True)
         except httpx.HTTPError:
@@ -709,7 +796,7 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
     async def agent_route(name: str, rest: str, request: Request) -> Response:
         if not _NAME.fullmatch(name) or name not in agent_names():  # only registered agents, never any container
             raise HTTPException(404, f"no agent named {name}")
-        return await forward(request, UPSTREAM.format(name=name), "/" + rest, f"/agents/{name}")
+        return await forward(request, UPSTREAM.format(name=name), "/" + rest, f"/agents/{name}", agent=name)
 
     @app.api_route("/fleet/{rest:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def fleet_route(rest: str, request: Request) -> Response:
@@ -720,9 +807,46 @@ def create_app(builder: Builder | None = None, *, trusted_peer: str | None = TRU
     @app.api_route("/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
                    include_in_schema=False)
     async def sample_route(rest: str, request: Request) -> Response:
-        return await forward(request, SAMPLE, "/" + rest, "")
+        return await forward(request, SAMPLE, "/" + rest, "", agent="sample")
 
     return app
+
+
+_APPROVALS_PATH = re.compile(r"/v1/sessions/[A-Za-z0-9_.:-]{1,128}/approvals")
+
+
+def _is_approval(path: str, body: bytes) -> bool:
+    """The person approving something: the JSON API's decision endpoint, or an AG-UI run resuming interrupts (how
+    the web chat and the console send Approve), with at least one decision that approves. Rejections, and
+    everything else, never carry a decision on to another agent."""
+    if not body or not (_APPROVALS_PATH.fullmatch(path) or path == "/v1/agui"):
+        return False
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if path == "/v1/agui":
+        entries = payload.get("resume")
+        return isinstance(entries, list) and any(
+            isinstance(e, dict) and e.get("status", "resolved") == "resolved" and isinstance(e.get("payload"), dict)
+            and e["payload"].get("approved") is True for e in entries)
+    decisions = payload.get("decisions")
+    return isinstance(decisions, list) and any(isinstance(d, dict) and d.get("approved") is True for d in decisions)
+
+
+def upstream_of(agent: str) -> str:
+    return SAMPLE if agent == "sample" else UPSTREAM.format(name=agent)
+
+
+def create_internal_gateway(client: httpx.AsyncClient | None = None) -> FastAPI:
+    """Port 8001, for containers on the Docker network: connectors, agent-to-agent calls, the fleet's reads."""
+    gateway = create_gateway(STORE, assignments, ACTIVITY, client)
+    if SECRET:
+        install_agent_calls(gateway, secret=SECRET, registry=registry, assignments=assignments, upstream=upstream_of,
+                            is_fleet=lambda address: _is_peer("fleet", address), log=CALLS, client=client)
+    return gateway
 
 
 def serve() -> None:
@@ -731,8 +855,8 @@ def serve() -> None:
 
     async def main() -> None:
         public = uvicorn.Server(uvicorn.Config(create_app(), host="0.0.0.0", port=8000, log_level="info"))
-        gateway = uvicorn.Server(uvicorn.Config(create_gateway(STORE, assignments, ACTIVITY), host="0.0.0.0",
-                                                port=8001, log_level="warning"))
+        gateway = uvicorn.Server(uvicorn.Config(create_internal_gateway(), host="0.0.0.0", port=8001,
+                                                log_level="warning"))
         await asyncio.gather(public.serve(), gateway.serve())
 
     asyncio.run(main())

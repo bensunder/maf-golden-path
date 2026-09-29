@@ -16,6 +16,7 @@ import { TelemetryPage } from "@/pages/Telemetry";
 import { OverviewPage } from "@/pages/Overview";
 import { CreateAgentPage, PlatformPage } from "@/pages/Platform";
 import { ConnectorDetailPage, ConnectorsPage, NewConnectorPage } from "@/pages/Connectors";
+import { NetworkPage } from "@/pages/Network";
 import { PlaygroundPage } from "@/pages/Playground";
 import { SessionsPage } from "@/pages/Sessions";
 import { useEffect } from "react";
@@ -34,6 +35,7 @@ const TITLES: Record<string, string> = {
   "/deployments": "Deployments",
   "/platform": "Platform",
   "/connectors": "Connectors",
+  "/network": "Agent network",
   "/connectors/new": "Add connector",
   "/settings": "Settings",
 };
@@ -76,6 +78,8 @@ function Routes() {
       return <SettingsPage />;
     case "/connectors":
       return <ConnectorsPage />;
+    case "/network":
+      return <NetworkPage />;
     case "/connectors/new":
       return <NewConnectorPage />;
   }

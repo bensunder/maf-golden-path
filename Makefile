@@ -1,6 +1,7 @@
 PY ?= python
-PACKAGES := testing telemetry guardrails tools hosting channels knowledge
+PACKAGES := testing telemetry guardrails tools hosting channels knowledge langgraph
 EXTRAS_hosting := [redis,cosmos]
+EXTRAS_telemetry := [langsmith]
 EXTRAS_channels := [teams]
 EXTRAS_knowledge := [blob]
 PLAYWRIGHT_VERSION ?= 1.56.0
@@ -52,7 +53,7 @@ test-example:
 
 TEAMS := --data enable_teams=true --data enable_web_chat=false --data enable_knowledge=true
 
-test-template:      ## render both install modes, with and without Teams; run the generated projects' tests
+test-template:      ## render both install modes, with and without Teams, and a LangGraph agent; run the generated projects' tests
 	rm -rf $(GEN_DIR)
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=feed . $(GEN_DIR)/feed
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=git . $(GEN_DIR)/git
@@ -64,6 +65,9 @@ test-template:      ## render both install modes, with and without Teams; run th
 	cd $(GEN_DIR)/feed && $(PY) -m pytest -q -p no:cacheprovider
 	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed-teams
 	cd $(GEN_DIR)/feed-teams && $(PY) -m pytest -q -p no:cacheprovider
+	copier copy --defaults --vcs-ref HEAD -q --data project_name="Graph Check" --data agentkit_source=feed --data framework=langgraph . $(GEN_DIR)/feed-langgraph
+	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed-langgraph
+	cd $(GEN_DIR)/feed-langgraph && $(PY) -m pytest -q -p no:cacheprovider
 
 test-infra: tools   ## Bicep build+lint, azure.yaml schema, workflow lint, platform↔service contract
 	test -d $(GEN_DIR)/git-teams || $(MAKE) test-template

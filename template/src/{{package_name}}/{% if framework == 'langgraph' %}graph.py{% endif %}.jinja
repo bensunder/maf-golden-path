@@ -1,0 +1,32 @@
+"""The graph: how {{ project_name }} works through a request. Change its shape here.
+
+``model`` is a LangChain chat model over the kit's client: every call goes through the AI gateway, with PII
+redacted and a span in your traces. ``tools`` are the tools in ``tools.py``; every call to one runs the kit's
+tool policy and output scanning, and tools marked ``approval_mode="always_require"`` pause the graph until a
+person decides. The kit compiles the graph with a checkpointer kept in the session, so a paused graph resumes on
+any replica.
+
+This starting graph is a tool-calling loop. Add nodes for your own steps (triage, retrieval, review, ...) and
+route between them with edges; ``agentkit.langgraph.react_graph`` is the same loop, ready-made.
+"""
+
+from __future__ import annotations
+
+from langchain_core.messages import SystemMessage
+from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
+
+
+def build_graph(model, tools, instructions: str) -> StateGraph:
+    bound = model.bind_tools(tools) if tools else model
+
+    async def agent(state: MessagesState) -> dict:
+        return {"messages": [await bound.ainvoke([SystemMessage(instructions), *state["messages"]])]}
+
+    graph = StateGraph(MessagesState)
+    graph.add_node("agent", agent)
+    graph.add_node("tools", ToolNode(tools))
+    graph.add_edge(START, "agent")
+    graph.add_conditional_edges("agent", tools_condition)  # tool calls -> "tools", an answer -> the end
+    graph.add_edge("tools", "agent")
+    return graph

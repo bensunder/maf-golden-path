@@ -89,7 +89,12 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
 
     controls: list[dict[str, str]] = []
     hosted = _hosting()["platform"] != "Local"
-    if settings.require_user and hosted:
+    signed = bool(settings.platform_key)
+    if settings.require_user and signed:
+        controls.append(_control("entra_auth", "Entra authentication", "on",
+                                 "People sign in with Entra at the platform's sign-in proxy, and this agent only accepts "
+                                 "requests the platform signed for it: nothing else on the network can claim to be a user."))
+    elif settings.require_user and hosted:
         controls.append(_control("entra_auth", "Entra authentication", "on",
                                  "Calls without a signed-in identity are refused (401). The service trusts the identity "
                                  "headers, so it must sit behind Easy Auth or APIM; the generated Bicep puts it behind "
@@ -173,11 +178,24 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
                              f"at most {settings.max_iterations} model calls and {settings.max_function_calls} "
                              f"tool calls per run." if budget else "No per-session token budget."))
 
-    exporter = bool(settings.appinsights_connection_string or settings.otlp_endpoint)
-    controls.append(_control("audit", "Audit logging", "on" if exporter else "partial",
+    if signed:
+        controls.append(_control("platform_signing", "Signed requests only", "on",
+                                 "Every request must carry the platform's signature for this agent (method, path, user, "
+                                 "delegation and body, used once, within two minutes); anything else gets 401."))
+        peers = _peer_names(settings)
+        controls.append(_control("agent_delegation", "Agent-to-agent calls", "on",
+                                 (f"May call {', '.join(peers)} through the platform, " if peers else "Calls no other agents. ")
+                                 + "Calls between agents act for the same signed-in person, only where an admin allowed "
+                                   "them, with no loops, at most 3 deep and 8 per request; the other agent's approvals "
+                                   "come back to the person, and every call is logged with its chain."))
+
+    langsmith = bool(settings.langsmith_api_key and settings.langsmith_api_key.get_secret_value())
+    sinks = [name for name, on in (("Application Insights", bool(settings.appinsights_connection_string)),
+                                   ("OTLP", bool(settings.otlp_endpoint)), ("LangSmith", langsmith)) if on]
+    controls.append(_control("audit", "Audit logging", "on" if sinks else "partial",
                              "Approval decisions are kept with the session; runs, users and decisions are traced to "
-                             + ("Application Insights." if settings.appinsights_connection_string else "OTLP.")
-                             if exporter else
+                             + " and ".join(sinks) + "."
+                             if sinks else
                              "Approval decisions are kept with the session, but no telemetry exporter is configured."))
     controls.append(_control("content_capture", "No prompt content in telemetry",
                              "off" if settings.capture_message_content else "on",
@@ -186,10 +204,24 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
     return controls
 
 
+def _peer_names(settings: Any) -> list[str]:
+    try:
+        entries = json.loads(getattr(settings, "peers", None) or "[]")
+    except ValueError:
+        return []
+    return [str(e.get("title") or e.get("name")) for e in entries if isinstance(e, dict) and e.get("name")]
+
+
+def _agent_tools(agent: Any) -> list[Any]:
+    """A MAF agent's tools, or a LangGraph agent's (agentkit.langgraph keeps them on the agent)."""
+    return list((getattr(agent, "default_options", None) or {}).get("tools") or getattr(agent, "tools", None) or [])
+
+
 def describe_tools(agent: Any) -> list[dict[str, Any]]:
-    tools = (getattr(agent, "default_options", None) or {}).get("tools") or []
-    rules = any(type(m).__name__ == "ToolApprovalMiddleware" and getattr(m, "auto_approval_rules", None)
-                for m in getattr(agent, "middleware", None) or [])
+    tools = _agent_tools(agent)
+    rules = bool(getattr(agent, "approval_rules", None)) or any(
+        type(m).__name__ == "ToolApprovalMiddleware" and getattr(m, "auto_approval_rules", None)
+        for m in getattr(agent, "middleware", None) or [])
     result = []
     for t in tools:
         name = getattr(t, "name", None)
@@ -200,8 +232,11 @@ def describe_tools(agent: Any) -> list[dict[str, Any]]:
         if mode == "always_require":
             approval = "rules" if rules else "always"
         props = getattr(t, "additional_properties", None) or {}
-        result.append({"name": name, "description": (getattr(t, "description", "") or "")[:300], "approval": approval,
-                       "kind": "knowledge" if "agentkit.knowledge" in props else "function"})
+        kind = "knowledge" if "agentkit.knowledge" in props else "agent" if "agentkit.peer" in props else "function"
+        row = {"name": name, "description": (getattr(t, "description", "") or "")[:300], "approval": approval, "kind": kind}
+        if kind == "agent":
+            row["agent"] = props["agentkit.peer"]
+        result.append(row)
     for server in getattr(agent, "mcp_tools", None) or []:  # connectors (MCP servers): one row per allowed tool
         mode = getattr(server, "approval_mode", None)
         always = set((mode or {}).get("always_require_approval") or []) if isinstance(mode, dict) else set()
@@ -214,7 +249,7 @@ def describe_tools(agent: Any) -> list[dict[str, Any]]:
 
 
 def _knowledge(agent: Any) -> dict[str, Any] | None:
-    for t in (getattr(agent, "default_options", None) or {}).get("tools") or []:
+    for t in _agent_tools(agent):
         props = getattr(t, "additional_properties", None) or {}
         if "agentkit.knowledge" in props:
             return {"tool": getattr(t, "name", None), **props["agentkit.knowledge"]}
@@ -375,6 +410,7 @@ class Console:
         except HTTPException:
             raise HTTPException(503, "agent not initialised") from None
         exporter = "app_insights" if s.appinsights_connection_string else ("otlp" if s.otlp_endpoint else None)
+        langsmith = bool(s.langsmith_api_key and s.langsmith_api_key.get_secret_value())
         body = {
             "service": {
                 "name": s.service_name, "title": self.title or s.service_name, "version": s.service_version,
@@ -388,6 +424,8 @@ class Console:
             "caller": {"user": caller.user_id, "is_approver": caller.is_approver},
             "agent": {
                 "name": agent.name, "description": agent.description, "model": s.model,
+                "framework": (getattr(agent, "additional_properties", None) or {}).get("agentkit.framework", "maf"),
+                "peers": _peer_names(s), "platform_signed": bool(s.platform_key),
                 "gateway": bool(s.gateway_endpoint), "auth_mode": s.auth_mode,
                 "tools": describe_tools(agent),
                 "limits": {"max_iterations": s.max_iterations, "max_function_calls": s.max_function_calls,
@@ -402,7 +440,7 @@ class Console:
             "approvals": {"mode": "separation" if s.approver_role and s.approval_separation
                           else ("approver" if s.approver_role else "confirmation"),
                           "approver_role": s.approver_role},
-            "telemetry": {"exporter": exporter, "capture_content": s.capture_message_content,
+            "telemetry": {"exporter": exporter, "langsmith": langsmith, "capture_content": s.capture_message_content,
                           "workbook_url": self.workbook_url, "live_charts": bool(self._logs or self._logs_scope)},
             "links": {"docs": self.docs_url, "chat": (prefix + chat) if (chat := _path_of(self._app, "WebChat")) else None},
         }
