@@ -114,14 +114,29 @@
   .facts p { color: var(--steel); font-size: 0.98rem; }
   @media (max-width: 760px) { .facts { grid-template-columns: 1fr; gap: 20px; } }
 
-  /* screenshots */
-  .shots { display: grid; grid-template-columns: 1.5fr 1fr; gap: 28px; align-items: start; }
-  .shots figure { margin: 0; min-width: 0; }
-  .shots img { border: 1px solid var(--lane); border-radius: 6px; background: var(--white); }
-  .shots figcaption { color: var(--steel); font-size: 0.93rem; margin-top: 10px; max-width: 60ch; }
-  .shots .side { display: grid; gap: 28px; }
-  .shots .pair { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-  @media (max-width: 820px) { .shots, .shots .pair { grid-template-columns: 1fr; } }
+  /* product tour */
+  .tour { margin-top: clamp(64px, 9vw, 112px); padding: clamp(56px, 8vw, 96px) 0; background: #eceff4; }
+  .tour .head { margin-bottom: 40px; }
+  .shot { margin: 0; background: var(--white); border: 1px solid #d9dfe8; border-radius: 12px; overflow: hidden; min-width: 0;
+          box-shadow: 0 1px 2px rgba(20, 33, 61, 0.06), 0 24px 48px -24px rgba(20, 33, 61, 0.32); }
+  .shot .bar { height: 34px; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid #e3e8ef; background: #f8f9fb; }
+  .shot .bar span { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: #7a869c; }
+  .shot img { width: 100%; height: auto; }
+  .shot .zoom { display: block; cursor: zoom-in; }
+  .note { color: var(--steel); font-size: 0.95rem; margin-top: 14px; }
+  .feature { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 5vw, 64px); align-items: center; margin-top: clamp(56px, 8vw, 96px); }
+  .feature.flip .shot { order: 2; }
+  .feature.flip .copy { order: 1; }
+  .copy { display: grid; gap: 14px; }
+  .copy h3 { font-size: clamp(1.4rem, 2.2vw, 1.75rem); font-stretch: 78%; line-height: 1.15; }
+  .copy p { color: var(--steel); }
+  .stack { margin-top: clamp(56px, 8vw, 96px); display: grid; gap: 24px; }
+  .stack .copy { max-width: 64ch; }
+  @media (max-width: 900px) {
+    .feature { grid-template-columns: minmax(0, 1fr); }
+    .feature.flip .shot { order: 0; }
+    .shot .bar { height: 28px; }
+  }
 
   /* controls */
   .controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
@@ -244,36 +259,63 @@
     </div>
   </section>
 
-  <section class="block" id="see-it" aria-labelledby="see-title">
+  <section class="tour" id="see-it" aria-labelledby="see-title">
     <div class="wrap">
       <div class="head">
         <h2 id="see-title">See it running</h2>
         <p class="lede">Every agent ships with an operations console. On a single server, it also becomes an agent factory: admins create, connect and launch governed agents from the browser.</p>
       </div>
-      <div class="shots">
-        <figure>
-          <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/console-overview.png" alt="The operations console overview: agent health, quality gate, approvals and security posture" loading="lazy" width="1440" height="900">
-          <figcaption>The console reads health, evaluations, approvals and security posture from the running agent, not from documentation.</figcaption>
+
+      <figure class="shot wide">
+        <div class="bar" aria-hidden="true"><span>/console</span></div>
+        <a class="zoom" href="img/overview.webp" target="_blank" rel="noopener" aria-label="Open the full-size screenshot"><img src="img/overview.webp" width="2560" height="1560" alt="The operations console overview: agent health, evaluations, approvals, recent activity and the security posture of the running agent"></a>
+      </figure>
+      <p class="note">The console reads health, evaluations, approvals and security posture from the running agent, not from documentation.</p>
+
+      <div class="feature">
+        <figure class="shot">
+          <div class="bar" aria-hidden="true"><span>/chat</span></div>
+          <a class="zoom" href="img/approval.webp" target="_blank" rel="noopener" aria-label="Open the full-size screenshot"><img src="img/approval.webp" width="1336" height="716" loading="lazy" alt="A refund waiting for approval in the web chat, with the customer's email address redacted"></a>
         </figure>
-        <div class="side">
-          <figure>
-            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/approval-in-chat.png" alt="A write tool waiting for approval in the web chat, with the email address redacted" loading="lazy">
-            <figcaption>Tools that change things wait for a person. PII is redacted before the model sees it.</figcaption>
-          </figure>
-          <figure>
-            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/builder-create.png" alt="The Create agent form, started from a legal specialist template" loading="lazy">
-            <figcaption>Create agent generates, tests, builds and starts a new agent. Start from one of 30 legal specialist templates or from scratch.</figcaption>
-          </figure>
+        <div class="copy">
+          <h3>Risky actions wait for a person</h3>
+          <p>A refund, a record update or anything else that changes data pauses until someone approves it, in the chat, the console or Teams. The decision is audited.</p>
+          <p>Personal data is redacted before the model sees it, so the email in this request never reaches the model or the logs.</p>
         </div>
-        <div class="pair">
-          <figure>
-            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/agent-network.png" alt="The Agent network page: Claims Desk may call the Order Status Agent, with recent calls" loading="lazy">
-            <figcaption>Agents call each other for the same signed-in person, within limits an admin sets. MAF and LangGraph agents work together.</figcaption>
-          </figure>
-          <figure>
-            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/nist-coverage.png" alt="NIST AI RMF references on the Security page, each backed by live controls" loading="lazy">
-            <figcaption>The Security page maps live controls to NIST AI RMF, the GenAI Profile, CSF 2.0 and SP 800-53 as evidence for an assessor.</figcaption>
-          </figure>
+      </div>
+
+      <div class="feature flip">
+        <figure class="shot">
+          <div class="bar" aria-hidden="true"><span>/console/agents/new</span></div>
+          <a class="zoom" href="img/create.webp" target="_blank" rel="noopener" aria-label="Open the full-size screenshot"><img src="img/create.webp" width="1264" height="1286" loading="lazy" alt="The Create agent form, started from the Contract Lifecycle Manager template, with Microsoft Agent Framework or LangGraph to choose from"></a>
+        </figure>
+        <div class="copy">
+          <h3>New agents in minutes, from the browser</h3>
+          <p>Create agent generates a project from the template, runs its evals as a quality gate, builds it and starts it. A failed build is rolled back.</p>
+          <p>Start from scratch or from one of 30 legal specialist templates, built with Microsoft Agent Framework or LangGraph. Every one inherits the same controls.</p>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="copy">
+          <h3>Agents that work together, for the same person</h3>
+          <p>Claims Desk, a LangGraph agent, asked the Order Status Agent for a refund. The refund needed approval, so it came back to the person who asked, and ran only once they approved exactly that.</p>
+        </div>
+        <figure class="shot wide">
+          <div class="bar" aria-hidden="true"><span>/console/network</span></div>
+          <a class="zoom" href="img/network.webp" target="_blank" rel="noopener" aria-label="Open the full-size screenshot"><img src="img/network.webp" width="2272" height="396" loading="lazy" alt="Recent agent-to-agent calls: Claims Desk to Order Status Agent, asked for approval, then approved and done"></a>
+        </figure>
+      </div>
+
+      <div class="feature">
+        <figure class="shot">
+          <div class="bar" aria-hidden="true"><span>/console/security</span></div>
+          <a class="zoom" href="img/nist.webp" target="_blank" rel="noopener" aria-label="Open the full-size screenshot"><img src="img/nist.webp" width="1592" height="1118" loading="lazy" alt="NIST AI RMF references on the Security page, each backed by the agent's live controls"></a>
+        </figure>
+        <div class="copy">
+          <h3>Evidence an assessor can check</h3>
+          <p>The Security page maps the running controls to NIST AI RMF, the GenAI Profile, CSF 2.0 and SP 800-53, and shows which references they support.</p>
+          <p>Switch a control off and every reference it backs changes with it.</p>
         </div>
       </div>
     </div>
