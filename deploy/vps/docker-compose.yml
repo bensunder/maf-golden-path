@@ -20,7 +20,7 @@ services:
     environment:
       AGENTKIT_ENVIRONMENT: dev  # prod requires Azure (managed identity, Prompt Shields, the AI gateway)
       AGENTKIT_SERVICE_NAME: order-status-agent
-      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.10.0}
+      AGENTKIT_SERVICE_VERSION: ${AGENT_VERSION:-0.10.1}
       AGENTKIT_TEAM: ${TEAM:-commerce}
       # the model
       AGENTKIT_GATEWAY_ENDPOINT: ${MODEL_ENDPOINT:?set MODEL_ENDPOINT in .env}
@@ -71,9 +71,11 @@ services:
     ports: ["127.0.0.1:${PROXY_PORT:-4180}:4180"]  # Caddy on the same host reaches it; the internet doesn't
     environment:
       OAUTH2_PROXY_PROVIDER: oidc
-      OAUTH2_PROXY_OIDC_ISSUER_URL: https://login.microsoftonline.com/${ENTRA_TENANT_ID:?set ENTRA_TENANT_ID}/v2.0
-      OAUTH2_PROXY_CLIENT_ID: ${ENTRA_CLIENT_ID:?set ENTRA_CLIENT_ID}
-      OAUTH2_PROXY_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:?set ENTRA_CLIENT_SECRET}
+      # Entra by default. SIGN_IN=github in .env (then `python3 agentctl.py render`) switches every sign-in proxy
+      # to GitHub; with neither set up, the proxy doesn't start, so nothing is ever served without sign-in.
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://login.microsoftonline.com/${ENTRA_TENANT_ID:-}/v2.0
+      OAUTH2_PROXY_CLIENT_ID: ${ENTRA_CLIENT_ID:-}
+      OAUTH2_PROXY_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
       OAUTH2_PROXY_COOKIE_SECRET: ${COOKIE_SECRET:?set COOKIE_SECRET}
       OAUTH2_PROXY_REDIRECT_URL: https://${AGENT_HOST:?set AGENT_HOST}/oauth2/callback
       OAUTH2_PROXY_UPSTREAMS: http://agent:8000

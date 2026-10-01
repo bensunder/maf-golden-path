@@ -351,6 +351,10 @@ def test_the_console_reports_signing_delegation_and_both_kinds_of_agent():
     graph_posture = {c["id"]: c["status"] for c in security_posture(contracts, contracts_settings)}
     assert graph_posture["pii"] == "on" and graph_posture["tool_output"] == "on" and graph_posture["human_approval"] == "partial"
     assert "Calls no other agents" in {c["id"]: c for c in security_posture(contracts, contracts_settings)}["agent_delegation"]["detail"]
+    assert posture["entra_auth"]["name"] == "Entra authentication"
+    github = legal_settings.model_copy(update={"sign_in_provider": "github"})
+    signin = {c["id"]: c for c in security_posture(legal, github)}["entra_auth"]
+    assert signin["name"] == "GitHub sign-in" and signin["status"] == "on" and "GITHUB_USERS" in signin["detail"]
 
 
 def test_a_ticket_is_void_once_the_other_agent_moved_on(world):

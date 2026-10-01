@@ -26,6 +26,11 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
+### 0.10.0 → 0.10.1 (GitHub sign-in on a VPS)
+
+- `SIGN_IN=github` in `.env`, with a GitHub OAuth app's `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, signs people in with GitHub instead of Entra. `GITHUB_USERS` limits it to the accounts you list ([vps.md](vps.md#sign-in-with-github)). Entra stays the default; nothing changes unless you set it.
+- Upgrade: `git fetch --tags && git checkout v0.10.1`, `python3 agentctl.py render`, `docker compose up -d --build`.
+
 ### 0.9.5 → 0.10.0 (agents calling agents, LangGraph, LangSmith, NIST)
 
 - **Agents call other agents** on a VPS with the platform: **Can call** on the Agents page, or `agentctl.py peers <agent> <a,b>`. Each call acts for the signed-in person (a delegation the platform signs), stays within an admin's allow-list (no loops, 3 deep, 8 calls per request), runs the called agent's own guardrails, and brings its approvals back to the person ([multi-agent.md](multi-agent.md)). The **Agent network** page shows who may call whom, and every call.

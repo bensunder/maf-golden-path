@@ -408,7 +408,51 @@ def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = N
     return service
 
 
-def auth_service(template: dict, name: str, host: str, port: int, upstream: str) -> dict:
+_GITHUB_LOGINS = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:,[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))*")
+
+
+def sign_in(env: dict[str, str]) -> str:
+    """How people sign in: ``entra`` (the default) or ``github`` (SIGN_IN in .env)."""
+    choice = (env.get("SIGN_IN") or "entra").strip().lower()
+    if choice not in ("entra", "github"):
+        raise Problem(f"SIGN_IN must be entra or github, not {choice!r}")
+    if choice == "github":
+        missing = [k for k in ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET") if not env.get(k)]
+        if missing:
+            raise Problem(f"SIGN_IN=github needs {' and '.join(missing)} in .env (from your GitHub OAuth app)")
+        users = (env.get("GITHUB_USERS") or "").replace(" ", "")
+        if users and not _GITHUB_LOGINS.fullmatch(users):
+            raise Problem("GITHUB_USERS must be GitHub usernames separated by commas")
+    return choice
+
+
+def sign_in_proxy_env(env: dict[str, str]) -> dict[str, str]:
+    """The sign-in proxies' settings for GitHub sign-in (nothing for Entra, which docker-compose.yml sets up).
+    The client secret stays in .env: the generated file only refers to it."""
+    if sign_in(env) != "github":
+        return {}
+    out = {
+        "OAUTH2_PROXY_PROVIDER": "github",
+        "OAUTH2_PROXY_CLIENT_ID": "${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID}",
+        "OAUTH2_PROXY_CLIENT_SECRET": "${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}",
+        "OAUTH2_PROXY_OIDC_ISSUER_URL": "",
+        "OAUTH2_PROXY_SCOPE": "user:email",  # the account's primary, verified email becomes the user
+        "OAUTH2_PROXY_OIDC_EMAIL_CLAIM": "email",
+        "OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL": "false",
+    }
+    users = (env.get("GITHUB_USERS") or "").replace(" ", "")
+    if users:
+        out["OAUTH2_PROXY_GITHUB_USERS"] = users  # only these accounts; without it, any GitHub account
+    return out
+
+
+def sign_in_agent_env(env: dict[str, str]) -> dict[str, str]:
+    """Tells agents which sign-in is in front of them, so the console's Security page says so."""
+    return {"AGENTKIT_SIGN_IN_PROVIDER": "github"} if sign_in(env) == "github" else {}
+
+
+def auth_service(template: dict, name: str, host: str, port: int, upstream: str,
+                 extra: dict[str, str] | None = None) -> dict:
     service = copy.deepcopy(template)
     service["depends_on"] = [upstream]
     service["ports"] = [f"127.0.0.1:{port}:4180"]
@@ -416,6 +460,7 @@ def auth_service(template: dict, name: str, host: str, port: int, upstream: str)
     env["OAUTH2_PROXY_REDIRECT_URL"] = f"https://{host}/oauth2/callback"
     env["OAUTH2_PROXY_UPSTREAMS"] = f"http://{upstream}:8000"
     env["OAUTH2_PROXY_COOKIE_NAME"] = f"_agentkit_{name.replace('-', '_')}"
+    env.update(extra or {})
     return service
 
 
@@ -503,26 +548,32 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
     services: dict = {}
     sites: dict[str, str] = {}
     known = connectors()
+    proxy_extra, agent_extra = sign_in_proxy_env(env), sign_in_agent_env(env)
     for a in data["agents"]:
-        services[f"agent-{a['name']}"] = agent_service(agent_t, a, known, platform_env(data, a["name"], a, env))
+        services[f"agent-{a['name']}"] = agent_service(agent_t, a, known,
+                                                       {**platform_env(data, a["name"], a, env), **agent_extra})
         if not a.get("internal"):
-            services[f"auth-{a['name']}"] = auth_service(auth_t, a["name"], a["host"], a["port"], f"agent-{a['name']}")
+            services[f"auth-{a['name']}"] = auth_service(auth_t, a["name"], a["host"], a["port"], f"agent-{a['name']}",
+                                                         proxy_extra)
             sites[f"agentkit-{a['name']}.conf"] = nginx_site(a["host"], a["port"])
     if data.get("fleet"):
         f = data["fleet"]
         services["fleet"] = fleet_service(data, env, version.split(":-")[-1].rstrip("}"))
         if not f.get("internal"):
-            services["auth-fleet"] = auth_service(auth_t, "fleet", f["host"], f["port"], "fleet")
+            services["auth-fleet"] = auth_service(auth_t, "fleet", f["host"], f["port"], "fleet", proxy_extra)
             sites["agentkit-fleet.conf"] = nginx_site(f["host"], f["port"])
     sample_env = {**(connector_env(data["sample"], known) if data.get("sample") else {}),
                   **platform_env(data, "sample", data.get("sample"), env),
-                  **(redis_env("sample", data["sample"]) if (data.get("sample") or {}).get("redis_password") else {})}
+                  **(redis_env("sample", data["sample"]) if (data.get("sample") or {}).get("redis_password") else {}),
+                  **agent_extra}
     if sample_env:
         services["agent"] = {"environment": sample_env}  # merged into the sample's settings
     if data.get("platform"):
         services["platform"] = platform_service(data["platform"])
         # the sample's sign-in proxy now forwards to the platform router, which serves the sample at "/"
         services["auth"] = {"environment": {"OAUTH2_PROXY_UPSTREAMS": "http://platform:8000"}, "depends_on": ["platform"]}
+    if proxy_extra:  # the sample's (or the platform's) sign-in proxy
+        services.setdefault("auth", {}).setdefault("environment", {}).update(proxy_extra)
     if any(isinstance(e, dict) and e.get("redis_password") for e in [data.get("sample") or {}, *data["agents"]]):
         REDIS_ACL.parent.mkdir(exist_ok=True)
         _atomic_write(REDIS_ACL, redis_acl(data), 0o644)  # hashes only; the redis user in the container reads it

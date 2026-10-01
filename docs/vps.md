@@ -14,10 +14,10 @@ About 20 minutes. You need Docker with Compose, a DNS name pointing at the serve
 Clone the release tag (recommended: moving to a newer tag later updates the kit and every agent at once):
 
 ```bash
-git clone --branch v0.10.0 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
+git clone --branch v0.10.1 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
 ```
 
-or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.10.0.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
+or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.10.1.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
 
 ## 2. An Entra app for sign-in
 
@@ -28,6 +28,24 @@ In the Entra admin center: **App registrations → New registration**.
 - Then, under **Certificates & secrets → New client secret**, copy the value.
 
 Note the **Application (client) ID** and the **Directory (tenant) ID**.
+
+### Sign in with GitHub
+
+Entra is the default. To let people sign in with a GitHub account instead, for example a partner or reviewer outside your tenant:
+
+1. On GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App**. Set the homepage URL to `https://<your host>` and the **Authorization callback URL** to `https://<your host>/oauth2/callback`. Copy the client ID, then **Generate a new client secret** and copy it.
+2. In `.env`:
+
+   ```bash
+   SIGN_IN=github
+   GITHUB_CLIENT_ID=<client id>
+   GITHUB_CLIENT_SECRET=<client secret>
+   GITHUB_USERS=yourlogin,theirlogin    # only these GitHub accounts; leave empty for any GitHub account
+   ```
+
+3. `python3 agentctl.py render`, then `docker compose up -d`.
+
+Each person is identified by their GitHub account's primary, verified email, so chats, approvals and audit stay per person, as with Entra. Platform admins (`--admins`) are matched by that email, so list the address of your own GitHub account there. The console's Security page shows "GitHub sign-in". Leaving `GITHUB_USERS` empty means anyone with a GitHub account can sign in and chat, on your model key. Agents with their own host name need the callback URL of that host, so one GitHub OAuth app covers the agents served under `<your host>`.
 
 ## 3. Fill in `.env`
 
@@ -163,7 +181,7 @@ The same stack runs any number of agents, each at its own address with its own c
 
 ```bash
 mkdir -p /opt/agents && cd /opt/agents
-copier copy --trust --vcs-ref v0.10.0 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
+copier copy --trust --vcs-ref v0.10.1 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
 ```
 
 Edit its `instructions/system.md`, `tools.py` and `evals/cases.yaml`. Put it in its own git repository: the generated CI runs its evals on every change.

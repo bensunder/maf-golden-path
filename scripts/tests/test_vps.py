@@ -259,3 +259,50 @@ def test_connect_gives_an_agent_gateway_urls_and_a_token_never_a_vendor_secret(s
     key_before = (root / ".env").read_text()
     run("platform", "--admins", "ben@contoso.example", "--agents-dir", str(root / "created"))
     assert (root / ".env").read_text().count("PLATFORM_SECRET_KEY=") == 1 and key_before == (root / ".env").read_text()
+
+
+def test_github_sign_in_switches_every_sign_in_proxy(stack):
+    root, run = stack
+    env = root / ".env"
+    env.write_text(env.read_text() + "SIGN_IN=github\n")
+    out = run("render", ok=False)  # needs the OAuth app's id and secret first
+    assert "GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET" in out
+    env.write_text(env.read_text() + "GITHUB_CLIENT_ID=Iv1.abc\nGITHUB_CLIENT_SECRET=s3cret-value\nGITHUB_USERS=bensunder, chrisjoakim\n")
+    run("platform", "--admins", "ben@contoso.example")
+    run("add", "legal", str(root / "legal"))  # its own host and sign-in proxy
+    run("add", "hr", str(root / "legal"), "--internal")
+    text = (root / "docker-compose.agents.yml").read_text()
+    assert "s3cret-value" not in text  # the secret stays in .env
+    services = yaml.safe_load(text)["services"]
+    for proxy in ("auth", "auth-legal"):  # the platform's (sample's) proxy and the agent's own
+        e = services[proxy]["environment"]
+        assert e["OAUTH2_PROXY_PROVIDER"] == "github" and e["OAUTH2_PROXY_SCOPE"] == "user:email"
+        assert e["OAUTH2_PROXY_CLIENT_ID"] == "${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID}"
+        assert e["OAUTH2_PROXY_CLIENT_SECRET"] == "${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}"
+        assert e["OAUTH2_PROXY_GITHUB_USERS"] == "bensunder,chrisjoakim"
+        assert e["OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL"] == "false"
+    assert services["auth"]["environment"]["OAUTH2_PROXY_UPSTREAMS"] == "http://platform:8000"
+    for agent in ("agent", "agent-legal", "agent-hr"):
+        assert services[agent]["environment"]["AGENTKIT_SIGN_IN_PROVIDER"] == "github"
+
+    env.write_text(env.read_text().replace("GITHUB_USERS=bensunder, chrisjoakim\n", "GITHUB_USERS=\n"))
+    run("render")
+    services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    assert "OAUTH2_PROXY_GITHUB_USERS" not in services["auth"]["environment"]  # any GitHub account
+
+    env.write_text(env.read_text() + "GITHUB_USERS=ok,$(rm -rf /)\n")
+    assert "GitHub usernames" in run("render", ok=False)
+    env.write_text(env.read_text().replace("SIGN_IN=github\n", "SIGN_IN=google\n"))
+    assert "SIGN_IN must be entra or github" in run("render", ok=False)
+
+
+def test_entra_stays_the_default_and_fails_closed_without_its_settings(stack):
+    root, run = stack
+    run("add", "legal", str(root / "legal"))
+    services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    assert "OAUTH2_PROXY_PROVIDER" not in services["auth-legal"]["environment"] or \
+        services["auth-legal"]["environment"]["OAUTH2_PROXY_PROVIDER"] == "oidc"
+    assert "AGENTKIT_SIGN_IN_PROVIDER" not in services["agent-legal"]["environment"]
+    base = yaml.safe_load((VPS / "docker-compose.yml").read_text())["services"]["auth"]["environment"]
+    # no Entra settings: an empty client id and issuer, so oauth2-proxy refuses to start rather than serve anyone
+    assert base["OAUTH2_PROXY_PROVIDER"] == "oidc" and base["OAUTH2_PROXY_CLIENT_ID"] == "${ENTRA_CLIENT_ID:-}"

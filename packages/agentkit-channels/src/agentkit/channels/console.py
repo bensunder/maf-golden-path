@@ -91,9 +91,15 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
     hosted = _hosting()["platform"] != "Local"
     signed = bool(settings.platform_key)
     if settings.require_user and signed:
-        controls.append(_control("entra_auth", "Entra authentication", "on",
-                                 "People sign in with Entra at the platform's sign-in proxy, and this agent only accepts "
-                                 "requests the platform signed for it: nothing else on the network can claim to be a user."))
+        if getattr(settings, "sign_in_provider", None) == "github":
+            controls.append(_control("entra_auth", "GitHub sign-in", "on",
+                                     "People sign in with a GitHub account (its verified email) at the platform's sign-in "
+                                     "proxy, and this agent only accepts requests the platform signed for it. Who may "
+                                     "sign in is set by GITHUB_USERS on the server; without it, any GitHub account can."))
+        else:
+            controls.append(_control("entra_auth", "Entra authentication", "on",
+                                     "People sign in with Entra at the platform's sign-in proxy, and this agent only accepts "
+                                     "requests the platform signed for it: nothing else on the network can claim to be a user."))
     elif settings.require_user and hosted:
         controls.append(_control("entra_auth", "Entra authentication", "on",
                                  "Calls without a signed-in identity are refused (401). The service trusts the identity "

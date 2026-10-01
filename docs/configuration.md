@@ -120,6 +120,7 @@ Also written by `agentctl.py`, for agents behind the platform. See [multi-agent.
 | `AGENTKIT_PEERS` | none | JSON list of the agents this one may call: `name`, `title`, `description`, `url` (the platform's gateway). Each becomes an `ask_<name>` tool, plus `confirm_agent_action` |
 | `AGENTKIT_PLATFORM_KEY` | none | This agent's key for checking the platform's request signatures (a secret). When set, every request except `/healthz` and `/readyz` must be signed by the platform |
 | `AGENTKIT_DELEGATION_HEADER` | none | The header carrying the platform's delegation token (who the request acts for, through which agents) |
+| `AGENTKIT_SIGN_IN_PROVIDER` | none | `github` when the VPS signs people in with GitHub (`SIGN_IN=github`); only changes what the console's Security page says |
 | `AGENTKIT_SESSION_KEY_PREFIX` | `agentkit:` | Redis key prefix. On a VPS each agent gets `agentkit:<name>:`, and a Redis user limited to it |
 
 ## Set by the deploy (you don't set these)

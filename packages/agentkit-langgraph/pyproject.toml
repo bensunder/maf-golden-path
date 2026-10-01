@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit-langgraph"
-version = "0.10.0"
+version = "0.10.1"
 description = "LangGraph agents on the agentkit paved road: the same host, guardrails, approvals, sessions, telemetry, evals and platform as Microsoft Agent Framework agents."
 requires-python = ">=3.10"
 dependencies = [

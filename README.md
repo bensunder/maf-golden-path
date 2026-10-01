@@ -8,7 +8,7 @@ Generate a governed agent in about a minute. Write the business logic.<br/>
 Inherit identity, guardrails, approvals, sessions, telemetry, evaluation, knowledge, channels, infrastructure and CI/CD.
 
 [![kit-ci](https://github.com/bensunder/maf-golden-path/actions/workflows/ci.yml/badge.svg)](https://github.com/bensunder/maf-golden-path/actions/workflows/ci.yml)
-![Release](https://img.shields.io/badge/release-v0.10.0-0f172a)
+![Release](https://img.shields.io/badge/release-v0.10.1-0f172a)
 ![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.19-0078D4)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB)
 ![Azure](https://img.shields.io/badge/deploy-Azure%20%7C%20VPS-0089D6)
@@ -109,7 +109,7 @@ azd up                              # when you're ready for Azure
 <td valign="top">
 
 ```bash
-git clone --branch v0.10.0 \
+git clone --branch v0.10.1 \
   https://github.com/bensunder/maf-golden-path.git
 cd maf-golden-path/deploy/vps
 cp .env.example .env   # Entra app + model settings
@@ -378,6 +378,7 @@ flowchart LR
 
 | Version | Highlights |
 |---|---|
+| **v0.10.1** | **GitHub sign-in** on a VPS (`SIGN_IN=github`), limited to the accounts you list, for partners and reviewers outside your Entra tenant |
 | **v0.10.0** | **Agents that work together**: signed, delegated calls between agents with approvals carried back to the person; **LangGraph agents** alongside MAF; **LangSmith** traces and eval experiments; **NIST** AI RMF, GenAI Profile, CSF 2.0 and SP 800-53 mapping on the Security page |
 | **v0.9.5** | **Agent templates** in Create agent: start from one of 30 legal specialists, with rules and eval cases against invented citations and legal advice; `agentctl.py templates add` for more libraries |
 | **v0.9.4** | **Connectors catalog**: Linear, GitHub, Stripe, Supabase or any MCP server, with allowed tools, approvals and an encrypted credential enforced at the platform's gateway |
