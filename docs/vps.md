@@ -14,10 +14,10 @@ About 20 minutes. You need Docker with Compose, a DNS name pointing at the serve
 Clone the release tag (recommended: moving to a newer tag later updates the kit and every agent at once):
 
 ```bash
-git clone --branch v0.10.1 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
+git clone --branch v0.10.2 https://github.com/bensunder/maf-golden-path.git && cd maf-golden-path/deploy/vps
 ```
 
-or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.10.1.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
+or download the release zip (`https://github.com/bensunder/maf-golden-path/archive/refs/tags/v0.10.2.zip`) and unzip it. The zip is the source code: Docker builds the agent from it in step 4.
 
 ## 2. An Entra app for sign-in
 
@@ -181,7 +181,7 @@ The same stack runs any number of agents, each at its own address with its own c
 
 ```bash
 mkdir -p /opt/agents && cd /opt/agents
-copier copy --trust --vcs-ref v0.10.1 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
+copier copy --trust --vcs-ref v0.10.2 --data project_name='Legal Desk' ... gh:bensunder/maf-golden-path legal-desk
 ```
 
 Edit its `instructions/system.md`, `tools.py` and `evals/cases.yaml`. Put it in its own git repository: the generated CI runs its evals on every change.

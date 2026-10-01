@@ -13,7 +13,7 @@ Some teams already think in graphs: triage, then retrieve, then draft, then revi
 In the console: **Create agent** → **Built with: LangGraph**. Or with copier:
 
 ```bash
-copier copy --trust --vcs-ref v0.10.1 --data framework=langgraph --data project_name='Claims Desk' gh:bensunder/maf-golden-path claims-desk
+copier copy --trust --vcs-ref v0.10.2 --data framework=langgraph --data project_name='Claims Desk' gh:bensunder/maf-golden-path claims-desk
 ```
 
 The project is the same as a MAF one, plus `graph.py`:

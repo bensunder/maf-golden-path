@@ -26,10 +26,12 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 ## Kit release notes for services
 
-### 0.10.0 → 0.10.1 (GitHub sign-in on a VPS)
+### 0.10.1 → 0.10.2 (GitHub sign-in on a VPS)
+
+(0.10.1 added the Apache-2.0 license; nothing to do for it.)
 
 - `SIGN_IN=github` in `.env`, with a GitHub OAuth app's `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, signs people in with GitHub instead of Entra. `GITHUB_USERS` limits it to the accounts you list ([vps.md](vps.md#sign-in-with-github)). Entra stays the default; nothing changes unless you set it.
-- Upgrade: `git fetch --tags && git checkout v0.10.1`, `python3 agentctl.py render`, `docker compose up -d --build`.
+- Upgrade: `git fetch --tags && git checkout v0.10.2`, `python3 agentctl.py render`, `docker compose up -d --build`.
 
 ### 0.9.5 → 0.10.0 (agents calling agents, LangGraph, LangSmith, NIST)
 
