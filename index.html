@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAF Golden Path · WhyAIData</title>
+<meta name="description" content="MAF Golden Path: an open-source paved road for enterprise AI agents on Microsoft Agent Framework. Identity, guardrails, approvals, telemetry, evaluation and CI/CD, inherited by every agent.">
+<meta property="og:title" content="MAF Golden Path: the paved road for enterprise agents">
+<meta property="og:description" content="Generate a governed agent on Microsoft Agent Framework in about a minute. Write the business logic; inherit the rest. Apache-2.0.">
+<meta property="og:image" content="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/console-overview.png">
+<meta property="og:url" content="https://whyaidata.com/">
+<link rel="preload" href="fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  /* self-hosted (SIL Open Font License, see fonts/) */
+  @font-face { font-family: "Archivo"; src: url(fonts/archivo.woff2) format("woff2-variations"), url(fonts/archivo.woff2) format("woff2");
+               font-weight: 100 900; font-stretch: 62% 125%; font-display: swap; }
+  @font-face { font-family: "JetBrains Mono"; src: url(fonts/jetbrains-mono.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+  :root {
+    --ink: #14213d;        /* asphalt ink: text and the road surface */
+    --steel: #4f5d75;      /* secondary text */
+    --paper: #f6f7f9;      /* page */
+    --lane: #e3e8ef;       /* rules, quiet fills */
+    --line: #f0b429;       /* road-marking amber: only for the centre line and focus */
+    --white: #ffffff;
+    --link: #1d4ed8;
+    --measure: 68ch;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Archivo", system-ui, sans-serif; font-stretch: 100%;
+    font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--link); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--line); outline-offset: 3px; border-radius: 4px; }
+  img { max-width: 100%; display: block; }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .wrap { width: min(1180px, 100% - 32px); margin-inline: auto; }
+
+  /* type: signage widths for headings */
+  h1, h2, h3 { font-weight: 750; line-height: 1.08; margin: 0; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(2.5rem, 6.4vw, 5.4rem); font-stretch: 68%; max-width: 19ch; line-height: 1.02; }
+  h2 { font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-stretch: 78%; max-width: 22ch; }
+  h3 { font-size: 1.15rem; font-stretch: 92%; font-weight: 700; line-height: 1.3; }
+  p { margin: 0; max-width: var(--measure); }
+  .lede { font-size: clamp(1.1rem, 1.6vw, 1.3rem); color: var(--steel); max-width: 52ch; }
+
+  /* header */
+  header.top { border-bottom: 1px solid var(--lane); background: var(--paper); position: sticky; top: 0; z-index: 5; }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 64px; }
+  .brand { font-weight: 800; font-stretch: 80%; font-size: 1.25rem; color: var(--ink); text-decoration: none; }
+  nav.links { display: flex; gap: 26px; align-items: center; }
+  nav.links a { color: var(--ink); text-decoration: none; font-size: 0.95rem; }
+  nav.links a:hover { text-decoration: underline; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; font: inherit; font-weight: 650; font-size: 0.98rem;
+         padding: 12px 20px; border-radius: 8px; text-decoration: none; border: 2px solid var(--ink); cursor: pointer; }
+  .btn-solid { background: var(--ink); color: var(--white); }
+  .btn-solid:hover { background: #22325a; border-color: #22325a; }
+  .btn-plain { background: transparent; color: var(--ink); }
+  .btn-plain:hover { background: var(--white); }
+  .btn svg { width: 18px; height: 18px; flex: none; }
+  header .btn { padding: 8px 14px; font-size: 0.9rem; }
+  @media (max-width: 760px) { nav.links a.hide-sm { display: none; } nav.links { gap: 14px; } }
+
+  /* hero */
+  .hero { padding: clamp(40px, 6vw, 72px) 0 0; }
+  .hero .intro { display: grid; gap: 28px; }
+  .hero .below { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+  .hero .below > div { display: grid; gap: 16px; min-width: 0; }
+  @media (max-width: 900px) { .hero .below { grid-template-columns: minmax(0, 1fr); gap: 24px; } }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .cmd { min-width: 0; display: flex; align-items: center; gap: 12px; background: var(--ink); color: #e6ebf4; border-radius: 8px;
+         padding: 14px 16px; max-width: 640px;  }
+  .cmd pre { margin: 0; overflow-x: auto; font-size: 0.95rem; flex: 1; }
+  .cmd .prompt { color: var(--line); user-select: none; }
+  .cmd button { font: inherit; font-size: 0.85rem; background: transparent; color: #e6ebf4; border: 1px solid #45557a;
+                border-radius: 6px; padding: 6px 10px; cursor: pointer; flex: none; }
+  .cmd button:hover { border-color: #e6ebf4; }
+
+  /* the road: the one memorable thing */
+  .road { margin-top: clamp(40px, 5vw, 64px); background: var(--ink); color: var(--white); position: relative; overflow: hidden; }
+  .road .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 6px minmax(0, 2.3fr); gap: 0; }
+  .lane { padding: 40px 0 44px; }
+  .lane.yours { padding-right: 32px; }
+  .lane.kit { padding-left: 32px; }
+  .lane h3 { font-stretch: 70%; font-size: 1.5rem; margin-bottom: 18px; }
+  .lane.yours h3 { color: var(--white); }
+  .lane.kit h3 { color: #c9d3e6; }
+  .lane ul { list-style: none; margin: 0; padding: 0; }
+  .lane.yours li { padding: 9px 0; border-bottom: 1px solid #2c3d63; font-weight: 600; }
+  .lane.kit ul { columns: 2; column-gap: 32px; }
+  .lane.kit li { padding: 9px 0; border-bottom: 1px solid #2c3d63; color: #c9d3e6; break-inside: avoid; }
+  .centre { background: repeating-linear-gradient(to bottom, var(--line) 0 34px, transparent 34px 58px); }
+  @media (prefers-reduced-motion: no-preference) {
+    .centre { animation: drive 1.4s linear 1 both; }
+    @keyframes drive { from { background-position: 0 -232px; } to { background-position: 0 0; } }
+  }
+  .road-caption { color: #9fb0cf; font-size: 0.95rem; padding: 0 0 28px; grid-column: 1 / -1; }
+  @media (max-width: 820px) {
+    .road .wrap { grid-template-columns: 1fr; }
+    .centre { height: 6px; background: repeating-linear-gradient(to right, var(--line) 0 34px, transparent 34px 58px); }
+    .lane.yours, .lane.kit { padding-inline: 0; }
+    .lane.kit ul { columns: 1; }
+  }
+
+  section.block { padding: clamp(64px, 9vw, 112px) 0 0; }
+  .head { display: grid; gap: 16px; margin-bottom: 36px; }
+
+  /* facts */
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; border-top: 2px solid var(--ink); padding-top: 24px; }
+  .facts strong { display: block; font-size: 1.5rem; font-stretch: 75%; font-weight: 750; line-height: 1.2; margin-bottom: 6px; }
+  .facts p { color: var(--steel); font-size: 0.98rem; }
+  @media (max-width: 760px) { .facts { grid-template-columns: 1fr; gap: 20px; } }
+
+  /* screenshots */
+  .shots { display: grid; grid-template-columns: 1.5fr 1fr; gap: 28px; align-items: start; }
+  .shots figure { margin: 0; min-width: 0; }
+  .shots img { border: 1px solid var(--lane); border-radius: 6px; background: var(--white); }
+  .shots figcaption { color: var(--steel); font-size: 0.93rem; margin-top: 10px; max-width: 60ch; }
+  .shots .side { display: grid; gap: 28px; }
+  .shots .pair { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  @media (max-width: 820px) { .shots, .shots .pair { grid-template-columns: 1fr; } }
+
+  /* controls */
+  .controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+  .controls h3 { padding-bottom: 10px; border-bottom: 2px solid var(--ink); margin-bottom: 12px; }
+  .controls ul { margin: 0; padding: 0; list-style: none; }
+  .controls li { padding: 6px 0; color: var(--steel); font-size: 0.97rem; border-bottom: 1px solid var(--lane); }
+  @media (max-width: 960px) { .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .controls { grid-template-columns: 1fr; } }
+  .policy { margin-top: 36px; background: var(--white); border-left: 6px solid var(--line); padding: 20px 24px; border-radius: 0 6px 6px 0; }
+  .policy p { max-width: 80ch; }
+
+  /* run it */
+  .paths { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .path { min-width: 0; background: var(--white); border: 1px solid var(--lane); border-radius: 10px; padding: 28px; display: grid; gap: 14px; align-content: start; }
+  .path pre { margin: 0; background: var(--ink); color: #e6ebf4; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.88rem; line-height: 1.7; }
+  .path pre .c { color: #8ea0c4; }
+  .path ol { margin: 0; padding-left: 20px; color: var(--steel); }
+  @media (max-width: 820px) { .paths { grid-template-columns: 1fr; } }
+
+  /* about */
+  .about { display: grid; grid-template-columns: 1.2fr 1fr; gap: 48px; align-items: start; }
+  .about > * { min-width: 0; }
+  .about .card { background: var(--ink); color: var(--white); border-radius: 10px; padding: 32px; display: grid; gap: 16px; }
+  .about .card p { color: #c9d3e6; }
+  .about .card .btn { border-color: var(--white); color: var(--white); width: fit-content; }
+  .about .card .btn:hover { background: #22325a; }
+  .about .services { display: grid; gap: 14px; margin-top: 8px; }
+  .about .services li { color: var(--steel); }
+  @media (max-width: 820px) { .about { grid-template-columns: 1fr; } }
+
+  footer { margin-top: clamp(72px, 10vw, 120px); border-top: 1px solid var(--lane); padding: 32px 0 48px; color: var(--steel); font-size: 0.92rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+  footer p { max-width: 70ch; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">WhyAIData</a>
+    <nav class="links" aria-label="Main">
+      <a class="hide-sm" href="#see-it">See it running</a>
+      <a class="hide-sm" href="#controls">Controls</a>
+      <a class="hide-sm" href="#run">Run it</a>
+      <a href="#about">Work with me</a>
+      <a class="btn btn-plain" href="https://github.com/bensunder/maf-golden-path">
+        <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap intro">
+      <h1 id="hero-title">The paved road for enterprise agents on Microsoft Agent Framework</h1>
+      <div class="below">
+      <p class="lede">MAF Golden Path generates a governed agent in about a minute. Your team writes the business logic. Identity, guardrails, approvals, telemetry, evaluation and deployment come with it, the same way in every agent. Open source, Apache-2.0.</p>
+      <div>
+      <div class="cmd">
+        <pre><span class="prompt">$ </span><code id="cmd-text">copier copy gh:bensunder/maf-golden-path my-agent</code></pre>
+        <button type="button" id="copy" aria-describedby="cmd-text">Copy</button>
+      </div>
+      <div class="actions">
+        <a class="btn btn-solid" href="https://github.com/bensunder/maf-golden-path">
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View the repository
+        </a>
+        <a class="btn btn-plain" href="https://github.com/bensunder/maf-golden-path/blob/main/docs/getting-started.md">Build your first agent</a>
+      </div>
+      </div>
+      </div>
+    </div>
+
+    <div class="road" role="group" aria-label="What your team writes, and what the kit provides">
+      <div class="wrap">
+        <div class="lane yours">
+          <h3>Your team writes</h3>
+          <ul>
+            <li>Tools and connectors to your APIs</li>
+            <li>Instructions</li>
+            <li>Approval rules for risky actions</li>
+            <li>Evaluation cases</li>
+            <li>Business tests</li>
+          </ul>
+        </div>
+        <div class="centre" aria-hidden="true"></div>
+        <div class="lane kit">
+          <h3>Every agent inherits</h3>
+          <ul>
+            <li>Entra sign-in and managed identity</li>
+            <li>Model access through an AI gateway</li>
+            <li>Prompt Shields, PII redaction, tool policy</li>
+            <li>Human approvals with an audit trail</li>
+            <li>Durable sessions with cross-replica locking</li>
+            <li>OpenTelemetry, dashboards and alerts</li>
+            <li>Evals, an LLM judge and a deploy quality gate</li>
+            <li>Permission-trimmed knowledge with citations</li>
+            <li>Teams, web chat and an operations console</li>
+            <li>Bicep, azd and OIDC pipelines</li>
+          </ul>
+        </div>
+        <p class="road-caption">The left lane is all your team maintains. The rest is versioned packages owned by a platform team, upgraded in one place.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="why-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 id="why-title">Stop rebuilding the plumbing before the first real feature</h2>
+        <p class="lede">Every team building an enterprise agent rebuilds sign-in, model access, injection defenses, PII handling, approvals, sessions, tracing, evaluation and deployment. The kit moves that work into packages, so teams only write what makes their agent different.</p>
+      </div>
+      <div class="facts">
+        <div><strong>28 to 46 engineer-days</strong><p>Estimated platform work saved per agent team, plus 1 to 3 days per downstream API. The estimate is in the repo.</p></div>
+        <div><strong>About a minute</strong><p>To generate a service that passes its own tests offline, with no model needed.</p></div>
+        <div><strong>Enforced at startup</strong><p>In production, a misconfigured agent refuses to run: no managed identity, no gateway, no Prompt Shields, no start.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="see-it" aria-labelledby="see-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 id="see-title">See it running</h2>
+        <p class="lede">Every agent ships with an operations console. On a single server, it also becomes an agent factory: admins create, connect and launch governed agents from the browser.</p>
+      </div>
+      <div class="shots">
+        <figure>
+          <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/console-overview.png" alt="The operations console overview: agent health, quality gate, approvals and security posture" loading="lazy" width="1440" height="900">
+          <figcaption>The console reads health, evaluations, approvals and security posture from the running agent, not from documentation.</figcaption>
+        </figure>
+        <div class="side">
+          <figure>
+            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/approval-in-chat.png" alt="A write tool waiting for approval in the web chat, with the email address redacted" loading="lazy">
+            <figcaption>Tools that change things wait for a person. PII is redacted before the model sees it.</figcaption>
+          </figure>
+          <figure>
+            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/builder-create.png" alt="The Create agent form, started from a legal specialist template" loading="lazy">
+            <figcaption>Create agent generates, tests, builds and starts a new agent. Start from one of 30 legal specialist templates or from scratch.</figcaption>
+          </figure>
+        </div>
+        <div class="pair">
+          <figure>
+            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/agent-network.png" alt="The Agent network page: Claims Desk may call the Order Status Agent, with recent calls" loading="lazy">
+            <figcaption>Agents call each other for the same signed-in person, within limits an admin sets. MAF and LangGraph agents work together.</figcaption>
+          </figure>
+          <figure>
+            <img src="https://raw.githubusercontent.com/bensunder/maf-golden-path/main/docs/images/nist-coverage.png" alt="NIST AI RMF references on the Security page, each backed by live controls" loading="lazy">
+            <figcaption>The Security page maps live controls to NIST AI RMF, the GenAI Profile, CSF 2.0 and SP 800-53 as evidence for an assessor.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="controls" aria-labelledby="controls-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 id="controls-title">The controls an enterprise review asks for</h2>
+      </div>
+      <div class="controls">
+        <div>
+          <h3>Identity and access</h3>
+          <ul>
+            <li>Entra sign-in</li>
+            <li>Managed identity in production</li>
+            <li>On-behalf-of API access</li>
+            <li>Session ownership checks</li>
+            <li>Permission-aware retrieval</li>
+            <li>Signed, delegated agent-to-agent calls</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Security</h3>
+          <ul>
+            <li>Prompt Shields, fail-closed</li>
+            <li>Tool output scanned for injection</li>
+            <li>PII redaction before the model</li>
+            <li>Tool allow and deny lists</li>
+            <li>Per-session token budgets</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Human control</h3>
+          <ul>
+            <li>Approval-required tools</li>
+            <li>Separation of duties with Entra roles</li>
+            <li>Audit trail for every decision</li>
+            <li>Approvals in chat, Teams and the API</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Operations</h3>
+          <ul>
+            <li>OpenTelemetry on every span</li>
+            <li>Application Insights or LangSmith</li>
+            <li>Spend, error and injection alerts</li>
+            <li>Live evals gate every deploy</li>
+            <li>NIST mapping with live evidence</li>
+          </ul>
+        </div>
+      </div>
+      <div class="policy">
+        <p><strong>Production policy is enforced at startup, not by review.</strong> With the environment set to production, an agent refuses to start unless it uses managed identity, goes through the AI gateway, runs Prompt Shields, requires a signed-in user and keeps message content out of telemetry.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="run" aria-labelledby="run-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 id="run-title">Run it on Azure, or on your own server first</h2>
+      </div>
+      <div class="paths">
+        <div class="path">
+          <h3>Generate a service, deploy to Azure</h3>
+<pre>copier copy gh:bensunder/maf-golden-path my-agent
+cd my-agent
+pip install -e ".[dev]" &amp;&amp; pytest   <span class="c"># green offline</span>
+azd up                              <span class="c"># when you're ready</span></pre>
+          <p><a href="https://github.com/bensunder/maf-golden-path/blob/main/docs/getting-started.md">Getting started: your first agent in 15 minutes</a></p>
+        </div>
+        <div class="path">
+          <h3>Try the whole platform on one Linux server</h3>
+<pre>git clone --branch v0.10.2 \
+  https://github.com/bensunder/maf-golden-path.git
+cd maf-golden-path/deploy/vps
+cp .env.example .env
+python3 agentctl.py platform --admins you@contoso.com
+docker compose up -d --build</pre>
+          <p><a href="https://github.com/bensunder/maf-golden-path/blob/main/docs/vps.md">Running on a VPS with Docker Compose</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="about" aria-labelledby="about-title">
+    <div class="wrap about">
+      <div class="head">
+        <h2 id="about-title">Built by WhyAIData</h2>
+        <p class="lede">WhyAIData is Ben Sunder's practice for enterprise AI governance and applied architecture. MAF Golden Path is how I'd stand up an agent platform for a Microsoft shop, published so your team can read every line of it.</p>
+        <ul class="services">
+          <li>Agent platform design on Microsoft Agent Framework and Azure AI Foundry</li>
+          <li>Governance that holds up in review: identity, guardrails, approvals, audit, NIST mapping</li>
+          <li>Rolling the paved road out to your teams, with your own templates and connectors</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Bring the paved road to your teams</h3>
+        <p>If you're standardizing how your organization builds agents, I can help you adopt the kit, adapt it to your platform, or review what you have.</p>
+        <a class="btn" href="https://www.linkedin.com/in/agile367">Message Ben on LinkedIn</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MAF Golden Path is open source under the Apache License 2.0. It's an independent project built on Microsoft Agent Framework, not a Microsoft product.</p>
+    <p><a href="https://github.com/bensunder/maf-golden-path">github.com/bensunder/maf-golden-path</a></p>
+  </div>
+</footer>
+
+<script>
+  document.getElementById("copy").addEventListener("click", async (e) => {
+    const text = document.getElementById("cmd-text").textContent;
+    try { await navigator.clipboard.writeText(text); e.target.textContent = "Copied"; }
+    catch { e.target.textContent = "Select and copy"; }
+    setTimeout(() => { e.target.textContent = "Copy"; }, 1800);
+  });
+</script>
+</body>
+</html>
