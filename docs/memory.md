@@ -136,6 +136,7 @@ In your own tests, `MemoryService(InMemoryMemoryStore(), salt="...")` gives a pr
 
 - **No automatic extraction.** The agent remembers only through its tool, when the user states a preference or asks. Nothing is mined from transcripts in the background.
 - **No search over memory.** All of a user's notes (50 short ones at most) go into each run; there are no embeddings.
+- **Notes are screened with the heuristic injection detector, not Prompt Shields, even in prod.** Recalled notes are still fenced as data, and each chat turn still passes the agent's Prompt Shields input guard. See the package README for a workaround.
 - **Cosmos DB hasn't run against a real account yet.** The store is tested against a fake container with ETags, 412s and TTL, and Redis against a real server.
 - **Evals run one conversation per case**, so cross-conversation recall is covered by the generated pytest tests rather than `evals/cases.yaml`.
 - **LangGraph agents** don't take context providers yet.
