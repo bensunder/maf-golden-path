@@ -100,6 +100,13 @@ export const MAPPING: Record<string, Mapping> = {
   tool_policy: { ai_rmf: ["MANAGE 2.4"], ai_600_1: ["Information Security"], csf_2: ["PR.AA-05", "PR.PS-01"], sp_800_53: ["AC-6", "CM-7"] },
   human_approval: { ai_rmf: ["MAP 3.5", "MANAGE 2.4"], ai_600_1: ["Human-AI Configuration"], csf_2: ["PR.AA-05"], sp_800_53: ["AC-3(2)", "AC-5"] },
   session_isolation: { ai_rmf: ["MEASURE 2.10"], ai_600_1: ["Data Privacy"], csf_2: ["PR.AA-05", "PR.DS-10"], sp_800_53: ["AC-3", "SC-4"] },
+  // only on agents with long-term memory: keyed per user, screened for personal data and stored instructions, retained
+  long_term_memory: {
+    ai_rmf: ["MEASURE 2.10"],
+    ai_600_1: ["Data Privacy", "Information Security"],
+    csf_2: ["PR.AA-05", "PR.DS-01"],
+    sp_800_53: ["AC-3", "SI-19"],
+  },
   token_budget: { ai_rmf: ["MEASURE 2.7"], ai_600_1: ["Information Security"], csf_2: ["PR.IR-04"], sp_800_53: ["SC-5", "SC-6"] },
   audit: { ai_rmf: ["MEASURE 2.8", "MANAGE 4.1"], csf_2: ["PR.PS-04", "DE.CM-09"], sp_800_53: ["AU-2", "AU-3", "AU-12"] },
   content_capture: { ai_rmf: ["MEASURE 2.10"], ai_600_1: ["Data Privacy"], csf_2: ["PR.DS-01"], sp_800_53: ["AU-3(3)"] },

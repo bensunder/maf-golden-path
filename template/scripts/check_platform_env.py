@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 REQUIRED = [
     "AGENTKIT_PLATFORM_RESOURCE_GROUP",
@@ -23,11 +24,19 @@ REQUIRED = [
 ]
 
 
+def uses_memory() -> bool:
+    """The service has long-term memory (agentkit-memory) when its pyproject depends on it."""
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    return pyproject.is_file() and "agentkit-memory" in pyproject.read_text()
+
+
 def main() -> int:
     missing = [name for name in REQUIRED if not os.environ.get(name)]
     problems = [f"missing azd env value: {name}" for name in missing]
     if os.environ.get("AGENTKIT_ENVIRONMENT") == "prod" and not os.environ.get("AGENTKIT_AUTH_CLIENT_ID"):
         problems.append("prod requires AGENTKIT_AUTH_CLIENT_ID (Entra app registration for Easy Auth)")
+    if os.environ.get("AGENTKIT_ENVIRONMENT") == "prod" and uses_memory() and len(os.environ.get("AGENTKIT_MEMORY_SALT", "")) < 16:
+        problems.append("prod requires AGENTKIT_MEMORY_SALT (16+ characters) for long-term memory; the service won't start without it")
     for problem in problems:
         print(f"ERROR: {problem}", file=sys.stderr)
     if problems:

@@ -15,6 +15,18 @@ LEADS_GROUP = "00000000-0000-0000-0000-00000000a11d"  # matches knowledge/acl.ya
 #: real test accounts (UPN or object id) with these group memberships.
 EVAL_USERS = StaticGroups({"agent@example.com": [], "lead@example.com": [LEADS_GROUP]})
 {%- endif %}
+{%- if framework == 'maf' and memory == 'user' %}
+
+
+@pytest.fixture(autouse=True)
+def fresh_memory():
+    """Each test starts with no one remembered (the in-process store is shared per configuration)."""
+    from agentkit.memory import reset_memory_services
+
+    reset_memory_services()
+    yield
+    reset_memory_services()
+{%- endif %}
 
 
 @pytest.fixture

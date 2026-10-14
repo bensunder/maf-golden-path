@@ -64,6 +64,12 @@ Setup and options: the kit's `docs/channels.md`.
 
 `knowledge/` holds documents the agent can search, with who may read each one in `knowledge/acl.yaml`. Searches run as the signed-in user, and answers cite their sources. Every deploy syncs the folder to Azure AI Search; to preview: `agentkit-ingest --source knowledge --dry-run`. Details: the kit's `docs/knowledge.md`.
 {%- endif %}
+{%- if framework == 'maf' and memory == 'user' %}
+
+## Long-term memory
+
+The agent remembers each signed-in user's lasting preferences across conversations, and each user reviews, edits, exports or erases them at `/v1/memory`{% if enable_console %} or on the console's Memory page{% endif %}. Before deploying to prod: `azd env set AGENTKIT_MEMORY_SALT "$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"`, and never change it afterwards. Details: the kit's `docs/memory.md`.
+{%- endif %}
 
 ## Updating
 

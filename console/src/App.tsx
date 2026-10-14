@@ -4,7 +4,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { MoreLink } from "@/components/agent";
 import { Card } from "@/components/ui/card";
 import { Page } from "@/components/ui/page";
-import { EmptyState } from "@/components/ui/states";
+import { EmptyState, LoadingRegion, Skeleton } from "@/components/ui/states";
 import { OverviewProvider, SessionsProvider } from "@/lib/data";
 import { PlaygroundProvider } from "@/lib/playground";
 import { RouterProvider, useRouter } from "@/lib/router";
@@ -19,7 +19,10 @@ import { ConnectorDetailPage, ConnectorsPage, NewConnectorPage } from "@/pages/C
 import { NetworkPage } from "@/pages/Network";
 import { PlaygroundPage } from "@/pages/Playground";
 import { SessionsPage } from "@/pages/Sessions";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
+
+// Loaded on first visit: most agents have no memory, so most people never download it.
+const MemoryPage = lazy(() => import("@/pages/Memory").then((m) => ({ default: m.MemoryPage })));
 
 const TITLES: Record<string, string> = {
   "/": "Overview",
@@ -28,6 +31,7 @@ const TITLES: Record<string, string> = {
   "/playground": "Playground",
   "/evaluations": "Evaluations",
   "/knowledge": "Knowledge",
+  "/memory": "Memory",
   "/approvals": "Approvals",
   "/sessions": "Sessions",
   "/telemetry": "Telemetry",
@@ -62,6 +66,21 @@ function Routes() {
       return <EvaluationsPage />;
     case "/knowledge":
       return <KnowledgePage />;
+    case "/memory":
+      return (
+        <Suspense
+          fallback={
+            <Page>
+              <LoadingRegion label="Loading memory" className="space-y-3">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-2/3" />
+              </LoadingRegion>
+            </Page>
+          }
+        >
+          <MemoryPage />
+        </Suspense>
+      );
     case "/approvals":
       return <ApprovalsPage />;
     case "/sessions":

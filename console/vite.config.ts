@@ -16,6 +16,9 @@ export default defineConfig({
     assetsInlineLimit: 0, // CSP: no data: fonts or scripts
     sourcemap: false,
     chunkSizeWarningLimit: 600,
+    // Lazy pages are imported relative to the entry chunk; the preload helper would use absolute /console/
+    // URLs, which break when the console is mounted under a prefix (the server rewrites only HTML and CSS).
+    modulePreload: false,
   },
   server: {
     proxy: { "/v1": backend, "/readyz": backend, "/healthz": backend },

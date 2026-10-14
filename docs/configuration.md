@@ -80,6 +80,10 @@ The first three map to MAF's `FunctionInvocationConfiguration`. Team-wide quotas
 | `AGENTKIT_COSMOS_ENDPOINT` / `AGENTKIT_COSMOS_DATABASE` / `AGENTKIT_COSMOS_CONTAINER` | none / `agentkit` / none | Cosmos DB location of this service's sessions (set by the deploy) |
 | `AGENTKIT_REDIS_URL` | none | `rediss://:<key>@<name>.redis.cache.windows.net:6380/0`. Keep it in Key Vault |
 
+## Long-term memory
+
+`AGENTKIT_MEMORY_*` (salt, store, retention, limits, timeout, cache, write rate, Cosmos container, local dev user), for services that use `agentkit-memory`. They're listed in [memory.md](memory.md#settings). In prod, `AGENTKIT_MEMORY_SALT` is required.
+
 ## Human approvals
 
 | Variable | Default | Meaning |
@@ -125,7 +129,7 @@ Also written by `agentctl.py`, for agents behind the platform. See [multi-agent.
 
 ## Set by the deploy (you don't set these)
 
-The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_SESSION_STORE=cosmos` with the `AGENTKIT_COSMOS_*` values, `AGENTKIT_APPROVER_ROLE` (from `azd env`), `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). With the console enabled, also `AGENTKIT_BUILD_COMMIT`, `AGENTKIT_BUILD_RUN_URL`, `AGENTKIT_BUILD_TIME` (from `agent-deploy`) and `AGENTKIT_CONSOLE_WORKBOOK_URL` (from `AGENTKIT_OPS_WORKBOOK_ID`). With Teams enabled, also `AGENTKIT_TEAMS_APP_ID`, `AGENTKIT_TEAMS_TENANT_ID` and the `AGENTKIT_TEAMS_APPROVER_GROUP_ID` / `_APPROVALS_CHANNEL_ID` values from `azd env`. To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
+The generated `infra/main.bicep` sets these on the Container App from the platform outputs: `AGENTKIT_ENVIRONMENT`, `AGENTKIT_SERVICE_NAME`, `AGENTKIT_TEAM`, `AGENTKIT_GATEWAY_ENDPOINT`, `AGENTKIT_MODEL`, `AGENTKIT_AUTH_MODE=managed_identity`, `AGENTKIT_MANAGED_IDENTITY_CLIENT_ID`, `AZURE_CLIENT_ID`, `AGENTKIT_GUARDRAIL_MODE=prompt_shields`, `AGENTKIT_CONTENT_SAFETY_ENDPOINT`, `AGENTKIT_SESSION_STORE=cosmos` with the `AGENTKIT_COSMOS_*` values, `AGENTKIT_APPROVER_ROLE` (from `azd env`), `AGENTKIT_REQUIRE_USER=true` and `APPLICATIONINSIGHTS_CONNECTION_STRING` (as a secret). With the console enabled, also `AGENTKIT_BUILD_COMMIT`, `AGENTKIT_BUILD_RUN_URL`, `AGENTKIT_BUILD_TIME` (from `agent-deploy`) and `AGENTKIT_CONSOLE_WORKBOOK_URL` (from `AGENTKIT_OPS_WORKBOOK_ID`). With long-term memory (`memory=user`), also `AGENTKIT_MEMORY_SALT` (as a secret, from `azd env`). With Teams enabled, also `AGENTKIT_TEAMS_APP_ID`, `AGENTKIT_TEAMS_TENANT_ID` and the `AGENTKIT_TEAMS_APPROVER_GROUP_ID` / `_APPROVALS_CHANNEL_ID` values from `azd env`. To add your own (for example `CARRIER_API_URL`), extend the `env` list in `infra/main.bicep`.
 
 ## Prod policy
 
@@ -138,6 +142,7 @@ With `AGENTKIT_ENVIRONMENT=prod`, the service **refuses to start** unless all of
 | `GUARDRAIL_MODE=prompt_shields` (with `CONTENT_SAFETY_ENDPOINT`) | The heuristic detector is not a production defence |
 | `CAPTURE_MESSAGE_CONTENT=false` | Prompts can contain personal data |
 | `REQUIRE_USER=true` | Sessions and traces must be attributable to a caller |
+| With `agentkit-memory`: `MEMORY_SALT` set, a durable store, no `MEMORY_DEV_USER` | Memory keys can't be traced to a user; memory survives restarts; no request is remembered as a stand-in user |
 
 It fails at startup with one error listing every violation, so misconfiguration never reaches traffic. The generated `Dockerfile` defaults to `prod`, `managed_identity` and `require_user=true`.
 

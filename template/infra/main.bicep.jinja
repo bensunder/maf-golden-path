@@ -34,6 +34,12 @@ param approverRole string = ''
 
 @description('Client id of the Entra app registration that protects this API (Easy Auth). Required for prod.')
 param authClientId string = ''
+{%- if framework == 'maf' and memory == 'user' %}
+
+@description('Long-term memory: secret that keys each user\'s memory (azd env set AGENTKIT_MEMORY_SALT ...). Required for prod; never change it once live.')
+@secure()
+param memorySalt string = ''
+{%- endif %}
 {%- if enable_console %}
 
 @description('Console: what was deployed (the deploy pipeline sets these; empty for a manual azd up).')
@@ -185,6 +191,9 @@ module app 'modules/container-app.bicep' = {
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
     ]
     appInsightsConnectionString: platformAccess.outputs.appInsightsConnectionString
+{%- if framework == 'maf' and memory == 'user' %}
+    memorySalt: memorySalt
+{%- endif %}
   }
 }
 

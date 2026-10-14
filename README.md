@@ -78,6 +78,7 @@ Every team that builds an enterprise agent rebuilds the same plumbing before its
 - OpenTelemetry, dashboards and alerts
 - Evaluation, LLM judge and the deploy quality gate
 - Permission-trimmed knowledge with citations
+- Opt-in long-term memory each user can review and erase
 - Teams, web chat, AG-UI and the operations console
 - Bicep, `azd`, OIDC pipelines
 
@@ -282,6 +283,7 @@ The Security page maps each agent's running controls to **NIST AI RMF**, the **G
 | Quality gate | Live evals 3× per deploy: judged rubric and groundedness, argument and budget checks, critical cases; baseline regressions block the deploy | `testing.gate`, `agent-deploy.yml` |
 | Deploy | `azd up`: managed identity, least-privilege grants, Container App with Entra sign-in; OIDC pipeline with smoke check and live evals as a gate | `template/infra`, `agent-deploy.yml` |
 | Company documents | Search trimmed to the caller's groups, citations in the API, web chat and Teams, ingestion on deploy, `cites:` / `must_not_retrieve:` evals | `knowledge`, `template/infra` |
+| Remembering people (opt-in) | Each user's preferences across conversations: screened for personal data and stored instructions, bounded, retained, keyed per user; `/v1/memory` and a console page to review, export and erase | `memory` |
 | Operating it | A console at `/console` per service: health, quality gate, approvals, sessions, posture from the live middleware stack, deploy metadata | `channels.Console` |
 | Reaching users | Teams (secretless Azure Bot) and a web chat at `/chat`; every channel shares sessions, approvals and audit through one `ConversationService` | `channels`, `template/infra` |
 | Org-level model access | AI gateway: Entra-only, per-identity token limits, chargeback metrics, models behind a managed identity | `infra/platform` |
@@ -335,6 +337,7 @@ flowchart LR
 | **telemetry** | One-call OpenTelemetry bootstrap (OTLP / Application Insights / LangSmith); user, session, tenant and team on every MAF span; run metrics by outcome |
 | **tools** | OpenAPI → typed MAF tools, managed-identity and on-behalf-of auth, `ApiClient` with safe retries and tracing, response shaping, MCP tools, platform connectors, API fakes for tests |
 | **channels** | Operations console, fleet view, Microsoft Teams with approvals as Adaptive Cards, AG-UI, drop-in web chat, offline Teams test client |
+| **memory** | Opt-in long-term memory per user: a MAF context provider, Redis and Cosmos DB stores with compare-and-set writes, screening, retention, rate limits and a circuit breaker, the `/v1/memory` API |
 | **knowledge** | Azure AI Search as the signed-in user (Entra groups, fail closed), citations in every channel, ingestion with access rules |
 | **testing** | Scripted model over the real MAF stack, YAML eval cases (offline in CI, live against the gateway), LLM judge, `agentkit-gate`, eval runs to LangSmith |
 
@@ -370,6 +373,7 @@ flowchart LR
 | | [Knowledge](docs/knowledge.md) | [Console](docs/console.md) | [Upgrading](docs/UPGRADING.md) |
 | | [Agents calling agents](docs/multi-agent.md) | [NIST frameworks](docs/nist.md) | |
 | | [LangGraph agents](docs/langgraph.md) | | |
+| | [Long-term memory](docs/memory.md) | | |
 | | [Channels: Teams and web chat](docs/channels.md) | [Fleet view](docs/fleet.md) | |
 | | [Testing and evals](docs/testing-and-evals.md) | [Live validation](docs/live-validation.md) | |
 

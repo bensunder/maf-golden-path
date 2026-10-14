@@ -16,6 +16,7 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
    - `MCPStreamableHTTPTool(http_client=, allowed_tools=)` (gateway MCP helper);
    - `azure.identity.aio.OnBehalfOfCredential(client_assertion_func=, user_assertion=)` (on-behalf-of auth);
    - approvals: `AgentResponse.user_input_requests`, `Content.to_function_approval_response()`, `ToolApprovalMiddleware(auto_approval_rules=)` (rule receives the function call; requires a session; surfaces queued approvals one at a time), and the pending-approval state MAF keeps in `session.state["tool_approval"]`. Also check whether the spurious "did not match the active approval occurrence" warning (demoted by `agentkit.hosting.approvals`) is fixed upstream.
+   - memory: `ContextProvider.before_run(agent=, session=, context=, state=)` and `SessionContext.extend_instructions(source_id, text)` / `extend_tools(source_id, tools)`; `Agent(context_providers=)` passed through `build_agent(**kwargs)`. `packages/agentkit-memory/tests/test_provider.py` runs the real tool loop and fails if instructions or tools stop reaching the model.
    - knowledge: `azure-search-documents` (`SearchClient.search(filter=, vector_queries=[VectorizedQuery], vector_filter_mode=, query_type=, semantic_configuration_name=)`, `SearchIndex` models); `packages/agentkit-knowledge/tests/test_search_wire.py` pins the request body on the wire.
    - channels: `microsoft-agents-hosting-*` (pinned `<2`): `AgentApplication(ApplicationOptions(storage=…))`, `adaptive_card.action_execute`, `CloudAdapter(connection_manager=, host_validator=)`, `continue_conversation_with_claims`, `Conversation.store_item_to_json/from_json_to_store_item`, `jwt_authorization_decorator`; `ag-ui-protocol` (pinned `<0.2`): `RunAgentInput.resume`, `RunFinishedEvent.outcome` interrupts. The Teams and AG-UI tests exercise all of these offline.
 4. **Runner images.** CI and the reusable pipelines run on `ubuntu-24.04`, not `ubuntu-latest` (which moves to Ubuntu 26 on 2026-10-19). Move them deliberately: bump the label on a branch and let `make test` in CI prove Redis, Chromium and the tools still install.
@@ -25,6 +26,12 @@ MAF ships roughly weekly, and even minor releases break integration surfaces. Th
 
 
 ## Kit release notes for services
+
+### Unreleased (long-term memory)
+
+- **Long-term memory, opt-in per agent**: `agentkit-memory` remembers each signed-in user's preferences across conversations, screened for personal data and instructions, bounded, retained 180 days, keyed per user with `AGENTKIT_MEMORY_SALT`, and reviewable, exportable and erasable by the user at `/v1/memory` and on the console's new **Memory** page ([memory.md](memory.md)). New services: `--data memory=user` (MAF agents), or **Long-term memory** in Create agent. Existing services: nothing changes unless you add it; the two lines are in [memory.md](memory.md#turn-it-on).
+- Before turning it on in prod: `azd env set AGENTKIT_MEMORY_SALT <secret>` (or add it to the agent's environment on a VPS). The service refuses to start in prod without it. `copier update` brings the Bicep secret wiring.
+- The console bundle now loads pages it rarely needs (Memory) on demand. Nothing to do.
 
 ### 0.10.1 → 0.10.2 (GitHub sign-in on a VPS)
 

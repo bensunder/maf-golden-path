@@ -1,6 +1,7 @@
 import {
   Activity,
   BookOpen,
+  Brain,
   Blocks,
   ClipboardCheck,
   History,
@@ -36,6 +37,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { to: "/playground", label: "Playground", icon: MessageSquareText },
   { to: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
   { to: "/knowledge", label: "Knowledge", icon: Library },
+  { to: "/memory", label: "Memory", icon: Brain },
   { to: "/approvals", label: "Approvals", icon: UserCheck },
   { to: "/sessions", label: "Sessions", icon: History },
   { to: "/telemetry", label: "Telemetry", icon: Activity },
