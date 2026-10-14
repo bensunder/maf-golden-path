@@ -1,6 +1,8 @@
 // Typed access to the service's own endpoints. Nothing here invents data: every value on screen comes
 // from one of these calls, and a call that fails becomes an error state, never a placeholder number.
 
+import type { MemoryInfo } from "./memory";
+
 function meta(name: string, fallback: string): string {
   if (typeof document === "undefined") return fallback;
   const value = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content;
@@ -81,6 +83,8 @@ export interface Overview {
     search_configured: boolean;
     document_intelligence: boolean;
   };
+  /** Long-term memory (agentkit-memory); null when the agent keeps no memory across conversations. */
+  memory: MemoryInfo | null;
   security: Control[];
   sessions: { store: "memory" | "redis" | "cosmos"; shared: boolean; ttl_seconds: number };
   approvals: { mode: "confirmation" | "approver" | "separation"; approver_role: string | null };

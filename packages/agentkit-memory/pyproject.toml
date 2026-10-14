@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentkit-memory"
+version = "0.10.2"
+description = "Governed long-term user memory for agentkit services: a Microsoft Agent Framework context provider, per-user keyed stores (Redis, Cosmos DB), PII and injection screening, retention, and a versioned API for people to see, edit and delete what an agent remembers."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "agent-framework-core>=1.19,<1.20",
+    "agentkit-telemetry>=0.10,<0.11",
+    "agentkit-guardrails>=0.10,<0.11",
+    "agentkit-hosting>=0.10,<0.11",
+    "fastapi>=0.115",
+    "opentelemetry-api>=1.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+]
+
+[project.optional-dependencies]
+redis = ["redis>=5"]
+cosmos = ["azure-cosmos>=4.7", "azure-core>=1.30"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentkit"]

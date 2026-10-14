@@ -23,6 +23,7 @@ KIT_DEPS = {
     "agentkit-hosting": ["agentkit-telemetry", "agentkit-guardrails"],
     "agentkit-channels": ["agentkit-hosting", "agentkit-tools"],
     "agentkit-knowledge": ["agentkit-hosting", "agentkit-tools"],
+    "agentkit-memory": ["agentkit-telemetry", "agentkit-guardrails", "agentkit-hosting"],
 }
 _REQ = re.compile(r'^(\s*)"(agentkit-[a-z]+)(\[[^\]]*\])?[^"]*",\s*$')
 

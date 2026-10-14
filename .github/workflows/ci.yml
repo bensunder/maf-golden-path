@@ -52,7 +52,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Redis for session-store and multi-replica tests
-        run: sudo apt-get install -y -qq redis-server
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-server
       - run: make install
       - name: Chromium for the web chat browser tests
         run: |

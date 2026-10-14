@@ -178,6 +178,20 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
         controls.append(_control("session_isolation", "Session isolation", "partial",
                                  "Sessions are bound to their user, but anonymous callers share one identity."))
 
+    memory = _memory_provider(agent)
+    if memory is not None:
+        info = memory.describe()
+        gaps = []
+        if not info.get("salt_configured", True):
+            gaps.append("keys aren't salted with a deployment secret (set AGENTKIT_MEMORY_SALT)")
+        if info.get("store") == "memory":
+            gaps.append("the in-process store loses memory on restart")
+        detail = (f"Per-user memory in {info.get('store')}, kept {info.get('retention_days')} days, at most "
+                  f"{info.get('max_items')} notes per user; personal data and instructions are refused, and people "
+                  f"can view, edit, export and delete what is remembered.")
+        controls.append(_control("long_term_memory", "Long-term memory", "partial" if gaps else "on",
+                                 detail + (" Gaps: " + "; ".join(gaps) + "." if gaps else "")))
+
     budget = find(SessionTokenBudgetMiddleware)
     controls.append(_control("token_budget", "Token budget", "on" if budget else "off",
                              f"{getattr(budget, '_max', settings.session_token_budget):,} tokens per session; "
@@ -266,7 +280,26 @@ _CHANNEL_NAMES = {
     "AgUiChannel": ("agui", "AG-UI", "path"),
     "WebChat": ("web_chat", "Web chat", "path"),
     "TeamsChannel": ("teams", "Microsoft Teams", "path"),
+    "MemoryChannel": ("memory", "Memory API", "path"),
 }
+
+
+def _memory_provider(agent: Any) -> Any:
+    """The agent's long-term memory provider (agentkit-memory), found by duck type so this package needs no import."""
+    for provider in getattr(agent, "context_providers", None) or []:
+        if getattr(provider, "agentkit_memory_profile", None) and callable(getattr(provider, "describe", None)):
+            return provider
+    return None
+
+
+def _memory(agent: Any, app: Any, prefix: str = "") -> dict[str, Any] | None:
+    provider = _memory_provider(agent)
+    if provider is None:
+        return None
+    info = dict(provider.describe())
+    path = _path_of(app, "MemoryChannel")
+    info["api"] = prefix + path if path else None
+    return info
 
 
 def _channels(app: Any, console_path: str, prefix: str = "") -> list[dict[str, Any]]:
@@ -440,6 +473,7 @@ class Console:
             },
             "channels": _channels(self._app, self.path, prefix),
             "knowledge": _knowledge(agent),
+            "memory": _memory(agent, self._app, prefix),
             "security": security_posture(agent, s),
             "sessions": {"store": s.session_store, "shared": s.session_store != "memory",
                          "ttl_seconds": s.session_ttl_seconds},

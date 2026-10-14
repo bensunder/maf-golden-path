@@ -9,6 +9,9 @@ param registryServer string
 param env array
 @secure()
 param appInsightsConnectionString string
+@description('Long-term memory: the key for users\' memory (AGENTKIT_MEMORY_SALT). Empty = not set (refused in prod).')
+@secure()
+param memorySalt string = ''
 param authClientId string = ''
 @description('Browsers are sent to Entra sign-in (web chat); API clients without a token then get a redirect, not a 401.')
 param browserSignIn bool = false
@@ -44,16 +47,16 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           identity: identityId
         }
       ]
-      secrets: [
+      secrets: concat([
         { name: 'appinsights-connection-string', value: appInsightsConnectionString }
-      ]
+      ], empty(memorySalt) ? [] : [{ name: 'memory-salt', value: memorySalt }])
     }
     template: {
       containers: [
         {
           name: 'api'
           image: image
-          env: env
+          env: concat(env, empty(memorySalt) ? [] : [{ name: 'AGENTKIT_MEMORY_SALT', secretRef: 'memory-salt' }])
           resources: {
             cpu: json('0.5')
             memory: '1Gi'

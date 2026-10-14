@@ -79,8 +79,8 @@ export function PlatformPage() {
             <EstimateNote className="mt-4" />
           </Card>
           <InlineNotice>
-            Add-ons are estimated separately in the same document: Teams (5–8 days), web chat (3–6), and knowledge with permission trimming
-            (6–10). Replace the estimates with your own teams' numbers.
+            Add-ons are estimated separately in the same document: Teams (5–8 days), web chat (3–6), knowledge with permission trimming
+            (6–10), and long-term memory (4–8). Replace the estimates with your own teams' numbers.
           </InlineNotice>
         </div>
       </div>
@@ -93,7 +93,7 @@ interface Capability {
   id: string;
   label: string;
   description: string;
-  option?: "enable_web_chat" | "enable_teams" | "enable_knowledge";
+  option?: "enable_web_chat" | "enable_teams" | "enable_knowledge" | "memory_user";
 }
 
 const CAPABILITIES: Capability[] = [
@@ -105,6 +105,7 @@ const CAPABILITIES: Capability[] = [
   { id: "telemetry", label: "Telemetry", description: "OpenTelemetry to Application Insights; the platform dashboard and alerts." },
   { id: "evals", label: "Evaluations", description: "Eval cases that run offline in CI and live as the deploy gate." },
   { id: "knowledge", label: "Knowledge", description: "Azure AI Search, trimmed to each user's groups, with citations.", option: "enable_knowledge" },
+  { id: "memory", label: "Long-term memory", description: "Remembers each user's preferences across conversations; screened, bounded, reviewable.", option: "memory_user" },
   { id: "web", label: "Web Chat", description: "A chat page at /chat and an AG-UI endpoint.", option: "enable_web_chat" },
   { id: "teams", label: "Teams", description: "Azure Bot, approvals as Adaptive Cards.", option: "enable_teams" },
   { id: "azure", label: "Azure deployment", description: "Bicep, azd and an OIDC deploy pipeline." },
@@ -426,7 +427,7 @@ function GenerateAgentPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [team, setTeam] = useState("");
-  const [options, setOptions] = useState({ enable_web_chat: true, enable_teams: false, enable_knowledge: false });
+  const [options, setOptions] = useState({ enable_web_chat: true, enable_teams: false, enable_knowledge: false, memory_user: false });
   const [generated, setGenerated] = useState(false);
   const kit = overview.data?.service.kit_version;
 
@@ -441,6 +442,7 @@ function GenerateAgentPage() {
       ["enable_web_chat", String(options.enable_web_chat)],
       ["enable_teams", String(options.enable_teams)],
       ["enable_knowledge", String(options.enable_knowledge)],
+      ...(options.memory_user ? ([["memory", "user"]] as [string, string][]) : []),
     ];
     return [
       `copier copy --trust --vcs-ref ${ref}`,
@@ -451,7 +453,7 @@ function GenerateAgentPage() {
 
   const files = [
     { group: "Application", items: ["src/<package>/agent.py", "tools.py", "app.py", "instructions/system.md"] },
-    { group: "Tests", items: ["tests/test_agent.py", "test_app.py", "test_evals.py", ...(options.enable_teams ? ["test_teams.py"] : []), ...(options.enable_knowledge ? ["test_knowledge.py"] : [])] },
+    { group: "Tests", items: ["tests/test_agent.py", "test_app.py", "test_evals.py", ...(options.enable_teams ? ["test_teams.py"] : []), ...(options.enable_knowledge ? ["test_knowledge.py"] : []), ...(options.memory_user ? ["test_memory.py"] : [])] },
     { group: "Evaluations", items: ["evals/cases.yaml"] },
     { group: "Infrastructure", items: ["infra/main.bicep", "azure.yaml", "Dockerfile"] },
     ...(options.enable_knowledge ? [{ group: "Knowledge", items: ["knowledge/", "acl.yaml"] }] : []),
@@ -565,7 +567,7 @@ function GenerateAgentPage() {
               <legend className="text-[13px] font-medium text-zinc-900">Capabilities</legend>
               <p className="mt-0.5 text-xs text-zinc-500">
                 <Lock aria-hidden className="mr-1 inline size-3" />
-                Included in every agent. Channels and knowledge are optional.
+                Included in every agent. Channels, knowledge and memory are optional.
               </p>
               <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                 {CAPABILITIES.map((c) => {

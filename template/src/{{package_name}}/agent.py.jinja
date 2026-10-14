@@ -2,6 +2,11 @@
 
 Most changes to this service happen in ``tools.py`` and ``instructions/system.md``{% if framework == 'langgraph' %} (and ``graph.py``, the shape of
 the graph){% endif %}. Model access, auth, guardrails, telemetry, sessions and run limits come from agentkit.
+{%- if framework == 'maf' and memory == 'user' %}
+
+Long-term memory is on: the agent remembers each signed-in user's preferences across conversations
+(``agentkit.memory``: screened, bounded, retained ``AGENTKIT_MEMORY_RETENTION_DAYS``, reviewable at /v1/memory).
+{%- endif %}
 """
 
 from __future__ import annotations
@@ -16,6 +21,9 @@ from agentkit.langgraph import build_graph_agent
 from .graph import build_graph
 {%- else %}
 from agentkit.hosting import AgentKitSettings, build_agent, load_instructions
+{%- if memory == 'user' %}
+from agentkit.memory import UserMemoryProvider, memory_service
+{%- endif %}
 {%- endif %}
 
 from .tools import APPROVAL_RULES, TOOL_POLICY, TOOLS
@@ -51,5 +59,9 @@ def create_agent(settings: AgentKitSettings | None = None, client: SupportsChatG
         approval_rules=APPROVAL_RULES,
         settings=settings,
         client=client,
+{%- if memory == 'user' %}
+        # Shared with the app's MemoryChannel (same settings, same instance), so edits there reach the agent at once.
+        context_providers=[UserMemoryProvider(memory_service(settings))],
+{%- endif %}
     )
 {%- endif %}

@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --from=kit packages ./packages
 RUN pip install "./packages/agentkit-telemetry[azure,langsmith]" ./packages/agentkit-guardrails "./packages/agentkit-hosting[redis]" \
     ./packages/agentkit-tools "./packages/agentkit-knowledge[blob]" "./packages/agentkit-channels[teams]" \
-    ./packages/agentkit-testing ./packages/agentkit-langgraph
+    ./packages/agentkit-testing ./packages/agentkit-langgraph "./packages/agentkit-memory[redis]"
 COPY --from=kit deploy/vps/install_agent.py ./install_agent.py
 COPY . ./agent
 RUN python install_agent.py /app/agent

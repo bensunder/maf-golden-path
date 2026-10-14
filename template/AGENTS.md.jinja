@@ -11,6 +11,9 @@ This repo was generated from the agentkit golden path (see `.copier-answers.yml`
 {%- if enable_knowledge %}
 - Company documents live in `knowledge/`; every file needs a rule in `knowledge/acl.yaml` (who may read it). Search only through `knowledge_tool` (it runs as the signed-in user). Add eval cases with `user:`, `cites:` and, for anything restricted, `must_not_retrieve:` with `critical: true`.
 {%- endif %}
+{%- if framework == 'maf' and memory == 'user' %}
+- Long-term memory is on (`UserMemoryProvider` in `agent.py`, `MemoryChannel` in `app.py`). Don't add another memory store or write user data to the session yourself. Tell the agent what's worth remembering in `instructions/system.md`; keep `tests/test_memory.py` passing. Prod needs `AGENTKIT_MEMORY_SALT` (see the kit's `docs/memory.md`).
+{%- endif %}
 - Deploy with `azd up` (infra in `infra/`). Don't create Azure resources by hand. Platform values come from `azd env` (see `scripts/check_platform_env.py`).
 - Eval cases are the quality contract: add `rubric:`/`grounded:`/`tool_args:` for answer quality and `critical: true` for safety cases. The deploy pipeline scores them live with `agentkit-gate` against `evals/baseline.json`.
 - Behaviour changes go in `src/{{ package_name }}/instructions/system.md`, plus a case in `evals/cases.yaml`.

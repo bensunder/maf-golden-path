@@ -105,6 +105,8 @@ def check_contract(service: Path | None) -> list[str]:
         optional = {"AGENTKIT_ENVIRONMENT", "AGENTKIT_AUTH_CLIENT_ID", "AGENTKIT_APPROVER_ROLE",
                     "AGENTKIT_TEAMS_APPROVER_GROUP_ID", "AGENTKIT_TEAMS_APPROVALS_CHANNEL_ID",
                     "AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL",
+                    # long-term memory: a service-owned secret (azd env), required in prod by the hook and the app
+                    "AGENTKIT_MEMORY_SALT",
                     # console: set by the deploy pipeline or the platform when available, empty otherwise
                     "AGENTKIT_BUILD_COMMIT", "AGENTKIT_BUILD_RUN_URL", "AGENTKIT_BUILD_TIME", "AGENTKIT_OPS_WORKBOOK_ID"}
         for name in sorted(referenced - optional - set(KEYS)):

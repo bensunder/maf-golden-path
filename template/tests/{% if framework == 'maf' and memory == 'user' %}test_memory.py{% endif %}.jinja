@@ -1,0 +1,67 @@
+"""Long-term memory, end to end over HTTP (no network, no model): what a user tells the agent is remembered in
+their later conversations, is theirs to review and erase, and is never shown to anyone else."""
+
+from agentkit.hosting import create_app
+from agentkit.memory import REMEMBER_TOOL
+from agentkit.testing import ScriptedChatClient, reply, tool_call
+from fastapi.testclient import TestClient
+
+from {{ package_name }} import create_agent
+from {{ package_name }}.app import channels
+
+ANA = {"x-ms-client-principal-name": "ana@contoso.example"}
+BEN = {"x-ms-client-principal-name": "ben@contoso.example"}
+NOTE = "Prefers replies in bullet points"
+
+
+def serve(settings, client):
+    app = create_app(lambda s: create_agent(s, client=client), settings=settings, configure_telemetry=False,
+                     channels=channels())
+    return TestClient(app)
+
+
+def chat(http, user, message):
+    """A new conversation each time (no session_id)."""
+    response = http.post("/v1/chat", json={"message": message}, headers=user)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_remembered_in_a_later_conversation(settings):
+    client = ScriptedChatClient(script=[tool_call(REMEMBER_TOOL, text=NOTE), reply("Noted."), reply("Hello again.")])
+    with serve(settings, client) as http:
+        assert chat(http, ANA, "From now on, use bullet points please")["reply"] == "Noted."
+        chat(http, ANA, "hi")
+    assert NOTE in (client.calls[-1].instructions or "")
+
+
+def test_never_shown_to_another_user(settings):
+    client = ScriptedChatClient(script=[tool_call(REMEMBER_TOOL, text=NOTE), reply("Noted."), reply("Hello.")])
+    with serve(settings, client) as http:
+        chat(http, ANA, "From now on, use bullet points please")
+        chat(http, BEN, "what do you remember about me?")
+        assert http.get("/v1/memory", headers=BEN).json()["count"] == 0
+        assert http.get("/v1/memory", headers=ANA).json()["count"] == 1
+    assert NOTE not in (client.calls[-1].instructions or "")
+
+
+def test_users_review_and_erase_their_memory(settings):
+    client = ScriptedChatClient(script=[reply("Hello.")])
+    with serve(settings, client) as http:
+        added = http.post("/v1/memory", json={"text": NOTE}, headers={**ANA, "Idempotency-Key": "add-note-0001"})
+        assert added.status_code == 201
+        assert [i["text"] for i in http.get("/v1/memory", headers=ANA).json()["items"]] == [NOTE]
+        assert NOTE in http.get("/v1/memory/export", headers=ANA).text
+        assert http.delete("/v1/memory", headers=ANA).status_code == 204
+        chat(http, ANA, "hi")
+    assert NOTE not in (client.calls[-1].instructions or "")
+
+
+def test_personal_data_is_never_stored(settings):
+    client = ScriptedChatClient(script=[tool_call(REMEMBER_TOOL, text="My card is 4111 1111 1111 1111"), reply("OK.")])
+    with serve(settings, client) as http:
+        chat(http, ANA, "remember my card number")
+        assert http.get("/v1/memory", headers=ANA).json()["count"] == 0
+        refused = http.post("/v1/memory", json={"text": "email me at ana@contoso.example"},
+                            headers={**ANA, "Idempotency-Key": "add-note-0002"})
+    assert refused.status_code == 422 and refused.json()["detail"]["code"] == "personal_data"

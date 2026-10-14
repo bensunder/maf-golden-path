@@ -72,6 +72,15 @@ enable_knowledge:
   help: Answer from company documents (Azure AI Search, trimmed to what each user may read, with citations)
   default: false
 
+memory:
+  type: str
+  help: What the agent remembers (MAF agents). Long-term memory is opt-in; see docs/memory.md
+  default: session
+  when: "{{ framework == 'maf' }}"
+  choices:
+    "This conversation only (sessions; the default)": session
+    "Each signed-in user's preferences across conversations (governed long-term memory)": user
+
 python_version:
   type: str
   default: "3.11"

@@ -1,9 +1,10 @@
 PY ?= python
-PACKAGES := testing telemetry guardrails tools hosting channels knowledge langgraph
+PACKAGES := testing telemetry guardrails tools hosting channels memory knowledge langgraph
 EXTRAS_hosting := [redis,cosmos]
 EXTRAS_telemetry := [langsmith]
 EXTRAS_channels := [teams]
 EXTRAS_knowledge := [blob]
+EXTRAS_memory := [redis,cosmos]
 PLAYWRIGHT_VERSION ?= 1.56.0
 GEN_DIR ?= $(or $(TMPDIR),/tmp)/agentkit-template-check
 TOOLS_DIR := $(CURDIR)/.tools/bin
@@ -53,7 +54,7 @@ test-example:
 
 TEAMS := --data enable_teams=true --data enable_web_chat=false --data enable_knowledge=true
 
-test-template:      ## render both install modes, with and without Teams, and a LangGraph agent; run the generated projects' tests
+test-template:      ## render both install modes, with and without Teams, a LangGraph agent and a user-memory agent; run the generated projects' tests
 	rm -rf $(GEN_DIR)
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=feed . $(GEN_DIR)/feed
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=git . $(GEN_DIR)/git
@@ -68,6 +69,11 @@ test-template:      ## render both install modes, with and without Teams, and a 
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Graph Check" --data agentkit_source=feed --data framework=langgraph . $(GEN_DIR)/feed-langgraph
 	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed-langgraph
 	cd $(GEN_DIR)/feed-langgraph && $(PY) -m pytest -q -p no:cacheprovider
+	copier copy --defaults --vcs-ref HEAD -q --data project_name="Memory Check" --data agentkit_source=feed --data memory=user . $(GEN_DIR)/feed-memory
+	$(PY) -m pip install -q --no-deps -e $(GEN_DIR)/feed-memory
+	cd $(GEN_DIR)/feed-memory && $(PY) -m pytest -q -p no:cacheprovider
+	copier copy --defaults --vcs-ref HEAD -q --data project_name="Memory Check" --data agentkit_source=git --data memory=user . $(GEN_DIR)/git-memory
+	$(PY) scripts/check_rendered.py $(GEN_DIR)/git-memory
 
 test-infra: tools   ## Bicep build+lint, azure.yaml schema, workflow lint, platform↔service contract
 	test -d $(GEN_DIR)/git-teams || $(MAKE) test-template
