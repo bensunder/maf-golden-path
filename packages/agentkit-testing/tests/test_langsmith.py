@@ -83,15 +83,65 @@ def test_the_gate_verdict_never_depends_on_langsmith(tmp_path, monkeypatch, caps
     assert code == 0 and "couldn't record the results in LangSmith" in capsys.readouterr().err
 
 
+def _export_one_span_to(endpoint: str) -> list[dict]:
+    """Send one real span through ``langsmith_exporter`` to a local server; return what the server received.
+
+    Checks the request on the wire (path and headers) rather than exporter internals, which the OTel SDK
+    renames between releases (``_headers`` went away in 1.45)."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+    received: list[dict] = []
+
+    class Collector(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - http.server's naming
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            received.append({"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}})
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):  # keep test output quiet
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Collector)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = endpoint.replace("{server}", f"http://127.0.0.1:{server.server_port}")
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(langsmith_exporter("lsv2_test", project="legal-desk",
+                                                                           endpoint=base)))
+        provider.get_tracer("test").start_span("invoke_agent").end()
+        provider.shutdown()
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+    return received
+
+
 def test_traces_go_to_langsmiths_otel_endpoint_with_the_key_and_project():
     import pytest
 
     pytest.importorskip("opentelemetry.exporter.otlp.proto.http.trace_exporter")
-    exporter = langsmith_exporter("lsv2_test", project="legal-desk")
-    assert exporter._endpoint == "https://api.smith.langchain.com/otel/v1/traces"
-    assert exporter._headers["x-api-key"] == "lsv2_test" and exporter._headers["Langsmith-Project"] == "legal-desk"
-    eu = langsmith_exporter("k", project="p", endpoint="https://eu.api.smith.langchain.com/otel/")
-    assert eu._endpoint == "https://eu.api.smith.langchain.com/otel/v1/traces"
+    [request] = _export_one_span_to("{server}/otel")
+    assert request["path"] == "/otel/v1/traces"
+    assert request["headers"]["x-api-key"] == "lsv2_test"
+    assert request["headers"]["langsmith-project"] == "legal-desk"
+    # a trailing slash on the configured base (as in LangSmith's EU docs) doesn't double it
+    [eu] = _export_one_span_to("{server}/otel/")
+    assert eu["path"] == "/otel/v1/traces"
+
+
+def test_the_default_endpoint_is_langsmiths_us_otel_base():
+    import inspect
+
+    import pytest
+
+    pytest.importorskip("opentelemetry.exporter.otlp.proto.http.trace_exporter")
+    assert inspect.signature(langsmith_exporter).parameters["endpoint"].default == "https://api.smith.langchain.com/otel"
 
 
 def test_settings_read_the_standard_langsmith_variables(monkeypatch):
