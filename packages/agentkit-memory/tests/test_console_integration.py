@@ -11,9 +11,9 @@ from agentkit.testing import ScriptedChatClient
 USER = {"x-ms-client-principal-name": "sam@contoso.example"}
 
 
-def overview(memory: MemoryService | None, *, with_channel: bool = True) -> dict:
+def overview(memory: MemoryService | None, *, with_channel: bool = True, profile: str = "user") -> dict:
     settings = AgentKitSettings(environment="test", guardrail_mode="heuristic", service_name="payments",
-                                require_user=True, _env_file=None)
+                                require_user=True, memory=profile, _env_file=None)
     providers = [UserMemoryProvider(memory)] if memory else []
     channels = [Console(title="Payments")]
     if memory and with_channel:
@@ -32,8 +32,20 @@ def control(body: dict, cid: str) -> dict | None:
 
 
 def test_agents_without_memory_show_none_and_no_control():
-    body = overview(None)
+    body = overview(None, profile="session")
     assert body["memory"] is None and control(body, "long_term_memory") is None
+    assert control(body, "agent_memory") is None
+
+
+def test_full_memory_by_default_shows_both_kinds_and_controls():
+    body = overview(None, profile="full")
+    memory = body["memory"]
+    assert memory["profile"] == "full" and memory["user"] is True and memory["api"] == "/v1/memory"
+    assert memory["agent"]["journal_retention_days"] == 90 and memory["agent"]["admins_configured"] is False
+    assert "remember_lesson" in memory["agent"]["tools"]
+    agent = control(body, "agent_memory")
+    assert agent["status"] == "partial" and "AGENTKIT_MEMORY_ADMINS" in agent["detail"]
+    assert control(body, "long_term_memory")["status"] == "partial"  # in-process store in tests
 
 
 def test_memory_is_described_with_its_api_path():
@@ -59,4 +71,4 @@ def test_security_control_reports_gaps(config, status, gap):
 
 def test_memory_without_the_api_channel_has_no_api_path():
     memory = MemoryService(InMemoryMemoryStore(), salt="console-test-salt-0123456789")
-    assert overview(memory, with_channel=False)["memory"]["api"] is None
+    assert overview(memory, with_channel=False, profile="session")["memory"]["api"] is None

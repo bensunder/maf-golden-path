@@ -30,7 +30,7 @@ from typing import Any, TypeVar
 from opentelemetry import metrics, trace
 
 from .errors import MemoryConflict, MemoryError_, MemoryRateLimited, MemoryUnavailable
-from .models import MemoryDoc, MemoryItem, MemoryKind, MemorySource
+from .models import MemoryDoc, MemoryItem, MemoryKind, MemorySource, VersionedDoc
 from .policy import MemoryPolicy
 from .stores import MemoryStore
 
@@ -42,6 +42,7 @@ _ops = metrics.get_meter("agentkit.memory").create_counter(
     "agentkit.memory.operations", unit="{operation}", description="Memory operations by kind and outcome")
 
 T = TypeVar("T")
+D = TypeVar("D", bound=VersionedDoc)
 _WRITE_ATTEMPTS = 4
 
 
@@ -147,6 +148,75 @@ class MemoryService:
         message = f"{user.tenant_id or ''}\x1f{user.user_id}".encode()
         return hmac.new(self._salt, message, hashlib.sha256).hexdigest()[:32]
 
+    def digest(self, *parts: str | None) -> str:
+        """A salted, irreversible id for any tuple (agent lessons, subjects, journal pages). Never a raw id in a key."""
+        message = "\x1f".join(p or "" for p in parts).encode()
+        return hmac.new(self._salt, b"agentkit-memory-v1\x1e" + message, hashlib.sha256).hexdigest()[:32]
+
+    def pseudonym(self, user_id: str | None, tenant_id: str | None = None) -> str:
+        """How a person appears in lesson history and the journal: stable, short, not reversible without the salt."""
+        if not user_id:
+            return ""
+        return "u_" + self.key_for(MemoryUser(user_id=user_id, tenant_id=tenant_id))[:12]
+
+    # ----------------------------------------------------------------- generic documents
+    async def load_doc(self, op: str, key: str, model: type[D]) -> D:
+        """Read any document through the timeout and circuit breaker."""
+        with _tracer.start_as_current_span(f"memory.{op}"):
+            doc, _ = await self._guarded(op, lambda: self._load(key, model))
+        self._count(op, "ok")
+        return doc
+
+    async def write_doc(
+        self,
+        op: str,
+        key: str,
+        model: type[D],
+        change: Callable[[D, float], D],
+        expiry: Callable[[D], float | None],
+    ) -> D:
+        """Compare-and-set any document: load, apply ``change`` (pure), save, retry on conflict.
+
+        ``change`` returns the same object to mean "nothing to write"; ``expiry`` says when the stored document
+        may be deleted (None deletes it now). Returns the document as written."""
+        with _tracer.start_as_current_span(f"memory.{op}") as span:
+            for attempt in range(1, _WRITE_ATTEMPTS + 1):
+                doc, token = await self._guarded(op, lambda: self._load(key, model))
+                new_doc = change(doc, self._clock())
+                if new_doc is doc:
+                    break
+                try:
+                    await self._guarded(op, lambda: self.store.save(key, new_doc, token, expiry(new_doc)))
+                    break
+                except MemoryConflict:
+                    span.add_event("memory.conflict", {"attempt": attempt})
+                    if attempt == _WRITE_ATTEMPTS:
+                        self._count(op, "conflict")
+                        raise
+                    await asyncio.sleep(random.uniform(0.01, 0.05) * attempt)
+            span.set_attribute("memory.attempts", attempt)
+        self._count(op, "ok")
+        return new_doc
+
+    def _load(self, key: str, model: type[D]) -> Awaitable[tuple[D, Any]]:
+        # User memory calls load(key) as before, so a custom store written for 0.10 keeps working for it.
+        return self.store.load(key) if model is MemoryDoc else self.store.load(key, model)
+
+    async def delete_doc(self, op: str, key: str) -> None:
+        with _tracer.start_as_current_span(f"memory.{op}"):
+            await self._guarded(op, lambda: self.store.delete(key))
+        self._count(op, "ok")
+
+    def rate_limit(self, op: str, key: str) -> None:
+        """Apply the per-key write limit (``writes_per_minute``) to any writer."""
+        wait = self._writes.take(key)
+        if wait:
+            self._count(op, "rate_limited")
+            raise MemoryRateLimited("Too many memory changes; try again shortly.", retry_after=wait)
+
+    def now(self) -> float:
+        return self._clock()
+
     # --------------------------------------------------------------------------- use cases
     async def recall(self, user: MemoryUser) -> list[MemoryItem]:
         """What the agent remembers about ``user``, most recently updated first."""
@@ -240,32 +310,14 @@ class MemoryService:
             raise
 
     def _rate_limit(self, op: str, user: MemoryUser) -> None:
-        wait = self._writes.take(self.key_for(user))
-        if wait:
-            self._count(op, "rate_limited")
-            raise MemoryRateLimited("Too many memory changes; try again shortly.", retry_after=wait)
+        self.rate_limit(op, self.key_for(user))
 
     async def _write(self, op: str, user: MemoryUser, change: Callable[[MemoryDoc, float], MemoryDoc]) -> None:
         key = self.key_for(user)
-        with _tracer.start_as_current_span(f"memory.{op}") as span:
-            for attempt in range(1, _WRITE_ATTEMPTS + 1):
-                doc, token = await self._guarded(op, lambda: self.store.load(key))
-                now = self._clock()
-                new_doc = change(doc, now)
-                if new_doc is doc:  # nothing changed (e.g. deleting what isn't there)
-                    break
-                try:
-                    await self._guarded(op, lambda: self.store.save(key, new_doc, token, self.policy.expiry(new_doc)))
-                    break
-                except MemoryConflict:
-                    span.add_event("memory.conflict", {"attempt": attempt})
-                    if attempt == _WRITE_ATTEMPTS:
-                        self._count(op, "conflict")
-                        raise
-                    await asyncio.sleep(random.uniform(0.01, 0.05) * attempt)
-            span.set_attribute("memory.attempts", attempt)
-        self._cache.pop(key, None)
-        self._count(op, "ok")
+        try:
+            await self.write_doc(op, key, MemoryDoc, change, self.policy.expiry)
+        finally:
+            self._cache.pop(key, None)
 
     async def _guarded(self, op: str, call: Callable[[], Awaitable[T]]) -> T:
         if not self._breaker.allow():
@@ -290,6 +342,9 @@ class MemoryService:
             raise MemoryUnavailable("Memory is temporarily unavailable.") from exc
         self._breaker.success()
         return result
+
+    def count(self, op: str, outcome: str) -> None:
+        self._count(op, outcome)
 
     def _remember_in_cache(self, key: str, items: list[MemoryItem]) -> None:
         if self._cache_seconds <= 0:

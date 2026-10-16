@@ -3,6 +3,7 @@
 //
 // Every call acts on the signed-in person's own memory: the API has no way to read anyone else's.
 
+import type { AgentMemoryInfo } from "./agentMemory";
 import { ApiError, ROOT } from "./api";
 
 export type MemoryKind = "preference" | "fact";
@@ -25,9 +26,14 @@ export interface MemoryList {
   retention_days: number;
 }
 
-/** The overview's description of the agent's memory (null when the agent has none). */
+/** The overview's description of the agent's memory (null when the agent has none).
+ *  ``full`` also has the agent's own memory (lessons, subjects, journal) under ``agent``; ``off`` means memory was
+ *  configured but couldn't start (``off`` says why) and nothing else is set. */
 export interface MemoryInfo {
-  profile: "user";
+  profile: "user" | "full" | "off";
+  off?: string | null;
+  user?: boolean;
+  agent?: AgentMemoryInfo | null;
   store: "memory" | "redis" | "cosmos" | string;
   retention_days: number;
   max_items: number;

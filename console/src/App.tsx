@@ -21,7 +21,7 @@ import { PlaygroundPage } from "@/pages/Playground";
 import { SessionsPage } from "@/pages/Sessions";
 import { lazy, Suspense, useEffect } from "react";
 
-// Loaded on first visit: most agents have no memory, so most people never download it.
+// Loaded on first visit, so people who never open Memory never download it.
 const MemoryPage = lazy(() => import("@/pages/Memory").then((m) => ({ default: m.MemoryPage })));
 
 const TITLES: Record<string, string> = {

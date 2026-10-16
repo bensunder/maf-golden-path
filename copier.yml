@@ -74,12 +74,13 @@ enable_knowledge:
 
 memory:
   type: str
-  help: What the agent remembers (MAF agents). Long-term memory is opt-in; see docs/memory.md
-  default: session
+  help: What the agent remembers across conversations (MAF agents); see docs/memory.md
+  default: full
   when: "{{ framework == 'maf' }}"
   choices:
-    "This conversation only (sessions; the default)": session
-    "Each signed-in user's preferences across conversations (governed long-term memory)": user
+    "Full (the default): people's preferences, reviewed lessons, each customer's or case's history, a run journal": full
+    "Only each signed-in person's preferences": user
+    "Nothing beyond the conversation (sessions only)": session
 
 python_version:
   type: str

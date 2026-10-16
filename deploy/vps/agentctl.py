@@ -48,7 +48,8 @@ _NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}[a-z0-9]$")
 _HOST = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$")
 _ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
 # role checks need signed role claims (Easy Auth); without them a role setting would trust a plain header
-_REFUSED_ENV = re.compile(r"(_ROLE|_ROLES)$|^AGENTKIT_(USER|USER_FALLBACK|PRINCIPAL_CLAIMS|USER_TOKEN)_HEADER$|^AGENTKIT_REQUIRE_USER$")
+_REFUSED_ENV = re.compile(r"(_ROLE|_ROLES)$|^AGENTKIT_(USER|USER_FALLBACK|PRINCIPAL_CLAIMS|USER_TOKEN)_HEADER$|^AGENTKIT_REQUIRE_USER$"
+                          r"|^AGENTKIT_MEMORY_(SALT|ADMINS|DEV_USER)$")  # memory keys and reviewers: set by this tool and .env
 FLEET_CALLER = "x-forwarded-email: fleet@agentkit.local"
 PREFIX_HEADER = "x-agentkit-prefix"  # set by the platform router; agents render their links under it
 _EMAIL = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$")
@@ -164,6 +165,21 @@ def ensure_redis_passwords(data: dict) -> None:
     for entry in [data["sample"], *data["agents"]]:
         if isinstance(entry, dict) and not _TOKEN.fullmatch(str(entry.get("redis_password") or "")):
             entry["redis_password"] = secrets.token_urlsafe(32)
+
+
+def ensure_memory_salts(data: dict) -> None:
+    """Each agent's own long-term-memory key (AGENTKIT_MEMORY_SALT, docs/memory.md), kept in agents.yaml so it survives
+    rebuilds: one agent's memory keys can't be derived from another's. Never change one once set: that agent's memory
+    would become unreachable (it then expires on its own)."""
+    import secrets
+
+    for entry in [data.get("sample"), *data["agents"]]:
+        if isinstance(entry, dict) and not entry.get("memory_salt"):  # a damaged one is refused by validate, not replaced
+            entry["memory_salt"] = secrets.token_urlsafe(32)
+
+
+def memory_env(entry: dict | None) -> dict[str, str]:
+    return {"AGENTKIT_MEMORY_SALT": entry["memory_salt"]} if isinstance(entry, dict) and entry.get("memory_salt") else {}
 
 
 def signed_by_platform(data: dict, name: str, entry: dict | None, env: dict[str, str]) -> bool:
@@ -333,6 +349,9 @@ def validate(data: dict) -> None:
     for e in [*data["agents"], data.get("sample") or {}]:
         if isinstance(e, dict) and "redis_password" in e and not _TOKEN.fullmatch(str(e["redis_password"])):
             raise Problem("agents.yaml: a redis_password has unexpected characters; delete it and run render")
+        if isinstance(e, dict) and "memory_salt" in e and not _TOKEN.fullmatch(str(e["memory_salt"])):
+            raise Problem("agents.yaml: a memory_salt has unexpected characters (deleting it makes that agent forget "
+                          "everything it remembers)")
     tokens = [str(e.get("connector_token")) for e in [*data["agents"], data.get("sample") or {}]
               if isinstance(e, dict) and e.get("connector_token")]
     if len(tokens) != len(set(tokens)):
@@ -401,6 +420,7 @@ def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = N
     env["AGENTKIT_REDIS_URL"] = f"redis://redis:6379/{agent['redis_db']}"
     if agent.get("redis_password"):
         env.update(redis_env(agent["name"], agent))
+    env.update(memory_env(agent))
     for key, value in (agent.get("env") or {}).items():
         env[key] = str(value).replace("$", "$$")  # literal: Compose would otherwise interpolate it
     env.update(connector_env(agent, known or {}))
@@ -565,6 +585,7 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
     sample_env = {**(connector_env(data["sample"], known) if data.get("sample") else {}),
                   **platform_env(data, "sample", data.get("sample"), env),
                   **(redis_env("sample", data["sample"]) if (data.get("sample") or {}).get("redis_password") else {}),
+                  **memory_env(data.get("sample")),
                   **agent_extra}
     if sample_env:
         services["agent"] = {"environment": sample_env}  # merged into the sample's settings
@@ -941,6 +962,7 @@ def main(argv: list[str] | None = None) -> None:
         if gone.get("internal"):
             removed = None
     ensure_redis_passwords(data)  # every agent its own Redis user (sessions can't be read across agents)
+    ensure_memory_salts(data)  # and its own memory key (docs/memory.md)
     validate(data)  # before anything is written
     if data.get("platform"):
         ensure_secret_key()  # also for stacks set up before connectors existed

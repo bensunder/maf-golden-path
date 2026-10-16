@@ -34,11 +34,16 @@ param approverRole string = ''
 
 @description('Client id of the Entra app registration that protects this API (Easy Auth). Required for prod.')
 param authClientId string = ''
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
 
 @description('Long-term memory: secret that keys each user\'s memory (azd env set AGENTKIT_MEMORY_SALT ...). Required for prod; never change it once live.')
 @secure()
 param memorySalt string = ''
+{%- if memory == 'full' %}
+
+@description('Long-term memory: who reviews the agent\'s lessons and may read its subject memory and journal (comma-separated user ids).')
+param memoryAdmins string = ''
+{%- endif %}
 {%- endif %}
 {%- if enable_console %}
 
@@ -167,6 +172,9 @@ module app 'modules/container-app.bicep' = {
       { name: 'AGENTKIT_COSMOS_DATABASE', value: cosmosDatabase }
       { name: 'AGENTKIT_COSMOS_CONTAINER', value: sessions.outputs.containerName }
       { name: 'AGENTKIT_APPROVER_ROLE', value: approverRole }
+{%- if framework == 'maf' and memory == 'full' %}
+      { name: 'AGENTKIT_MEMORY_ADMINS', value: memoryAdmins }
+{%- endif %}
 {%- if enable_knowledge %}
       { name: 'AGENTKIT_KNOWLEDGE_SEARCH_ENDPOINT', value: knowledge.outputs.searchEndpoint }
       { name: 'AGENTKIT_KNOWLEDGE_INDEX', value: 'knowledge' }
@@ -191,7 +199,7 @@ module app 'modules/container-app.bicep' = {
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
     ]
     appInsightsConnectionString: platformAccess.outputs.appInsightsConnectionString
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
     memorySalt: memorySalt
 {%- endif %}
   }

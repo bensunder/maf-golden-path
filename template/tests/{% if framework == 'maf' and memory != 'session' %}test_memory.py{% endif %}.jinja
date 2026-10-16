@@ -1,13 +1,20 @@
 """Long-term memory, end to end over HTTP (no network, no model): what a user tells the agent is remembered in
-their later conversations, is theirs to review and erase, and is never shown to anyone else."""
-
+their later conversations, is theirs to review and erase, and is never shown to anyone else.
+{%- if memory == 'full' %} The agent's own
+memory too: what it did for a customer is known to the next run, and lessons wait for a memory admin.
+{%- endif %}"""
+{% if memory == 'full' %}
+import pytest
+{% endif %}
 from agentkit.hosting import create_app
-from agentkit.memory import REMEMBER_TOOL
+from agentkit.memory import {% if memory == 'full' %}HISTORY_TOOL, LOG_EVENT_TOOL, REMEMBER_LESSON_TOOL, {% endif %}REMEMBER_TOOL
 from agentkit.testing import ScriptedChatClient, reply, tool_call
 from fastapi.testclient import TestClient
 
 from {{ package_name }} import create_agent
+{%- if enable_web_chat or enable_teams %}
 from {{ package_name }}.app import channels
+{%- endif %}
 
 ANA = {"x-ms-client-principal-name": "ana@contoso.example"}
 BEN = {"x-ms-client-principal-name": "ben@contoso.example"}
@@ -15,8 +22,8 @@ NOTE = "Prefers replies in bullet points"
 
 
 def serve(settings, client):
-    app = create_app(lambda s: create_agent(s, client=client), settings=settings, configure_telemetry=False,
-                     channels=channels())
+    app = create_app(lambda s: create_agent(s, client=client), settings=settings, configure_telemetry=False{% if enable_web_chat or enable_teams %},
+                     channels=channels(){% endif %})
     return TestClient(app)
 
 
@@ -65,3 +72,36 @@ def test_personal_data_is_never_stored(settings):
         refused = http.post("/v1/memory", json={"text": "email me at ana@contoso.example"},
                             headers={**ANA, "Idempotency-Key": "add-note-0002"})
     assert refused.status_code == 422 and refused.json()["detail"]["code"] == "personal_data"
+{%- if memory == 'full' %}
+
+
+def test_the_next_run_knows_what_was_done_for_a_customer(settings):
+    """Subject memory works for anyone (and for scheduled runs): ids and outcomes, never names."""
+    client = ScriptedChatClient(script=[
+        tool_call(LOG_EVENT_TOOL, subject="customer:1042", event="follow_up_sent", note="ticket T-77"), reply("Done."),
+        tool_call(HISTORY_TOOL, subject="customer:1042"), reply("Already followed up."),
+    ])
+    with serve(settings, client) as http:
+        chat(http, ANA, "follow up with customer 1042")
+        chat(http, BEN, "has anyone followed up with customer 1042?")
+    history = list(client.tool_results().values())[-1]
+    assert "follow_up_sent: ticket T-77" in history
+
+
+@pytest.fixture
+def admin(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_MEMORY_ADMINS", "ben@contoso.example")
+    return BEN
+
+
+def test_lessons_wait_for_a_memory_admin(settings, admin):
+    client = ScriptedChatClient(script=[tool_call(REMEMBER_LESSON_TOOL, text="Order numbers start with A or B"),
+                                        reply("Noted.")])
+    with serve(settings, client) as http:
+        chat(http, ANA, "learn this: order numbers start with A or B")  # Ana isn't a memory admin
+        queue = http.get("/v1/memory/agent/lessons?status=pending", headers=admin).json()["items"]
+        assert [lesson["text"] for lesson in queue] == ["Order numbers start with A or B"]
+        assert http.get("/v1/memory/agent/lessons", headers=ANA).status_code == 403
+        approved = http.post(f"/v1/memory/agent/lessons/{queue[0]['id']}/approve", json={}, headers=admin)
+        assert approved.json()["status"] == "active"
+{%- endif %}

@@ -1,5 +1,8 @@
 """Where memory documents live. One small interface, three backends, optimistic concurrency everywhere.
 
+Every document is a ``VersionedDoc`` (user memory, agent lessons, subject histories, journal pages); the
+store doesn't care which, it only needs the ``version`` field for compare-and-set.
+
 * ``InMemoryMemoryStore``: one process (tests, local dev). Lost on restart, so never for real users.
 * ``RedisMemoryStore``: any Redis 6+. Uses only GET, SET, DEL and EVAL on its own key prefix, which is
   exactly what the VPS stack's per-agent Redis users may run (deploy/vps/agentctl.py).
@@ -16,10 +19,12 @@ import asyncio
 import json
 import math
 import time
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from .errors import MemoryConflict
-from .models import MemoryDoc
+from .models import MemoryDoc, VersionedDoc
+
+D = TypeVar("D", bound=VersionedDoc)
 
 __all__ = ["CosmosMemoryStore", "InMemoryMemoryStore", "MemoryStore", "RedisMemoryStore"]
 
@@ -27,11 +32,11 @@ __all__ = ["CosmosMemoryStore", "InMemoryMemoryStore", "MemoryStore", "RedisMemo
 class MemoryStore(Protocol):
     kind: str
 
-    async def load(self, user_key: str) -> tuple[MemoryDoc, Any]:
-        """The user's document (empty when there is none) and a concurrency token for ``save``."""
+    async def load(self, user_key: str, model: type[D] = MemoryDoc) -> tuple[D, Any]:
+        """The document as ``model`` (empty when there is none) and a concurrency token for ``save``."""
         ...
 
-    async def save(self, user_key: str, doc: MemoryDoc, token: Any, expires_at: float | None) -> None:
+    async def save(self, user_key: str, doc: VersionedDoc, token: Any, expires_at: float | None) -> None:
         """Write ``doc`` if unchanged since ``token``; delete it when ``expires_at`` is None (no items)."""
         ...
 
@@ -53,20 +58,20 @@ class InMemoryMemoryStore:
         self._lock = asyncio.Lock()
         self._clock = clock
 
-    async def load(self, user_key: str) -> tuple[MemoryDoc, Any]:
+    async def load(self, user_key: str, model: type[D] = MemoryDoc) -> tuple[D, Any]:
         async with self._lock:
             entry = self._docs.get(user_key)
             if entry is None or entry[1] <= self._clock():
                 self._docs.pop(user_key, None)
-                return MemoryDoc(), 0
-            doc = MemoryDoc.model_validate_json(entry[0])
+                return model(), 0
+            doc = model.model_validate_json(entry[0])
             return doc, doc.version
 
-    async def save(self, user_key: str, doc: MemoryDoc, token: Any, expires_at: float | None) -> None:
+    async def save(self, user_key: str, doc: VersionedDoc, token: Any, expires_at: float | None) -> None:
         async with self._lock:
             entry = self._docs.get(user_key)
             alive = entry is not None and entry[1] > self._clock()
-            current = MemoryDoc.model_validate_json(entry[0]).version if alive else 0
+            current = int(json.loads(entry[0]).get("version", 0)) if alive else 0
             if current != token:
                 raise MemoryConflict("The memory changed while it was being updated.")
             if expires_at is None:
@@ -122,14 +127,14 @@ class RedisMemoryStore:
     def _key(self, user_key: str) -> str:
         return f"{self._prefix}memory:{user_key}"
 
-    async def load(self, user_key: str) -> tuple[MemoryDoc, Any]:
+    async def load(self, user_key: str, model: type[D] = MemoryDoc) -> tuple[D, Any]:
         raw = await self._r.get(self._key(user_key))
         if not raw:
-            return MemoryDoc(), 0
-        doc = MemoryDoc.model_validate_json(raw)
+            return model(), 0
+        doc = model.model_validate_json(raw)
         return doc, doc.version
 
-    async def save(self, user_key: str, doc: MemoryDoc, token: Any, expires_at: float | None) -> None:
+    async def save(self, user_key: str, doc: VersionedDoc, token: Any, expires_at: float | None) -> None:
         if expires_at is None:
             payload, ttl = "", 0
         else:
@@ -165,18 +170,18 @@ class CosmosMemoryStore:
     def _id(user_key: str) -> str:
         return f"memory:{user_key}"
 
-    async def load(self, user_key: str) -> tuple[MemoryDoc, Any]:
+    async def load(self, user_key: str, model: type[D] = MemoryDoc) -> tuple[D, Any]:
         from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
         try:
             item = await self._c.read_item(item=self._id(user_key), partition_key=self._id(user_key))
         except CosmosResourceNotFoundError:
-            return MemoryDoc(), None
+            return model(), None
         if float(item.get("expires_at", 0)) <= self._clock():
-            return MemoryDoc(), item.get("_etag")
-        return MemoryDoc.model_validate(item["doc"]), item.get("_etag")
+            return model(), item.get("_etag")
+        return model.model_validate(item["doc"]), item.get("_etag")
 
-    async def save(self, user_key: str, doc: MemoryDoc, token: Any, expires_at: float | None) -> None:
+    async def save(self, user_key: str, doc: VersionedDoc, token: Any, expires_at: float | None) -> None:
         from azure.core import MatchConditions
         from azure.cosmos.exceptions import (
             CosmosAccessConditionFailedError,

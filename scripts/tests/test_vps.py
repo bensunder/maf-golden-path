@@ -132,7 +132,9 @@ def test_agentctl_adds_agents_and_the_fleet_behind_their_own_sign_in(stack):
                                   ["add", "x2", "legal", "--host", "agent.203-0-113-7.sslip.io"],
                                   ["add", "x3", "legal", "--env", "lower=case"], ["remove", "nobody"],
                                   ["add", "x4", "legal", "--env", "AGENTKIT_CONSOLE_ROLE=Admin"],
-                                  ["add", "x5", "legal", "--env", "AGENTKIT_USER_HEADER=x-user"]])
+                                  ["add", "x5", "legal", "--env", "AGENTKIT_USER_HEADER=x-user"],
+                                  ["add", "x6", "legal", "--env", "AGENTKIT_MEMORY_ADMINS=me@example.com"],
+                                  ["add", "x7", "legal", "--env", "AGENTKIT_MEMORY_SALT=" + "s" * 40]])
 def test_agentctl_refuses_what_would_break_the_stack(stack, args):
     root, run = stack
     run(*[str(root / a) if a == "legal" else a for a in args], ok=False)
@@ -154,6 +156,25 @@ def test_agentctl_checks_a_hand_edited_list_and_keeps_other_compose_files(stack)
         run("render", ok=False)
     (root / "agents.yaml").write_text(good)
     run("render")
+
+
+def test_every_agent_gets_its_own_stable_memory_salt(stack):
+    root, run = stack
+    run("add", "legal", str(root / "legal"))
+    run("add", "hr", str(root / "legal"))
+    services = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    salts = {name: services[name]["environment"]["AGENTKIT_MEMORY_SALT"] for name in ("agent", "agent-legal", "agent-hr")}
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]{43}", s) for s in salts.values()) and len(set(salts.values())) == 3
+    run("render")  # salts are kept: changing one would make that agent forget everything
+    again = yaml.safe_load((root / "docker-compose.agents.yml").read_text())["services"]
+    assert {name: again[name]["environment"]["AGENTKIT_MEMORY_SALT"] for name in salts} == salts
+    # reviewers come from .env, the same for every agent
+    base = yaml.safe_load((root / "docker-compose.yml").read_text())["services"]["agent"]["environment"]
+    assert base["AGENTKIT_MEMORY_ADMINS"] == "${MEMORY_ADMINS:-}"
+    good = (root / "agents.yaml").read_text()
+    (root / "agents.yaml").write_text(good.replace(salts["agent-legal"], "short"))
+    assert "memory_salt" in run("render", ok=False)
+    (root / "agents.yaml").write_text(good)
 
 
 def test_platform_mode_routes_internal_agents_through_one_sign_in(stack, tmp_path):

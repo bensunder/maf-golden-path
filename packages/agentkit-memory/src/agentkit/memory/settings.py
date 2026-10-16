@@ -1,8 +1,8 @@
-"""Memory settings (``AGENTKIT_MEMORY_*``) and the one place a ``MemoryService`` is built from them.
+"""Memory settings (``AGENTKIT_MEMORY_*``) and the one place memory services are built from them.
 
-The service's agent (``UserMemoryProvider``) and its HTTP API (``MemoryChannel``) must share one
-``MemoryService`` so a write through either invalidates the other's cache. ``memory_service()``
-returns the same instance for the same configuration in a process.
+The agent's providers (``UserMemoryProvider``, ``AgentMemoryProvider``) and the HTTP API (``MemoryChannel``)
+must share one ``MemoryService`` so a write through either invalidates the other's cache.
+``memory_service()`` and ``agent_memory()`` return the same instance for the same configuration in a process.
 """
 
 from __future__ import annotations
@@ -13,11 +13,15 @@ from typing import Any, Literal
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .agent_memory import AgentMemory
+from .journal import RunJournal
+from .lessons import LessonBook, LessonPolicy
 from .policy import MemoryPolicy
 from .service import MemoryService
 from .stores import CosmosMemoryStore, InMemoryMemoryStore, MemoryStore, RedisMemoryStore
+from .subjects import SubjectMemory, SubjectPolicy
 
-__all__ = ["MemorySettings", "memory_service", "reset_memory_services"]
+__all__ = ["MemorySettings", "agent_memory", "memory_service", "reset_memory_services"]
 
 
 class MemorySettings(BaseSettings):
@@ -39,15 +43,32 @@ class MemorySettings(BaseSettings):
     #: Local and test only: the user to remember for when a request carries no identity (evals, a laptop).
     dev_user: str | None = None
 
+    # ---- agent memory: lessons, subjects, journal (docs/memory.md)
+    #: Comma-separated user ids (as the platform's user header carries them, e.g. e-mail addresses) who review
+    #: the agent's lessons and may read its subject memory and journal. Empty: lessons wait until one is set.
+    admins: str = ""
+    max_lessons: int = Field(default=100, ge=1, le=500)
+    lesson_retention_days: int = Field(default=365, ge=1, le=3650)
+    #: How long a lesson waits for review, and how long an archived one can be restored.
+    lesson_review_days: int = Field(default=30, ge=1, le=365)
+    subject_retention_days: int = Field(default=365, ge=1, le=3650)
+    max_subject_events: int = Field(default=200, ge=1, le=2000)
+    journal_retention_days: int = Field(default=90, ge=1, le=3650)
 
-_LOCK = threading.Lock()
+    def admin_ids(self) -> frozenset[str]:
+        return frozenset(a.strip().casefold() for a in self.admins.split(",") if a.strip())
+
+
+_LOCK = threading.RLock()
 _SERVICES: dict[tuple[Any, ...], MemoryService] = {}
+_AGENT_MEMORIES: dict[tuple[Any, ...], AgentMemory] = {}
 
 
 def reset_memory_services() -> None:
     """Forget built services (tests)."""
     with _LOCK:
         _SERVICES.clear()
+        _AGENT_MEMORIES.clear()
 
 
 def _resolve(settings: Any, mem: MemorySettings) -> tuple[str, str, bool]:
@@ -127,3 +148,37 @@ def memory_service(settings: Any = None, memory_settings: MemorySettings | None 
             service.dev_user = mem.dev_user if settings.environment in ("local", "test") else None
             _SERVICES[key] = service
         return service
+
+
+def agent_memory(settings: Any = None, memory_settings: MemorySettings | None = None, *,
+                 credential: Any = None) -> AgentMemory:
+    """The process's ``AgentMemory`` (lessons, subjects, journal) for this configuration, sharing ``memory_service``."""
+    if settings is None:
+        from agentkit.hosting import AgentKitSettings
+
+        settings = AgentKitSettings()
+    mem = memory_settings or MemorySettings()
+    service = memory_service(settings, mem, credential=credential)
+    key = (id(service), settings.service_name, mem.admins, mem.max_lessons, mem.lesson_retention_days,
+           mem.lesson_review_days, mem.subject_retention_days, mem.max_subject_events, mem.journal_retention_days)
+    with _LOCK:
+        built = _AGENT_MEMORIES.get(key)
+        if built is None:
+            agent = settings.service_name
+            built = AgentMemory(
+                memory=service,
+                lessons=LessonBook(service, agent=agent, policy=LessonPolicy(
+                    max_active=mem.max_lessons, retention_days=mem.lesson_retention_days,
+                    review_days=mem.lesson_review_days)),
+                subjects=SubjectMemory(service, agent=agent, policy=SubjectPolicy(
+                    max_events=mem.max_subject_events, retention_days=mem.subject_retention_days)),
+                journal=RunJournal(service, agent=agent, retention_days=mem.journal_retention_days),
+                admins=mem.admin_ids(),
+                config={"lesson_retention_days": mem.lesson_retention_days, "max_lessons": mem.max_lessons,
+                        "lesson_review_days": mem.lesson_review_days,
+                        "subject_retention_days": mem.subject_retention_days,
+                        "max_subject_events": mem.max_subject_events,
+                        "journal_retention_days": mem.journal_retention_days},
+            )
+            _AGENT_MEMORIES[key] = built
+        return built

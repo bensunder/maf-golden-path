@@ -22,8 +22,11 @@
 - Data classes it may read: TODO (e.g. public, internal).
 - PII handling: user-message PII is redacted before the model by default (`AGENTKIT_REDACT_PII`).
 - Memory: conversation history lives in the session store for `AGENTKIT_SESSION_TTL_SECONDS`, then expires.
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
 - Long-term memory: up to `AGENTKIT_MEMORY_MAX_ITEMS` short notes per signed-in user (preferences they state or ask to keep), for `AGENTKIT_MEMORY_RETENTION_DAYS` after each was last updated. Personal data and instructions are refused. Each user can review, export and erase theirs at `/v1/memory`. What this agent may remember: TODO (e.g. formatting and language preferences, working hours).
+{%- if memory == 'full' %}
+- Agent memory: lessons about the work (live only once a memory admin states or approves them), the history of each subject it acts on (ids and outcomes, `AGENTKIT_MEMORY_SUBJECT_RETENTION_DAYS`), and a journal of its runs without message text (`AGENTKIT_MEMORY_JOURNAL_RETENTION_DAYS`). Memory admins: TODO (`AGENTKIT_MEMORY_ADMINS`). Subjects this agent records: TODO (e.g. `customer:<id>`, `invoice:<number>`).
+{%- endif %}
 {%- endif %}
 
 ## Escalation

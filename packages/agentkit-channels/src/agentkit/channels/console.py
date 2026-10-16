@@ -181,15 +181,25 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
     memory = _memory_provider(agent)
     if memory is not None:
         info = memory.describe()
-        gaps = []
-        if not info.get("salt_configured", True):
-            gaps.append("keys aren't salted with a deployment secret (set AGENTKIT_MEMORY_SALT)")
-        if info.get("store") == "memory":
-            gaps.append("the in-process store loses memory on restart")
+        gaps = _memory_gaps(info)
         detail = (f"Per-user memory in {info.get('store')}, kept {info.get('retention_days')} days, at most "
                   f"{info.get('max_items')} notes per user; personal data and instructions are refused, and people "
                   f"can view, edit, export and delete what is remembered.")
         controls.append(_control("long_term_memory", "Long-term memory", "partial" if gaps else "on",
+                                 detail + (" Gaps: " + "; ".join(gaps) + "." if gaps else "")))
+    elif off := (getattr(agent, "additional_properties", None) or {}).get("agentkit.memory_off"):
+        controls.append(_control("long_term_memory", "Long-term memory", "off", f"Memory couldn't start: {off}."))
+
+    own = _memory_provider(agent, "agent")
+    if own is not None:
+        info = own.describe()
+        gaps = _memory_gaps(info)
+        if not info.get("admins_configured"):
+            gaps.append("no memory admin is set (AGENTKIT_MEMORY_ADMINS), so proposed lessons wait unreviewed")
+        detail = (f"The agent's lessons are reviewed by a memory admin before use (unless an admin stated them) and "
+                  f"are versioned and restorable; subject history is kept {info.get('subject_retention_days')} days "
+                  f"and the run journal {info.get('journal_retention_days')} days, without message text.")
+        controls.append(_control("agent_memory", "Agent memory", "partial" if gaps else "on",
                                  detail + (" Gaps: " + "; ".join(gaps) + "." if gaps else "")))
 
     budget = find(SessionTokenBudgetMiddleware)
@@ -284,21 +294,36 @@ _CHANNEL_NAMES = {
 }
 
 
-def _memory_provider(agent: Any) -> Any:
-    """The agent's long-term memory provider (agentkit-memory), found by duck type so this package needs no import."""
+def _memory_provider(agent: Any, profile: str = "user") -> Any:
+    """The agent's memory provider of one kind (agentkit-memory), found by duck type so this package needs no import."""
     for provider in getattr(agent, "context_providers", None) or []:
-        if getattr(provider, "agentkit_memory_profile", None) and callable(getattr(provider, "describe", None)):
+        if getattr(provider, "agentkit_memory_profile", None) == profile and callable(getattr(provider, "describe", None)):
             return provider
     return None
 
 
+def _memory_gaps(info: dict[str, Any]) -> list[str]:
+    gaps = []
+    if not info.get("salt_configured", True):
+        gaps.append("keys aren't salted with a deployment secret (set AGENTKIT_MEMORY_SALT)")
+    if info.get("store") == "memory":
+        gaps.append("the in-process store loses memory on restart")
+    return gaps
+
+
 def _memory(agent: Any, app: Any, prefix: str = "") -> dict[str, Any] | None:
-    provider = _memory_provider(agent)
-    if provider is None:
-        return None
-    info = dict(provider.describe())
+    """``profile`` is ``user`` (people's preferences) or ``full`` (also the agent's own memory, under ``agent``)."""
+    user, own = _memory_provider(agent), _memory_provider(agent, "agent")
     path = _path_of(app, "MemoryChannel")
-    info["api"] = prefix + path if path else None
+    api = prefix + path if path else None
+    if user is None and own is None:
+        off = (getattr(agent, "additional_properties", None) or {}).get("agentkit.memory_off")
+        return {"profile": "off", "off": off, "api": None} if off else None
+    info = dict(user.describe()) if user is not None else {}
+    info["profile"] = "full" if own is not None else "user"
+    info["user"] = user is not None
+    info["agent"] = {k: v for k, v in own.describe().items() if k != "profile"} if own is not None else None
+    info["api"] = api
     return info
 
 

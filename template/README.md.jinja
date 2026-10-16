@@ -64,11 +64,23 @@ Setup and options: the kit's `docs/channels.md`.
 
 `knowledge/` holds documents the agent can search, with who may read each one in `knowledge/acl.yaml`. Searches run as the signed-in user, and answers cite their sources. Every deploy syncs the folder to Azure AI Search; to preview: `agentkit-ingest --source knowledge --dry-run`. Details: the kit's `docs/knowledge.md`.
 {%- endif %}
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
 
 ## Long-term memory
 
-The agent remembers each signed-in user's lasting preferences across conversations, and each user reviews, edits, exports or erases them at `/v1/memory`{% if enable_console %} or on the console's Memory page{% endif %}. Before deploying to prod: `azd env set AGENTKIT_MEMORY_SALT "$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"`, and never change it afterwards. Details: the kit's `docs/memory.md`.
+The agent remembers each signed-in user's lasting preferences across conversations, and each user reviews, edits, exports or erases them at `/v1/memory`{% if enable_console %} or on the console's Memory page{% endif %}.
+{%- if memory == 'full' %}
+
+It also has memory of its own:
+
+- **Lessons**: what it learns about doing the job, shared by all its runs. A lesson goes live at once only when a memory admin states it; anything else (including anything learned while reading outside data) waits for an admin's review. Versioned, restorable.
+- **Subject memory**: the history of each customer, invoice or case it works on (`customer:1042`), so any run, including a scheduled one, knows what was already done. Ids and outcomes only.
+- **Run journal**: what each run did (who or what started it, outcome, tools, subjects), without what was said.
+
+Memory admins review all three at `/v1/memory/agent`{% if enable_console %} or on the console's Memory page{% endif %}: `azd env set AGENTKIT_MEMORY_ADMINS "you@contoso.com,lead@contoso.com"`.
+{%- endif %}
+
+Before deploying to prod: `azd env set AGENTKIT_MEMORY_SALT "$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"`, and never change it afterwards. `AGENTKIT_MEMORY` can lower what the agent remembers ({% if memory == 'full' %}`user`, {% endif %}`session`) without a code change. Details: the kit's `docs/memory.md`.
 {%- endif %}
 
 ## Updating

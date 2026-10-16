@@ -96,6 +96,7 @@ def _fake_gateway(requests: list[httpx.Request]):
 async def test_gateway_round_trip_azure_style_with_entra_token():
     requests: list[httpx.Request] = []
     settings = AgentKitSettings(
+        memory="session",  # this test checks the exact request on the wire: no memory instructions
         **LOCAL, gateway_endpoint="https://apim.contoso.com", team="payments",
         gateway_subscription_key="sub-123", model="gpt-4.1-mini",
     )

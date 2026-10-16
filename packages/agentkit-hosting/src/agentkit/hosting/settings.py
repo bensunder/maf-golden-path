@@ -93,6 +93,12 @@ class AgentKitSettings(BaseSettings):
     cosmos_database: str = "agentkit"
     cosmos_container: str | None = None
 
+    # long-term memory (agentkit-memory, docs/memory.md). Sessions are the short-term memory.
+    #: ``full`` (default): each user's preferences, the agent's reviewed lessons, per-subject history and the run
+    #: journal. ``user``: only users' preferences. ``session``: the conversation only. Applied by ``build_agent``
+    #: and ``create_app`` when agentkit-memory is installed; settings for it are ``AGENTKIT_MEMORY_*``.
+    memory: Literal["full", "user", "session"] = "full"
+
     # human approvals
     #: Entra app role an approver must hold. Empty = the requesting user confirms their own actions.
     approver_role: str | None = None

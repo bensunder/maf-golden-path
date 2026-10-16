@@ -15,7 +15,7 @@ LEADS_GROUP = "00000000-0000-0000-0000-00000000a11d"  # matches knowledge/acl.ya
 #: real test accounts (UPN or object id) with these group memberships.
 EVAL_USERS = StaticGroups({"agent@example.com": [], "lead@example.com": [LEADS_GROUP]})
 {%- endif %}
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
 
 
 @pytest.fixture(autouse=True)

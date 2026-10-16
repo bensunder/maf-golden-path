@@ -50,6 +50,9 @@ services:
       # sessions survive restarts
       AGENTKIT_SESSION_STORE: redis
       AGENTKIT_REDIS_URL: redis://redis:6379/0
+      # long-term memory (on for every agent; docs/memory.md): who reviews the agents' lessons and may read their
+      # subject memory and journal (comma-separated sign-in e-mails). agentctl.py gives each agent its own salt.
+      AGENTKIT_MEMORY_ADMINS: ${MEMORY_ADMINS:-}
       # optional: send traces to Application Insights (the console's live charts still need Azure, see docs)
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
     depends_on: [redis]

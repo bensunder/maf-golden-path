@@ -54,7 +54,7 @@ test-example:
 
 TEAMS := --data enable_teams=true --data enable_web_chat=false --data enable_knowledge=true
 
-test-template:      ## render both install modes, with and without Teams, a LangGraph agent and a user-memory agent; run the generated projects' tests
+test-template:      ## render both install modes (full memory, the default), with and without Teams, a LangGraph agent and a preferences-only memory agent; run the generated projects' tests
 	rm -rf $(GEN_DIR)
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=feed . $(GEN_DIR)/feed
 	copier copy --defaults --vcs-ref HEAD -q --data project_name="Template Check" --data agentkit_source=git . $(GEN_DIR)/git

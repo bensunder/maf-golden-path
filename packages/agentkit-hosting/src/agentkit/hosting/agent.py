@@ -6,7 +6,7 @@ import logging
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agent_framework import Agent, SupportsChatGetResponse, ToolApprovalMiddleware
 
@@ -26,7 +26,7 @@ from .approvals import EnsureSessionMiddleware
 from .clients import create_chat_client, token_provider
 from .settings import AgentKitSettings
 
-__all__ = ["build_agent", "default_detector", "default_middleware", "load_instructions"]
+__all__ = ["build_agent", "default_detector", "default_middleware", "load_instructions", "memory_level"]
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,49 @@ def _platform_connectors(settings: AgentKitSettings) -> list[Any]:
     return platform_connectors(settings.connectors, token)
 
 
+_MEMORY_LEVELS = ("session", "user", "full")
+
+
+def memory_level(settings: AgentKitSettings, ceiling: str | None = None) -> str:
+    """The memory an agent gets: its code's ``memory=`` (if any), lowered by ``AGENTKIT_MEMORY``."""
+    env = settings.memory
+    return env if ceiling is None else min(env, ceiling, key=_MEMORY_LEVELS.index)
+
+
+def _platform_memory(settings: AgentKitSettings, providers: Sequence[Any], extra_middleware: Sequence[Any],
+                     ceiling: str | None = None) -> tuple[list[Any], Any, str | None]:
+    """Long-term memory for every agent (``AGENTKIT_MEMORY``, default ``full``), with no code in the agent.
+
+    Returns ``(providers to add, journal middleware or None, why memory is off or None)``. Providers the agent
+    already passes (a project generated with ``memory=user``) are kept and not duplicated. When memory can't
+    start (for example prod without ``AGENTKIT_MEMORY_SALT``) the agent still starts, without the missing parts,
+    and the reason is logged and shown on the console's Security page."""
+    level = memory_level(settings, ceiling)
+    if level == "session":
+        return [], None, None
+    try:
+        from agentkit.memory import AgentMemoryProvider, JournalMiddleware, UserMemoryProvider, agent_memory
+    except ImportError:
+        return [], None, None  # agentkit-memory isn't installed: sessions only
+    profiles = {getattr(p, "agentkit_memory_profile", None) for p in providers}
+    has_journal = any(isinstance(m, JournalMiddleware) for m in extra_middleware)
+    try:
+        memory = agent_memory(settings)
+    except ValueError as exc:  # configuration refused (salt, store); explicit providers already raised
+        logger.error("long-term memory is off: %s", exc)
+        return [], None, str(exc)
+    added: list[Any] = []
+    if "user" not in profiles:
+        added.append(UserMemoryProvider(memory.memory))
+    journal = None
+    if level == "full":
+        if "agent" not in profiles:
+            added.append(AgentMemoryProvider(memory))
+        if not has_journal:
+            journal = JournalMiddleware(memory.journal)
+    return added, journal, None
+
+
 def _platform_peers(settings: AgentKitSettings) -> list[Any]:
     """Agents on the VPS platform this agent may call (``AGENTKIT_PEERS``), as tools."""
     if not settings.peers:
@@ -116,6 +159,7 @@ def build_agent(
     extra_middleware: Sequence[Any] = (),
     approval_rules: Sequence[Callable[..., Any]] = (),
     description: str | None = None,
+    memory: Literal["full", "user", "session"] | None = None,
     **agent_kwargs: Any,
 ) -> Agent:
     """Create a MAF ``Agent`` with company defaults.
@@ -124,17 +168,26 @@ def build_agent(
     settings and bound to the AI gateway. ``tool_policy`` may be a ``ToolPolicyMiddleware`` or
     its keyword arguments (``{"denied": [...], "validators": {...}}``). ``approval_rules`` auto-approve
     matching calls to ``approval_mode="always_require"`` tools (see ``agentkit.hosting.approve_if``).
+    ``memory`` is the most long-term memory this agent should have (``full``, ``user`` or ``session``);
+    ``AGENTKIT_MEMORY`` can only lower it, so operators keep an off switch (docs/memory.md).
     """
     settings = settings or AgentKitSettings()
     tools = [*tools, *_platform_connectors(settings), *_platform_peers(settings)]
     if isinstance(tool_policy, Mapping):
         tool_policy = ToolPolicyMiddleware(**tool_policy)
     client = client or create_chat_client(settings, agent_name=name)
-    middleware = [
-        *default_middleware(settings, agent_name=name, detector=detector, tool_policy=tool_policy,
-                            approval_rules=approval_rules),
-        *extra_middleware,
-    ]
+    middleware = default_middleware(settings, agent_name=name, detector=detector, tool_policy=tool_policy,
+                                    approval_rules=approval_rules)
+    properties: dict[str, Any] = {"agentkit.service_version": settings.service_version}
+    providers = list(agent_kwargs.pop("context_providers", None) or [])
+    added, journal, memory_note = _platform_memory(settings, providers, extra_middleware, memory)
+    providers.extend(added)
+    if journal is not None:
+        middleware.insert(1, journal)  # right after run metrics: it also records runs a guardrail refuses
+    if memory_note:
+        properties["agentkit.memory_off"] = memory_note
+    if providers:
+        agent_kwargs["context_providers"] = providers
     return Agent(
         client,
         instructions=instructions,
@@ -142,7 +195,7 @@ def build_agent(
         id=name,
         description=description,
         tools=list(tools),
-        middleware=middleware,
-        additional_properties={"agentkit.service_version": settings.service_version},
+        middleware=[*middleware, *extra_middleware],
+        additional_properties=properties,
         **agent_kwargs,
     )

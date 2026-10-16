@@ -4,15 +4,19 @@
 Web: AG-UI at /v1/agui and a chat page at /chat{% if enable_console %}, and the operations console at /console{% endif %}, next to the
 JSON API (/v1/chat, approvals).
 {%- endif %}
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
 
-Memory: each signed-in user reviews, corrects, exports or erases what the agent remembers at /v1/memory.
+Memory (mounted by create_app): each signed-in person reviews, corrects, exports or erases what the agent
+remembers about them at /v1/memory.
+{%- if memory == 'full' %} Memory admins review the agent's lessons, subjects and journal at
+/v1/memory/agent.
+{%- endif %}
 {%- endif %}
 {%- if enable_teams %}
 
 Teams: the bot endpoint /api/messages is on once AGENTKIT_TEAMS_APP_ID is set (the Bicep sets it).
 {%- endif %}
-{%- if enable_web_chat or enable_teams or (framework == 'maf' and memory == 'user') %}
+{%- if enable_web_chat or enable_teams or (framework == 'maf' and memory != 'session') %}
 """
 {%- else %}"""
 {%- endif %}
@@ -20,12 +24,9 @@ Teams: the bot endpoint /api/messages is on once AGENTKIT_TEAMS_APP_ID is set (t
 from agentkit.channels import {% if enable_web_chat %}AgUiChannel, {% if enable_console %}Console, {% endif %}WebChat{% endif %}{% if enable_web_chat and enable_teams %}, {% endif %}{% if enable_teams %}teams_from_env{% endif %}
 {%- endif %}
 from agentkit.hosting import create_app
-{%- if framework == 'maf' and memory == 'user' %}
-from agentkit.memory import MemoryChannel
-{%- endif %}
 
 from .agent import create_agent
-{% if enable_web_chat or enable_teams or (framework == 'maf' and memory == 'user') %}
+{% if enable_web_chat or enable_teams %}
 
 def channels() -> list:
     """Ways users reach the agent besides the JSON API; all share its sessions, approvals and audit log."""
@@ -38,9 +39,6 @@ def channels() -> list:
 {%- endif %}
 {%- if enable_teams %}
     result += teams_from_env()
-{%- endif %}
-{%- if framework == 'maf' and memory == 'user' %}
-    result += [MemoryChannel()]  # the app's settings pick the same MemoryService as the agent
 {%- endif %}
     return result
 

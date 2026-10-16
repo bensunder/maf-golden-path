@@ -107,6 +107,8 @@ def check_contract(service: Path | None) -> list[str]:
                     "AGENTKIT_KNOWLEDGE_EMBEDDING_MODEL",
                     # long-term memory: a service-owned secret (azd env), required in prod by the hook and the app
                     "AGENTKIT_MEMORY_SALT",
+                    # long-term memory: who reviews the agent's lessons (optional; lessons wait until one is set)
+                    "AGENTKIT_MEMORY_ADMINS",
                     # console: set by the deploy pipeline or the platform when available, empty otherwise
                     "AGENTKIT_BUILD_COMMIT", "AGENTKIT_BUILD_RUN_URL", "AGENTKIT_BUILD_TIME", "AGENTKIT_OPS_WORKBOOK_ID"}
         for name in sorted(referenced - optional - set(KEYS)):

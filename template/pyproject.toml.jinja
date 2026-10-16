@@ -16,7 +16,7 @@ dependencies = [
 {%- if framework == 'langgraph' %}
     "agentkit-langgraph @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-langgraph",
 {%- endif %}
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
     "agentkit-memory[cosmos,redis] @ git+https://github.com/{{ agentkit_repo }}@{{ agentkit_ref }}#subdirectory=packages/agentkit-memory",
 {%- endif %}
 {%- if enable_knowledge %}
@@ -32,7 +32,7 @@ dependencies = [
 {%- if framework == 'langgraph' %}
     "agentkit-langgraph>=0.10,<0.11",
 {%- endif %}
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory != 'session' %}
     "agentkit-memory[cosmos,redis]>=0.10,<0.11",
 {%- endif %}
 {%- if enable_knowledge %}

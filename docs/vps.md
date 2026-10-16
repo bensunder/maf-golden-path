@@ -57,6 +57,7 @@ nano .env
 
 - **The model.** Use Azure OpenAI with a key (`MODEL_STYLE=azure`, the resource URL, the deployment name; `MODEL_API_VERSION` defaults to one that GPT-5 deployments accept). The model must support tool calling: in Ollama, for example, `phi4` doesn't and `phi4-mini` does. Or use OpenAI or any OpenAI-compatible proxy such as LiteLLM (`MODEL_STYLE=openai`, the base URL ending in `/v1`).
 - **Sign-in.** The tenant id, client id and secret from step 2, plus `AGENT_HOST`. Set `ALLOWED_EMAIL_DOMAINS` to your domain to limit who can sign in beyond "anyone in the tenant".
+- **Memory admins (optional).** `MEMORY_ADMINS=you@example.com` lets those people review the lessons agents propose and read their subject memory and run journal on the console's Memory page ([memory.md](memory.md)). Without it, agents still remember, but proposed lessons wait unreviewed.
 
 ## 4. Start it
 
@@ -223,6 +224,7 @@ The console shows these honestly as *Partial*, so nothing here is hidden.
 | Model access | Managed identity through the AI gateway (quotas, chargeback) | Directly to the model with an API key |
 | Approvals | Confirmation, or an approver role with separation of duties | Confirmation only: the person who asked confirms. Approver roles need Easy Auth's signed role claims |
 | Sessions | Cosmos DB | Redis in a Docker volume |
+| Long-term memory | Cosmos DB, salt from `azd env` | Redis, each agent's own salt from `agentctl.py` (in `agents.yaml`). Under memory pressure Redis drops what expires soonest (sessions) before memory |
 | Knowledge | Azure AI Search, trimmed per user | Off: the search tool reports that it can't search and the agent says so |
 | Live charts | Azure Monitor, managed identity | Not available (the Telemetry page says why). `APPLICATIONINSIGHTS_CONNECTION_STRING` still sends traces to Application Insights, and `LANGSMITH_API_KEY` to [LangSmith](telemetry.md#langsmith), for every agent on the server |
 | Fleet view | Azure discovery and Easy Auth tokens | `agentctl.py fleet`: the agents in this stack, read inside the Docker network. Its Traffic page needs Azure Monitor |
@@ -233,6 +235,7 @@ The console shows these honestly as *Partial*, so nothing here is hidden.
 - **Identity comes only from oauth2-proxy.** The agent reads the user from `X-Forwarded-Email`, which oauth2-proxy sets after sign-in, replacing anything the browser sent. The Easy Auth headers are switched off, so sending `X-MS-CLIENT-PRINCIPAL-NAME` gets you nothing (tested).
 - **Keep the agents private.** Never publish port 8000. If an agent were reachable directly, anyone could send `X-Forwarded-Email`. The compose files publish only the sign-in proxies, and only on 127.0.0.1. The same goes for anything else you run on the Docker network: agents trust `X-Forwarded-Email` from inside it (that's how the fleet reads them).
 - **No roles on a VPS.** Without Easy Auth nothing signs role claims, so the stack switches role claims off (`AGENTKIT_PRINCIPAL_CLAIMS_HEADER` is empty) and any role check fails closed. Don't set `AGENTKIT_APPROVER_ROLE`, `AGENTKIT_CONSOLE_ROLE` or `AGENTKIT_FLEET_ROLE`: they would lock everyone out. `agentctl.py` refuses them.
+- **Memory keys.** `agentctl.py render` gives each agent its own memory salt in `agents.yaml` (owner-only). Don't edit or delete one: that agent would forget everything it remembers. `render` refuses a damaged salt, and `--env` can't set `AGENTKIT_MEMORY_SALT`, `AGENTKIT_MEMORY_ADMINS` or `AGENTKIT_MEMORY_DEV_USER`.
 - **Redis** has no default user. Each agent logs in as its own user, with a password `agentctl.py` generates (only hashes go into `redis/users.acl`). Redis is capped at 256 MB and drops the sessions closest to expiring first when full.
 - **Containers** run with `no-new-privileges` and without `NET_RAW`.
 - `.env` holds secrets (model key, client secret, cookie secret). Keep it out of git and readable only by you (`chmod 600 .env`).

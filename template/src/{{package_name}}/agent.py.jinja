@@ -2,10 +2,14 @@
 
 Most changes to this service happen in ``tools.py`` and ``instructions/system.md``{% if framework == 'langgraph' %} (and ``graph.py``, the shape of
 the graph){% endif %}. Model access, auth, guardrails, telemetry, sessions and run limits come from agentkit.
-{%- if framework == 'maf' and memory == 'user' %}
+{%- if framework == 'maf' and memory == 'full' %}
 
-Long-term memory is on: the agent remembers each signed-in user's preferences across conversations
-(``agentkit.memory``: screened, bounded, retained ``AGENTKIT_MEMORY_RETENTION_DAYS``, reviewable at /v1/memory).
+Long-term memory comes from agentkit too (docs/memory.md): each signed-in person's preferences, the agent's own
+lessons (reviewed by a memory admin before use), the history of each customer or case it works on, and a journal
+of its runs. Nothing to wire here; tell the agent what to record in ``instructions/system.md``.
+{%- elif framework == 'maf' and memory == 'user' %}
+
+Long-term memory: each signed-in person's preferences across conversations (``memory="user"`` below; docs/memory.md).
 {%- endif %}
 """
 
@@ -21,9 +25,6 @@ from agentkit.langgraph import build_graph_agent
 from .graph import build_graph
 {%- else %}
 from agentkit.hosting import AgentKitSettings, build_agent, load_instructions
-{%- if memory == 'user' %}
-from agentkit.memory import UserMemoryProvider, memory_service
-{%- endif %}
 {%- endif %}
 
 from .tools import APPROVAL_RULES, TOOL_POLICY, TOOLS
@@ -60,8 +61,9 @@ def create_agent(settings: AgentKitSettings | None = None, client: SupportsChatG
         settings=settings,
         client=client,
 {%- if memory == 'user' %}
-        # Shared with the app's MemoryChannel (same settings, same instance), so edits there reach the agent at once.
-        context_providers=[UserMemoryProvider(memory_service(settings))],
+        memory="user",  # people's preferences only; AGENTKIT_MEMORY can lower it, never raise it
+{%- elif memory == 'session' %}
+        memory="session",  # the conversation only; no long-term memory
 {%- endif %}
     )
 {%- endif %}

@@ -80,7 +80,7 @@ export function PlatformPage() {
           </Card>
           <InlineNotice>
             Add-ons are estimated separately in the same document: Teams (5–8 days), web chat (3–6), knowledge with permission trimming
-            (6–10), and long-term memory (4–8). Replace the estimates with your own teams' numbers.
+            (6–10), and long-term memory (10–18). Replace the estimates with your own teams' numbers.
           </InlineNotice>
         </div>
       </div>
@@ -93,7 +93,7 @@ interface Capability {
   id: string;
   label: string;
   description: string;
-  option?: "enable_web_chat" | "enable_teams" | "enable_knowledge" | "memory_user";
+  option?: "enable_web_chat" | "enable_teams" | "enable_knowledge" | "memory";
 }
 
 const CAPABILITIES: Capability[] = [
@@ -105,7 +105,12 @@ const CAPABILITIES: Capability[] = [
   { id: "telemetry", label: "Telemetry", description: "OpenTelemetry to Application Insights; the platform dashboard and alerts." },
   { id: "evals", label: "Evaluations", description: "Eval cases that run offline in CI and live as the deploy gate." },
   { id: "knowledge", label: "Knowledge", description: "Azure AI Search, trimmed to each user's groups, with citations.", option: "enable_knowledge" },
-  { id: "memory", label: "Long-term memory", description: "Remembers each user's preferences across conversations; screened, bounded, reviewable.", option: "memory_user" },
+  {
+    id: "memory",
+    label: "Long-term memory",
+    description: "People's preferences, lessons a person reviews, each customer's history and a run journal; screened, bounded, reviewable.",
+    option: "memory",
+  },
   { id: "web", label: "Web Chat", description: "A chat page at /chat and an AG-UI endpoint.", option: "enable_web_chat" },
   { id: "teams", label: "Teams", description: "Azure Bot, approvals as Adaptive Cards.", option: "enable_teams" },
   { id: "azure", label: "Azure deployment", description: "Bicep, azd and an OIDC deploy pipeline." },
@@ -427,7 +432,7 @@ function GenerateAgentPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [team, setTeam] = useState("");
-  const [options, setOptions] = useState({ enable_web_chat: true, enable_teams: false, enable_knowledge: false, memory_user: false });
+  const [options, setOptions] = useState({ enable_web_chat: true, enable_teams: false, enable_knowledge: false, memory: true });
   const [generated, setGenerated] = useState(false);
   const kit = overview.data?.service.kit_version;
 
@@ -442,7 +447,7 @@ function GenerateAgentPage() {
       ["enable_web_chat", String(options.enable_web_chat)],
       ["enable_teams", String(options.enable_teams)],
       ["enable_knowledge", String(options.enable_knowledge)],
-      ...(options.memory_user ? ([["memory", "user"]] as [string, string][]) : []),
+      ...(options.memory ? [] : ([["memory", "session"]] as [string, string][])), // full memory is the default
     ];
     return [
       `copier copy --trust --vcs-ref ${ref}`,
@@ -453,7 +458,7 @@ function GenerateAgentPage() {
 
   const files = [
     { group: "Application", items: ["src/<package>/agent.py", "tools.py", "app.py", "instructions/system.md"] },
-    { group: "Tests", items: ["tests/test_agent.py", "test_app.py", "test_evals.py", ...(options.enable_teams ? ["test_teams.py"] : []), ...(options.enable_knowledge ? ["test_knowledge.py"] : []), ...(options.memory_user ? ["test_memory.py"] : [])] },
+    { group: "Tests", items: ["tests/test_agent.py", "test_app.py", "test_evals.py", ...(options.enable_teams ? ["test_teams.py"] : []), ...(options.enable_knowledge ? ["test_knowledge.py"] : []), ...(options.memory ? ["test_memory.py"] : [])] },
     { group: "Evaluations", items: ["evals/cases.yaml"] },
     { group: "Infrastructure", items: ["infra/main.bicep", "azure.yaml", "Dockerfile"] },
     ...(options.enable_knowledge ? [{ group: "Knowledge", items: ["knowledge/", "acl.yaml"] }] : []),

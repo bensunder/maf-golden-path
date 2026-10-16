@@ -73,6 +73,7 @@ export const REFERENCES: Record<FrameworkId, Record<string, string>> = {
     "SC-23": "Session Authenticity",
     "SI-10": "Information Input Validation",
     "SI-15": "Information Output Filtering",
+    "SI-7": "Software, Firmware, and Information Integrity",
     "SI-19": "De-identification",
   },
 };
@@ -106,6 +107,13 @@ export const MAPPING: Record<string, Mapping> = {
     ai_600_1: ["Data Privacy", "Information Security"],
     csf_2: ["PR.AA-05", "PR.DS-01"],
     sp_800_53: ["AC-3", "SI-19"],
+  },
+  // the agent's own memory: lessons reviewed by a person before use, versioned; per-subject history; a run journal
+  agent_memory: {
+    ai_rmf: ["MAP 3.5", "MEASURE 2.8", "MANAGE 2.4"],
+    ai_600_1: ["Information Integrity", "Human-AI Configuration", "Data Privacy"],
+    csf_2: ["PR.DS-01", "DE.CM-09"],
+    sp_800_53: ["SI-7", "AU-12", "AC-3"],
   },
   token_budget: { ai_rmf: ["MEASURE 2.7"], ai_600_1: ["Information Security"], csf_2: ["PR.IR-04"], sp_800_53: ["SC-5", "SC-6"] },
   audit: { ai_rmf: ["MEASURE 2.8", "MANAGE 4.1"], csf_2: ["PR.PS-04", "DE.CM-09"], sp_800_53: ["AU-2", "AU-3", "AU-12"] },

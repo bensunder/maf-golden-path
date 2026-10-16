@@ -172,6 +172,21 @@ def _body(result: TurnResult) -> ChatResponseBody:
     )
 
 
+def _platform_memory_channel(settings: AgentKitSettings, channels: Sequence[Channel]) -> list[Channel]:
+    """The memory API (``/v1/memory``) for every agent with long-term memory, unless the app mounts its own."""
+    if settings.memory == "session" or any(type(c).__name__ == "MemoryChannel" for c in channels):
+        return []
+    try:
+        from agentkit.memory import MemoryChannel, agent_memory
+    except ImportError:
+        return []
+    try:
+        agent_memory(settings)  # the same check build_agent makes; when it refuses, there is no memory to serve
+    except ValueError:
+        return []
+    return [MemoryChannel()]
+
+
 def create_app(
     agent_factory: Callable[[AgentKitSettings], Agent],
     *,
@@ -185,6 +200,7 @@ def create_app(
     store = session_store or session_store_from_settings(settings)
     state: dict[str, Agent] = {}
     install_maf_noise_filter()
+    channels = [*channels, *_platform_memory_channel(settings, channels)]
 
     def _agent() -> Agent:
         agent = state.get("agent")
@@ -210,6 +226,9 @@ def create_app(
                 langsmith_endpoint=settings.langsmith_endpoint,
             )
         state["agent"] = agent_factory(settings)
+        # which memory the agent really has (the memory API answers 404 for kinds it doesn't, e.g. LangGraph)
+        app.state.memory_profiles = {getattr(p, "agentkit_memory_profile", None)
+                                     for p in getattr(state["agent"], "context_providers", None) or []} - {None}
         for channel in channels:
             if hasattr(channel, "startup"):
                 await channel.startup()

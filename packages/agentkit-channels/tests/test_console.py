@@ -103,7 +103,7 @@ def test_overview_describes_the_running_service():
     tools = {t["name"]: t for t in body["agent"]["tools"]}
     assert tools["lookup_order"]["approval"] == "never"
     assert tools["issue_refund"]["approval"] == "rules"  # auto-approval rule configured
-    assert [c["id"] for c in body["channels"]] == ["api", "agui", "web_chat"]
+    assert [c["id"] for c in body["channels"]] == ["api", "agui", "web_chat", "memory"]  # memory is on by default
     assert body["knowledge"] is None
     assert body["approvals"] == {"mode": "confirmation", "approver_role": None}
     assert body["telemetry"]["exporter"] is None
@@ -119,7 +119,9 @@ def test_posture_comes_from_the_middleware_stack_not_the_docs():
     # locally nothing verifies identity headers; the requester confirms their own refunds
     assert on == {"entra_auth": "partial", "prompt_injection": "partial", "tool_output": "on", "pii": "on",
                   "tool_policy": "off", "human_approval": "partial", "session_isolation": "on", "token_budget": "on",
-                  "audit": "partial", "content_capture": "on"}
+                  "audit": "partial", "content_capture": "on",
+                  # memory is on by default; partial here: the in-process store, and no memory admin set
+                  "long_term_memory": "partial", "agent_memory": "partial"}
 
     with TestClient(make_app(tools=[lookup_order], guardrail_mode="off", redact_pii=False, require_user=False,
                              capture_message_content=True,
@@ -540,7 +542,8 @@ def test_under_a_router_prefix_every_link_points_under_it():
     assert 'content="/agents/legal/console/"' in page and 'src="/agents/legal/console/assets/' in page
     assert "/agents/legal/console/assets/" in stylesheet or "/console/assets/" not in stylesheet  # font URLs
     assert {c["id"]: c["path"] for c in overview["channels"]} == {"api": "/agents/legal/v1/chat", "agui": "/agents/legal/v1/agui",
-                                                                  "web_chat": "/agents/legal/chat"}
+                                                                  "web_chat": "/agents/legal/chat",
+                                                                  "memory": "/agents/legal/v1/memory"}
     assert overview["links"]["chat"] == "/agents/legal/chat"
     assert 'endpoint="/agents/legal/v1/agui"' in chat and 'src="/agents/legal/chat/agentkit-chat.js"' in chat
     assert home.status_code == 302 and home.headers["location"] == "/agents/legal/chat"
