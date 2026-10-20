@@ -121,8 +121,9 @@ class AgentKitSettings(BaseSettings):
     #: pose as a user or as another agent.
     platform_key: SecretStr | None = None
     #: Which sign-in the platform's proxy uses (written by agentctl.py): unset for Entra, ``github`` for GitHub
-    #: accounts. Only changes what the console's Security page says; identity still comes from ``user_header``.
-    sign_in_provider: Literal["entra", "github"] | None = None
+    #: accounts, ``email`` for the e-mail allow-list. Only changes what the console's Security page says; identity
+    #: still comes from ``user_header``.
+    sign_in_provider: Literal["entra", "github", "email"] | None = None
     #: Header with the platform's delegation token (who a request acts for, through which agents). Only set
     #: behind the VPS platform, which issues and checks it.
     delegation_header: str | None = None

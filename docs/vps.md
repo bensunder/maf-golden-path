@@ -47,6 +47,24 @@ Entra is the default. To let people sign in with a GitHub account instead, for e
 
 Each person is identified by their GitHub account's primary, verified email, so chats, approvals and audit stay per person, as with Entra. Platform admins (`--admins`) are matched by that email, so list the address of your own GitHub account there. The console's Security page shows "GitHub sign-in". Leaving `GITHUB_USERS` empty means anyone with a GitHub account can sign in and chat, on your model key. Agents with their own host name need the callback URL of that host, so one GitHub OAuth app covers the agents served under `<your host>`.
 
+### Sign in with an e-mail list
+
+For a few named guests (reviewers, a demo audience) without any identity provider: they type their e-mail address and they're in. Nothing to register anywhere.
+
+```bash
+SIGN_IN=email
+SIGN_IN_EMAILS=dkumar1@bechtel.com,bbahunut@bechtel.com
+SIGN_IN_EXPIRES=2026-10-30T23:59:59-06:00     # access (and every session) ends then; a bare date means 23:59:59 UTC
+```
+
+Then `python3 agentctl.py passcode` (the admin passcode, asked twice, stored only as a scrypt hash), `python3 agentctl.py render` and `docker compose up -d --build`.
+
+- **Only the listed addresses get in**, and only until `SIGN_IN_EXPIRES`. Removing someone (edit `.env`, `docker compose up -d`) signs them out at once.
+- **An e-mail address is not proof of identity:** anyone who knows a listed address can sign in as that person. The console's Security page shows this sign-in as *partial*. Use it for short, time-limited guest access, not for people who can change things.
+- **Admins always need the passcode too.** Platform admins (they can create agents on this host), `MEMORY_ADMINS` and `SIGN_IN_ADMINS` are never let in by e-mail alone, and `render` refuses to run until the passcode is set.
+- Sessions last `SIGN_IN_SESSION_HOURS` (12), in a signed, HttpOnly, Secure cookie. Ten failed attempts block that address and that e-mail for 15 minutes. Each sign-in and refusal is one JSON line in `docker compose logs auth`.
+- It replaces oauth2-proxy in every sign-in proxy (`signin/`, about 30 MB of memory) with the same contract: the agents see `X-Forwarded-Email`, and any identity header a browser sends is dropped first (tested).
+
 ## 3. Fill in `.env`
 
 ```bash

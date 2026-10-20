@@ -91,7 +91,13 @@ def security_posture(agent: Any, settings: AgentKitSettings) -> list[dict[str, s
     hosted = _hosting()["platform"] != "Local"
     signed = bool(settings.platform_key)
     if settings.require_user and signed:
-        if getattr(settings, "sign_in_provider", None) == "github":
+        if getattr(settings, "sign_in_provider", None) == "email":
+            controls.append(_control("entra_auth", "E-mail sign-in", "partial",
+                                     "People on a short list (SIGN_IN_EMAILS on the server) sign in by typing their "
+                                     "e-mail address, until SIGN_IN_EXPIRES; admins also need a passcode. This agent only "
+                                     "accepts requests the platform signed for it. Partial: an e-mail address is not "
+                                     "proof of identity, so anyone who knows a listed address can sign in as that person."))
+        elif getattr(settings, "sign_in_provider", None) == "github":
             controls.append(_control("entra_auth", "GitHub sign-in", "on",
                                      "People sign in with a GitHub account (its verified email) at the platform's sign-in "
                                      "proxy, and this agent only accepts requests the platform signed for it. Who may "

@@ -431,11 +431,59 @@ def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = N
 _GITHUB_LOGINS = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:,[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))*")
 
 
-def sign_in(env: dict[str, str]) -> str:
-    """How people sign in: ``entra`` (the default) or ``github`` (SIGN_IN in .env)."""
+SIGNIN_IMAGE = "agentkit-signin:local"
+
+
+def _email_list(raw: str | None, what: str) -> list[str]:
+    out = []
+    for part in (raw or "").split(","):
+        email = part.strip().lower()
+        if email:
+            if not _EMAIL.fullmatch(email):
+                raise Problem(f"{what}: {email!r} isn't an e-mail address")
+            out.append(email)
+    return out
+
+
+def _sign_in_expiry(raw: str | None) -> None:
+    from datetime import datetime
+
+    value = (raw or "").strip()
+    if not value or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise Problem("SIGN_IN_EXPIRES must be a date (2026-10-30) or a time with its offset "
+                      "(2026-10-30T23:59:59-06:00)") from None
+    if stamp.tzinfo is None:
+        raise Problem("SIGN_IN_EXPIRES needs a time zone offset, e.g. 2026-10-30T23:59:59-06:00")
+
+
+def sign_in_admins(data: dict, env: dict[str, str]) -> list[str]:
+    """Who needs the admin passcode with SIGN_IN=email: SIGN_IN_ADMINS plus everyone with power over the stack
+    (platform admins can create agents on this host; memory admins review lessons), so an e-mail address alone
+    never opens them."""
+    admins = _email_list(env.get("SIGN_IN_ADMINS"), "SIGN_IN_ADMINS")
+    admins += [a.lower() for a in ((data.get("platform") or {}).get("admins") or [])]
+    admins += _email_list(env.get("MEMORY_ADMINS"), "MEMORY_ADMINS")
+    return sorted(set(admins))
+
+
+def sign_in(env: dict[str, str], data: dict | None = None) -> str:
+    """How people sign in: ``entra`` (the default), ``github`` or ``email`` (SIGN_IN in .env)."""
     choice = (env.get("SIGN_IN") or "entra").strip().lower()
-    if choice not in ("entra", "github"):
-        raise Problem(f"SIGN_IN must be entra or github, not {choice!r}")
+    if choice not in ("entra", "github", "email"):
+        raise Problem(f"SIGN_IN must be entra, github or email, not {choice!r}")
+    if choice == "email":
+        guests = _email_list(env.get("SIGN_IN_EMAILS"), "SIGN_IN_EMAILS")
+        _sign_in_expiry(env.get("SIGN_IN_EXPIRES"))
+        admins = sign_in_admins(data or {}, env)
+        if not guests and not admins:
+            raise Problem("SIGN_IN=email needs SIGN_IN_EMAILS (who may sign in) in .env")
+        if admins and not (env.get("SIGN_IN_ADMIN_PASSCODE_HASH") or "").startswith("scrypt:"):
+            raise Problem("SIGN_IN=email: admins (" + ", ".join(admins) + ") sign in with a passcode. "
+                          "Set it first: python3 agentctl.py passcode")
     if choice == "github":
         missing = [k for k in ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET") if not env.get(k)]
         if missing:
@@ -446,10 +494,21 @@ def sign_in(env: dict[str, str]) -> str:
     return choice
 
 
-def sign_in_proxy_env(env: dict[str, str]) -> dict[str, str]:
-    """The sign-in proxies' settings for GitHub sign-in (nothing for Entra, which docker-compose.yml sets up).
-    The client secret stays in .env: the generated file only refers to it."""
-    if sign_in(env) != "github":
+def sign_in_proxy_env(env: dict[str, str], data: dict | None = None) -> dict[str, str]:
+    """The sign-in proxies' settings for GitHub or e-mail sign-in (nothing for Entra, which docker-compose.yml sets
+    up). Secrets and the guest list stay in .env: the generated file only refers to them, so changing who may sign
+    in is an edit to .env and `docker compose up -d`."""
+    choice = sign_in(env, data)
+    if choice == "email":
+        return {
+            "SIGNIN_EMAILS": "${SIGN_IN_EMAILS:-}",
+            "SIGNIN_EXPIRES": "${SIGN_IN_EXPIRES:-}",
+            "SIGNIN_ADMINS": ",".join(sign_in_admins(data or {}, env)),
+            "SIGNIN_ADMIN_PASSCODE_HASH": "${SIGN_IN_ADMIN_PASSCODE_HASH:-}",
+            "SIGNIN_SESSION_HOURS": "${SIGN_IN_SESSION_HOURS:-12}",
+            "SIGNIN_TITLE": "${SIGN_IN_TITLE:-Agents}",
+        }
+    if choice != "github":
         return {}
     out = {
         "OAUTH2_PROXY_PROVIDER": "github",
@@ -466,14 +525,23 @@ def sign_in_proxy_env(env: dict[str, str]) -> dict[str, str]:
     return out
 
 
-def sign_in_agent_env(env: dict[str, str]) -> dict[str, str]:
+def sign_in_agent_env(env: dict[str, str], data: dict | None = None) -> dict[str, str]:
     """Tells agents which sign-in is in front of them, so the console's Security page says so."""
-    return {"AGENTKIT_SIGN_IN_PROVIDER": "github"} if sign_in(env) == "github" else {}
+    choice = sign_in(env, data)
+    return {"AGENTKIT_SIGN_IN_PROVIDER": choice} if choice in ("github", "email") else {}
+
+
+def sign_in_image(env: dict[str, str]) -> dict:
+    """With SIGN_IN=email the sign-in proxies run the kit's e-mail sign-in (signin/) instead of oauth2-proxy."""
+    if (env.get("SIGN_IN") or "").strip().lower() != "email":
+        return {}
+    return {"image": SIGNIN_IMAGE, "build": {"context": str(HERE / "signin")}}
 
 
 def auth_service(template: dict, name: str, host: str, port: int, upstream: str,
-                 extra: dict[str, str] | None = None) -> dict:
+                 extra: dict[str, str] | None = None, image: dict | None = None) -> dict:
     service = copy.deepcopy(template)
+    service.update(copy.deepcopy(image or {}))
     service["depends_on"] = [upstream]
     service["ports"] = [f"127.0.0.1:{port}:4180"]
     env = service["environment"]
@@ -568,19 +636,21 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
     services: dict = {}
     sites: dict[str, str] = {}
     known = connectors()
-    proxy_extra, agent_extra = sign_in_proxy_env(env), sign_in_agent_env(env)
+    proxy_extra, agent_extra = sign_in_proxy_env(env, data), sign_in_agent_env(env, data)
+    proxy_image = sign_in_image(env)
     for a in data["agents"]:
         services[f"agent-{a['name']}"] = agent_service(agent_t, a, known,
                                                        {**platform_env(data, a["name"], a, env), **agent_extra})
         if not a.get("internal"):
             services[f"auth-{a['name']}"] = auth_service(auth_t, a["name"], a["host"], a["port"], f"agent-{a['name']}",
-                                                         proxy_extra)
+                                                         proxy_extra, proxy_image)
             sites[f"agentkit-{a['name']}.conf"] = nginx_site(a["host"], a["port"])
     if data.get("fleet"):
         f = data["fleet"]
         services["fleet"] = fleet_service(data, env, version.split(":-")[-1].rstrip("}"))
         if not f.get("internal"):
-            services["auth-fleet"] = auth_service(auth_t, "fleet", f["host"], f["port"], "fleet", proxy_extra)
+            services["auth-fleet"] = auth_service(auth_t, "fleet", f["host"], f["port"], "fleet", proxy_extra,
+                                                  proxy_image)
             sites["agentkit-fleet.conf"] = nginx_site(f["host"], f["port"])
     sample_env = {**(connector_env(data["sample"], known) if data.get("sample") else {}),
                   **platform_env(data, "sample", data.get("sample"), env),
@@ -595,6 +665,8 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
         services["auth"] = {"environment": {"OAUTH2_PROXY_UPSTREAMS": "http://platform:8000"}, "depends_on": ["platform"]}
     if proxy_extra:  # the sample's (or the platform's) sign-in proxy
         services.setdefault("auth", {}).setdefault("environment", {}).update(proxy_extra)
+    if proxy_image:
+        services.setdefault("auth", {}).update(copy.deepcopy(proxy_image))
     if any(isinstance(e, dict) and e.get("redis_password") for e in [data.get("sample") or {}, *data["agents"]]):
         REDIS_ACL.parent.mkdir(exist_ok=True)
         _atomic_write(REDIS_ACL, redis_acl(data), 0o644)  # hashes only; the redis user in the container reads it
@@ -644,8 +716,14 @@ def hosts(data: dict, env: dict[str, str]) -> list[str]:
 def next_steps(data: dict, env: dict[str, str], new_host: str | None = None, removed: str | None = None) -> str:
     client = env.get("ENTRA_CLIENT_ID") or "<ENTRA_CLIENT_ID>"
     uris = " ".join(f"https://{h}/oauth2/callback" for h in hosts(data, env))
-    sign_in = (f"az ad app update --id {client} --web-redirect-uris {uris}\n"
-               "              (this replaces the app's list: add any other redirect URIs it needs)")
+    mode = (env.get("SIGN_IN") or "entra").strip().lower()
+    if mode == "email":
+        sign_in = "nothing to register (e-mail sign-in; who may sign in is SIGN_IN_EMAILS in .env)"
+    elif mode == "github":
+        sign_in = f"your GitHub OAuth app's callback URL for each host: {uris}"
+    else:
+        sign_in = (f"az ad app update --id {client} --web-redirect-uris {uris}\n"
+                   "              (this replaces the app's list: add any other redirect URIs it needs)")
     lines = ["", "Next:"]
     if new_host:
         site = next(p for p in NGINX.glob("agentkit-*.conf") if f"server_name {new_host};" in p.read_text())
@@ -665,6 +743,40 @@ def next_steps(data: dict, env: dict[str, str], new_host: str | None = None, rem
 
 
 # ------------------------------------------------------------------------------------------ commands
+def hash_passcode(passcode: str, *, n: int = 2 ** 15, r: int = 8, p: int = 1) -> str:
+    """The same format signin/signin.py verifies: ``scrypt:N:r:p:salt:hash`` (base64url, nothing Compose expands)."""
+    import base64
+    import hashlib
+    import secrets
+
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(passcode.encode(), salt=salt, n=n, r=r, p=p, maxmem=128 * 1024 * 1024, dklen=32)
+    b64 = lambda b: base64.urlsafe_b64encode(b).decode().rstrip("=")  # noqa: E731
+    return f"scrypt:{n}:{r}:{p}:{b64(salt)}:{b64(digest)}"
+
+
+def set_env_value(key: str, value: str, path: Path = ENV) -> None:
+    """Set one KEY=value in .env, keeping every other line and the file's permissions."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    lines = [ln for ln in lines if ln.strip().removeprefix("export ").split("=", 1)[0].strip() != key]
+    lines.append(f"{key}={value}")
+    _atomic_write(path, "\n".join(lines) + "\n", None if path.is_file() else 0o600)
+
+
+def cmd_passcode(path: Path = ENV, ask=None) -> None:
+    """Set the admin passcode for SIGN_IN=email (asked twice, hidden; only its scrypt hash is stored)."""
+    import getpass
+
+    ask = ask or getpass.getpass
+    first = ask("New admin passcode (12+ characters, hidden): ")
+    if len(first) < 12:
+        raise Problem("the passcode must be at least 12 characters; nothing changed")
+    if ask("Again: ") != first:
+        raise Problem("the two passcodes differ; nothing changed")
+    set_env_value("SIGN_IN_ADMIN_PASSCODE_HASH", hash_passcode(first), path)
+    print("saved (as a hash) in .env. Next: python3 agentctl.py render && docker compose up -d")
+
+
 def cmd_add(args, data, env) -> str:
     name = args.name.lower()
     if not _NAME.fullmatch(name) or name in RESERVED:
@@ -748,7 +860,6 @@ def ensure_secret_key(path: Path = ENV) -> None:
 
 
 def cmd_connect(args, data, env) -> None:
-    import secrets
 
     target = args.agent
     wanted = [] if args.connectors == "none" else [c.strip() for c in args.connectors.split(",") if c.strip()]
@@ -908,6 +1019,7 @@ def main(argv: list[str] | None = None) -> None:
     peers.add_argument("peers", help="comma-separated agent names (or sample), or none")
     sub.add_parser("list", help="show the agents")
     sub.add_parser("render", help="write the compose and nginx files again from agents.yaml")
+    sub.add_parser("passcode", help="set the admin passcode for SIGN_IN=email (stored as a hash in .env)")
     tpl = sub.add_parser("templates", help="template libraries for Create agent: list, add <name> <git-url>, remove <name>")
     tpl.add_argument("action", choices=["list", "add", "remove"])
     tpl.add_argument("name", nargs="?")
@@ -916,6 +1028,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.command == "templates":
         return cmd_templates(args)
+    if args.command == "passcode":
+        return cmd_passcode()
 
     env, data = read_env(), load()
     new_host = removed = None

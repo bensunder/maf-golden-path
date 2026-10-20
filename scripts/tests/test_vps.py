@@ -314,7 +314,67 @@ def test_github_sign_in_switches_every_sign_in_proxy(stack):
     env.write_text(env.read_text() + "GITHUB_USERS=ok,$(rm -rf /)\n")
     assert "GitHub usernames" in run("render", ok=False)
     env.write_text(env.read_text().replace("SIGN_IN=github\n", "SIGN_IN=google\n"))
-    assert "SIGN_IN must be entra or github" in run("render", ok=False)
+    assert "SIGN_IN must be entra, github or email" in run("render", ok=False)
+
+
+def test_email_sign_in_lets_listed_people_in_and_keeps_admins_behind_a_passcode(stack):
+    root, run = stack
+    env = root / ".env"
+    env.write_text(env.read_text() + "SIGN_IN=email\n")
+    assert "SIGN_IN_EMAILS" in run("render", ok=False)  # nobody listed: refuses rather than open the door
+    env.write_text(env.read_text() + "SIGN_IN_EMAILS=dkumar1@bechtel.com, bbahunut@bechtel.com\n"
+                   "SIGN_IN_EXPIRES=2026-10-30T23:59:59-06:00\nMEMORY_ADMINS=ben@contoso.example\n")
+    out = run("render", ok=False)  # admins exist (memory), so a passcode is required first
+    assert "passcode" in out and "ben@contoso.example" in out
+
+    ctl = load("agentctl")
+    answers = iter(["correct horse battery", "correct horse battery"])
+    ctl.cmd_passcode(env, ask=lambda _prompt: next(answers))
+    text = env.read_text()
+    assert "SIGN_IN_ADMIN_PASSCODE_HASH=scrypt:" in text and "correct horse" not in text
+    with pytest.raises(SystemExit, match="12 characters"):
+        ctl.cmd_passcode(env, ask=lambda _prompt: "short")
+    flip = iter(["correct horse battery", "correct horse batterY"])
+    with pytest.raises(SystemExit, match="differ"):
+        ctl.cmd_passcode(env, ask=lambda _prompt: next(flip))
+
+    run("platform", "--admins", "ops@contoso.example")
+    out = run("add", "legal", str(root / "legal"))
+    assert "nothing to register" in out and "az ad app" not in out
+    run("add", "hr", str(root / "legal"), "--internal")
+    text = (root / "docker-compose.agents.yml").read_text()
+    assert "dkumar1" not in text and "scrypt:" not in text  # the list and the hash stay in .env
+    services = yaml.safe_load(text)["services"]
+    for proxy in ("auth", "auth-legal"):
+        p = services[proxy]
+        assert p["image"] == "agentkit-signin:local" and p["build"]["context"].endswith("signin")
+        e = p["environment"]
+        assert e["SIGNIN_EMAILS"] == "${SIGN_IN_EMAILS:-}" and e["SIGNIN_EXPIRES"] == "${SIGN_IN_EXPIRES:-}"
+        assert e["SIGNIN_ADMIN_PASSCODE_HASH"] == "${SIGN_IN_ADMIN_PASSCODE_HASH:-}"
+        # platform and memory admins always need the passcode: an e-mail address alone never opens them
+        assert e["SIGNIN_ADMINS"] == "ben@contoso.example,ops@contoso.example"
+    assert services["auth"]["environment"]["OAUTH2_PROXY_UPSTREAMS"] == "http://platform:8000"
+    for agent in ("agent", "agent-legal", "agent-hr"):
+        assert services[agent]["environment"]["AGENTKIT_SIGN_IN_PROVIDER"] == "email"
+
+    for bad, message in (("SIGN_IN_EMAILS=dk@bechtel.com,not-an-email", "isn't an e-mail address"),
+                         ("SIGN_IN_EXPIRES=2026-10-30T23:59:59", "time zone offset"),
+                         ("SIGN_IN_EXPIRES=next friday", "SIGN_IN_EXPIRES must be")):
+        env.write_text(env.read_text() + bad + "\n")
+        assert message in run("render", ok=False)
+        env.write_text(env.read_text().replace(bad + "\n", ""))
+    run("render")
+
+
+def test_the_passcode_agentctl_writes_is_one_signin_accepts():
+    ctl = load("agentctl")
+    spec = importlib.util.spec_from_file_location("signin_check", VPS / "signin" / "signin.py")
+    gate = importlib.util.module_from_spec(spec)
+    sys.modules["signin_check"] = gate
+    spec.loader.exec_module(gate)
+    stored = ctl.hash_passcode("a long admin passcode", n=2 ** 12)
+    assert gate.verify_passcode("a long admin passcode", stored)
+    assert not gate.verify_passcode("a long admin passcodE", stored)
 
 
 def test_entra_stays_the_default_and_fails_closed_without_its_settings(stack):
