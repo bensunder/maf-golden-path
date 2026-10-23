@@ -19,6 +19,7 @@ agentkit is the paved road for building agents on Microsoft Agent Framework (Pyt
 | [Channels: Teams and web chat](channels.md) | Teams bot with approval cards in an approvers channel, AG-UI endpoint, drop-in web chat, offline Teams tests, your own channel |
 | [Knowledge](knowledge.md) | Answers from company documents: per-user trimming, citations in every channel, `acl.yaml`, ingestion, deploy, permission-aware evals |
 | [Long-term memory](memory.md) | On by default: each user's preferences, the agent's reviewed lessons, per-subject history and a run journal; screening, isolation, retention, the `/v1/memory` API and the console's Memory page |
+| [Analytics](analytics.md) | Off by default: a DuckDB audit trail of every run, hybrid search over the agent's memory, Parquet exports to a folder or S3, and a sandboxed read-only SQL tool over Parquet datasets |
 | [Sessions and approvals](sessions-and-approvals.md) | Cosmos/Redis sessions and cross-replica locking; human approval for high-impact tools (confirmation or separation of duties), audit, evals |
 | [Connectors](connectors.md) | OpenAPI → tools, managed identity and on-behalf-of auth, retries, response shaping, MCP, test fakes |
 | [Live validation](live-validation.md) | Deploy the platform and the sample to a throwaway environment in your subscription, run real checks and the live gate, tear down |

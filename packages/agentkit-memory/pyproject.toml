@@ -22,6 +22,10 @@ dependencies = [
 [project.optional-dependencies]
 redis = ["redis>=5"]
 cosmos = ["azure-cosmos>=4.7", "azure-core>=1.30"]
+# DuckDB analytics: audit trail, semantic memory, Parquet exports and the dataset SQL tool (docs/analytics.md)
+duckdb = ["duckdb>=2.0,<2.1", "s3fs>=2024.6"]
+# in-process embeddings for semantic search (ONNX; downloads the model once)
+fastembed = ["fastembed>=0.5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentkit"]

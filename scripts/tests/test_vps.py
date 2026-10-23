@@ -387,3 +387,20 @@ def test_entra_stays_the_default_and_fails_closed_without_its_settings(stack):
     base = yaml.safe_load((VPS / "docker-compose.yml").read_text())["services"]["auth"]["environment"]
     # no Entra settings: an empty client id and issuer, so oauth2-proxy refuses to start rather than serve anyone
     assert base["OAUTH2_PROXY_PROVIDER"] == "oidc" and base["OAUTH2_PROXY_CLIENT_ID"] == "${ENTRA_CLIENT_ID:-}"
+
+
+def test_every_agent_gets_its_own_analytics_volume_and_analytics_stays_off(stack):
+    root, run = stack
+    run("add", "legal", str(root / "legal"))
+    run("add", "hr", str(root / "legal"), "--env", "AGENTKIT_ANALYTICS_ENABLED=true")
+    compose = yaml.safe_load((root / "docker-compose.agents.yml").read_text())
+    legal, hr = compose["services"]["agent-legal"], compose["services"]["agent-hr"]
+    assert legal["volumes"] == ["analytics-legal:/data/analytics"] and hr["volumes"] == ["analytics-hr:/data/analytics"]
+    assert set(compose["volumes"]) == {"analytics-legal", "analytics-hr"}  # one writer per DuckDB file
+    assert legal["environment"]["AGENTKIT_ANALYTICS_ENABLED"] == "${ANALYTICS:-false}"
+    assert legal["environment"]["AGENTKIT_ANALYTICS_CAPTURE"] == "${ANALYTICS_CAPTURE:-off}"
+    assert hr["environment"]["AGENTKIT_ANALYTICS_ENABLED"] == "true"
+    base = yaml.safe_load((VPS / "docker-compose.yml").read_text())
+    assert base["services"]["agent"]["volumes"] == ["agent-analytics:/data/analytics"]
+    dockerfile = (VPS / "Dockerfile").read_text()
+    assert "agentkit-memory[redis,duckdb]" in dockerfile and "chown agent:agent /data/analytics" in dockerfile

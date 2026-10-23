@@ -26,6 +26,8 @@ The agent's own memory, for memory admins (``AGENTKIT_MEMORY_ADMINS``, or the ap
     DELETE /v1/memory/agent/subjects/{subject}           204 its history erased
     GET    /v1/memory/agent/journal[?hours=&subject=]    200 what recent runs did
 
+With analytics on (``AGENTKIT_ANALYTICS_ENABLED``), ``/v1/analytics`` is mounted too (``analytics/api.py``).
+
 A kind of memory the agent doesn't have answers ``404 memory_off``; a non-admin gets ``403 not_memory_admin``.
 
 Errors: ``{"detail": {"code": ..., "message": ...}}`` with 401, 404, 409, 422, 429 (Retry-After) or
@@ -172,11 +174,11 @@ class MemoryChannel:
                 raise _Unauthenticated()
             return MemoryUser(user_id=user_id, tenant_id=who.tenant_id)
 
-        def admin(request: Request) -> tuple[MemoryUser, str]:
+        def admin(request: Request, profile: str = "agent") -> tuple[MemoryUser, str]:
             """A memory admin's identity and pseudonym, or 401/403/404."""
             if am is None:
                 raise _MemoryOff()
-            require(request, "agent")
+            require(request, profile)
             who = http_caller(request, settings, channel="memory")
             user_id = who.user_id or memory.dev_user
             if not user_id:
@@ -187,6 +189,12 @@ class MemoryChannel:
 
         if am is not None:
             app.include_router(self._agent_router(am, settings, require, admin))
+            an = self._analytics(settings, memory, am)
+            if an is not None:
+                from .analytics.api import analytics_router
+
+                app.state.analytics = an
+                app.include_router(analytics_router(an, lambda request: admin(request, "analytics"), am))
 
         router = APIRouter(prefix=self.path, tags=["memory"], responses=_ERRORS)
 
@@ -254,6 +262,18 @@ class MemoryChannel:
             if isinstance(exc, (MemoryRateLimited, MemoryUnavailable)):
                 headers = {"Retry-After": str(exc.retry_after)}
             return _error(exc.status, exc.code, exc.message, headers)
+
+    @staticmethod
+    def _analytics(settings: Any, memory: MemoryService, am: Any) -> Any:
+        """The agent's analytics (the same instance ``build_agent`` wired), or None when off or not installed."""
+        try:
+            from .analytics import analytics
+        except ImportError:  # pragma: no cover - duckdb extra not installed
+            return None
+        try:
+            return analytics(settings, memory=memory, agent_memory=am)
+        except ValueError:
+            return None
 
     def _agent_router(self, am: Any, settings: Any, require: Any, admin: Any) -> APIRouter:
         errors = {**_ERRORS, 403: {"model": ErrorBody, "description": "Not a memory admin"},

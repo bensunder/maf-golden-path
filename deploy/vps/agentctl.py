@@ -413,6 +413,8 @@ def agent_service(template: dict, agent: dict, known: dict[str, dict] | None = N
     # the agent's folder is the build context (filtered by Dockerfile.dockerignore); the kit is this checkout
     service["build"] = {"context": agent["path"], "dockerfile": str(HERE / "Dockerfile"),
                         "additional_contexts": {"kit": str(HERE.parent.parent)}}
+    # its own analytics volume (the DuckDB file has one writer: never share it between agents)
+    service["volumes"] = [f"analytics-{agent['name']}:/data/analytics"]
     env = service["environment"]
     env["AGENTKIT_SERVICE_NAME"] = agent.get("service") or agent["name"]
     env["AGENTKIT_SERVICE_VERSION"] = agent.get("version") or "0.0.0"
@@ -675,7 +677,9 @@ def render(data: dict, env: dict[str, str], *, base_path: Path = BASE, out: Path
                                          "--maxmemory", "256mb",
                                          "--maxmemory-policy", "volatile-ttl"],
                              "volumes": [f"{REDIS_ACL}:/etc/redis/users.acl:ro"]}
-    compose = {"services": services} if services else {"services": {}}
+    compose: dict = {"services": services}
+    if data["agents"]:
+        compose["volumes"] = {f"analytics-{a['name']}": {} for a in data["agents"]}
     _private_write(out, GENERATED + yaml.safe_dump(compose, sort_keys=False, width=200))
     nginx_dir.mkdir(exist_ok=True)
     for old in nginx_dir.glob("agentkit-*.conf"):

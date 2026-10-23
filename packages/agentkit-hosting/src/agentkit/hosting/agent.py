@@ -134,6 +134,32 @@ def _platform_memory(settings: AgentKitSettings, providers: Sequence[Any], extra
     return added, journal, None
 
 
+def _platform_analytics(settings: AgentKitSettings, providers: Sequence[Any],
+                        ceiling: str | None = None) -> tuple[Any, Any]:
+    """The DuckDB audit trail and semantic search (``AGENTKIT_ANALYTICS_ENABLED``, off by default).
+
+    Returns ``(AnalyticsProvider, EpisodeMiddleware)`` or ``(None, None)``. Needs long-term memory (``user`` or
+    ``full``) and agentkit-memory[duckdb]. If it can't start, the agent starts without it and says why in the log."""
+    if memory_level(settings, ceiling) == "session":
+        return None, None
+    if any(getattr(p, "agentkit_memory_profile", None) == "analytics" for p in providers):
+        return None, None
+    try:
+        from agentkit.memory import agent_memory
+        from agentkit.memory.analytics import analytics
+    except ImportError:
+        return None, None
+    try:
+        am = agent_memory(settings)
+        built = analytics(settings, memory=am.memory, agent_memory=am)
+    except ValueError as exc:
+        logger.error("analytics is off: %s", exc)
+        return None, None
+    if built is None:
+        return None, None
+    return built.provider, built.middleware
+
+
 def _platform_peers(settings: AgentKitSettings) -> list[Any]:
     """Agents on the VPS platform this agent may call (``AGENTKIT_PEERS``), as tools."""
     if not settings.peers:
@@ -184,6 +210,10 @@ def build_agent(
     providers.extend(added)
     if journal is not None:
         middleware.insert(1, journal)  # right after run metrics: it also records runs a guardrail refuses
+    analytics_provider, episodes = _platform_analytics(settings, providers, memory)
+    if episodes is not None:
+        middleware.insert(1, episodes)  # outermost after run metrics, so its tool timing is set up first
+        providers.append(analytics_provider)
     if memory_note:
         properties["agentkit.memory_off"] = memory_note
     if providers:

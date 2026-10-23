@@ -76,6 +76,7 @@ nano .env
 - **The model.** Use Azure OpenAI with a key (`MODEL_STYLE=azure`, the resource URL, the deployment name; `MODEL_API_VERSION` defaults to one that GPT-5 deployments accept). The model must support tool calling: in Ollama, for example, `phi4` doesn't and `phi4-mini` does. Or use OpenAI or any OpenAI-compatible proxy such as LiteLLM (`MODEL_STYLE=openai`, the base URL ending in `/v1`).
 - **Sign-in.** The tenant id, client id and secret from step 2, plus `AGENT_HOST`. Set `ALLOWED_EMAIL_DOMAINS` to your domain to limit who can sign in beyond "anyone in the tenant".
 - **Memory admins (optional).** `MEMORY_ADMINS=you@example.com` lets those people review the lessons agents propose and read their subject memory and run journal on the console's Memory page ([memory.md](memory.md)). Without it, agents still remember, but proposed lessons wait unreviewed.
+- **Analytics (optional).** `ANALYTICS=true` gives every agent a DuckDB audit trail of its runs and `search_memory`, in a file on its own volume (`/data/analytics`); memory admins query it at `/v1/analytics`. Or turn it on for one agent in its `agents.yaml` env (`AGENTKIT_ANALYTICS_ENABLED: "true"`). Off by default; see [analytics.md](analytics.md).
 
 ## 4. Start it
 

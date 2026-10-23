@@ -150,8 +150,10 @@ class SubjectMemory:
         item = SubjectEvent(id=f"evt_{secrets.token_hex(6)}", event=event, note=clean, at=now,
                             expires_at=now + self.policy.retention_days * _DAY, run_id=run_id, trigger=trigger,
                             source=source)
-        await self.memory.write_doc("subject.log", key, SubjectDoc,
-                                    lambda doc, t: self.policy.append(doc, subject, item, t), self.policy.expiry)
+        doc = await self.memory.write_doc("subject.log", key, SubjectDoc,
+                                          lambda doc, t: self.policy.append(doc, subject, item, t),
+                                          self.policy.expiry)
+        self.memory.notify("subject", key=key, doc=doc, tenant=tenant_id, agent=self.agent, subject=subject)
         try:  # the event is stored; the index only helps people find subjects, so it never fails the write
             await self.memory.write_doc("subject.index", self.index_key(tenant_id), SubjectIndexDoc,
                                         lambda doc, t: self.policy.touch(doc, subject, t), self.policy.index_expiry)
@@ -169,6 +171,8 @@ class SubjectMemory:
     async def forget(self, subject: str, *, tenant_id: str | None = None) -> None:
         """Erase a subject's history (an erasure request, or a mistake). Idempotent."""
         subject = check_subject(subject)
-        await self.memory.delete_doc("subject.forget", self.key(subject, tenant_id))
+        key = self.key(subject, tenant_id)
+        await self.memory.delete_doc("subject.forget", key)
+        self.memory.notify("subject", key=key, doc=None, tenant=tenant_id, agent=self.agent, subject=subject)
         await self.memory.write_doc("subject.index", self.index_key(tenant_id), SubjectIndexDoc,
                                     lambda doc, t: self.policy.drop(doc, subject, t), self.policy.index_expiry)

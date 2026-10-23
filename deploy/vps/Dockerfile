@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --from=kit packages ./packages
 RUN pip install "./packages/agentkit-telemetry[azure,langsmith]" ./packages/agentkit-guardrails "./packages/agentkit-hosting[redis]" \
     ./packages/agentkit-tools "./packages/agentkit-knowledge[blob]" "./packages/agentkit-channels[teams]" \
-    ./packages/agentkit-testing ./packages/agentkit-langgraph "./packages/agentkit-memory[redis]"
+    ./packages/agentkit-testing ./packages/agentkit-langgraph "./packages/agentkit-memory[redis,duckdb]"
 COPY --from=kit deploy/vps/install_agent.py ./install_agent.py
 COPY . ./agent
 RUN python install_agent.py /app/agent
@@ -18,7 +18,8 @@ RUN python install_agent.py /app/agent
 WORKDIR /app/agent
 RUN pytest -q -p no:cacheprovider tests/test_evals.py --agentkit-eval-report evals/gate-report.json
 
-RUN useradd --create-home --uid 10001 agent
+RUN useradd --create-home --uid 10001 agent \
+    && mkdir -p /data/analytics && chown agent:agent /data/analytics  # a named volume here starts owned by agent
 USER agent
 ENV PORT=8000
 EXPOSE 8000

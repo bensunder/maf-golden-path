@@ -53,9 +53,19 @@ services:
       # long-term memory (on for every agent; docs/memory.md): who reviews the agents' lessons and may read their
       # subject memory and journal (comma-separated sign-in e-mails). agentctl.py gives each agent its own salt.
       AGENTKIT_MEMORY_ADMINS: ${MEMORY_ADMINS:-}
+      # DuckDB analytics (off unless ANALYTICS=true; docs/analytics.md): every run's audit trail and a searchable copy
+      # of the agent's memory, in a file on the agent's own volume. Capture "redacted" also keeps PII-redacted text.
+      AGENTKIT_ANALYTICS_ENABLED: ${ANALYTICS:-false}
+      AGENTKIT_ANALYTICS_DIR: /data/analytics
+      AGENTKIT_ANALYTICS_CAPTURE: ${ANALYTICS_CAPTURE:-off}
+      AGENTKIT_ANALYTICS_RETENTION_DAYS: ${ANALYTICS_RETENTION_DAYS:-30}
+      AGENTKIT_ANALYTICS_EMBEDDINGS: ${ANALYTICS_EMBEDDINGS:-none}
+      AGENTKIT_ANALYTICS_OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      AGENTKIT_ANALYTICS_EXPORT_URI: ${ANALYTICS_EXPORT_URI:-}
       # optional: send traces to Application Insights (the console's live charts still need Azure, see docs)
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
     depends_on: [redis]
+    volumes: ["agent-analytics:/data/analytics"]
     expose: ["8000"]
     # no raw sockets: an agent can't forge packets as another container (the platform trusts addresses on this network)
     cap_drop: ["NET_RAW"]
@@ -95,3 +105,4 @@ services:
 
 volumes:
   redis-data:
+  agent-analytics:

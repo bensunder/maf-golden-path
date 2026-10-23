@@ -142,6 +142,8 @@ class MemoryService:
                                        "dev_user": False}
         #: Local and test only: whose memory to use when a request carries no identity.
         self.dev_user: str | None = None
+        #: Told about every stored change (``agentkit.memory.analytics.SemanticIndexer``); None when off.
+        self.indexer: Any = None
 
     # ---------------------------------------------------------------------------- identity
     def key_for(self, user: MemoryUser) -> str:
@@ -206,6 +208,14 @@ class MemoryService:
         with _tracer.start_as_current_span(f"memory.{op}"):
             await self._guarded(op, lambda: self.store.delete(key))
         self._count(op, "ok")
+
+    def notify(self, kind: str, *, key: str, doc: Any, **details: Any) -> None:
+        """Tell the indexer (if any) that a document changed; ``doc`` None means it was deleted. Never raises."""
+        if self.indexer is not None:
+            try:
+                self.indexer.changed(kind, key=key, doc=doc, **details)
+            except Exception:  # pragma: no cover - the indexer guards itself; belt and braces
+                self._count("index", "error")
 
     def rate_limit(self, op: str, key: str) -> None:
         """Apply the per-key write limit (``writes_per_minute``) to any writer."""
@@ -287,6 +297,7 @@ class MemoryService:
         with _tracer.start_as_current_span("memory.forget_all"):
             await self._guarded("forget_all", lambda: self.store.delete(key))
         self._cache.pop(key, None)
+        self.notify("user", key=key, doc=None, tenant=user.tenant_id)
         self._count("forget_all", "ok")
 
     async def export_markdown(self, user: MemoryUser, *, agent_name: str) -> str:
@@ -315,9 +326,10 @@ class MemoryService:
     async def _write(self, op: str, user: MemoryUser, change: Callable[[MemoryDoc, float], MemoryDoc]) -> None:
         key = self.key_for(user)
         try:
-            await self.write_doc(op, key, MemoryDoc, change, self.policy.expiry)
+            doc = await self.write_doc(op, key, MemoryDoc, change, self.policy.expiry)
         finally:
             self._cache.pop(key, None)
+        self.notify("user", key=key, doc=doc, tenant=user.tenant_id)
 
     async def _guarded(self, op: str, call: Callable[[], Awaitable[T]]) -> T:
         if not self._breaker.allow():

@@ -216,7 +216,10 @@ class LessonBook:
         return [i for i in await self.list(tenant_id) if i.status == "active"]
 
     async def _change(self, op: str, tenant_id: str | None, change) -> LessonDoc:
-        return await self.memory.write_doc(op, self.key(tenant_id), LessonDoc, change, self.policy.expiry)
+        key = self.key(tenant_id)
+        doc = await self.memory.write_doc(op, key, LessonDoc, change, self.policy.expiry)
+        self.memory.notify("lessons", key=key, doc=doc, tenant=tenant_id, agent=self.agent)
+        return doc
 
     async def propose(self, text: str, *, origin: LessonOrigin, by: str, run_id: str | None = None,
                       tenant_id: str | None = None) -> tuple[Lesson, bool]:

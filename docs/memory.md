@@ -199,7 +199,7 @@ In your own tests, `agent_memory(settings)` returns the agent's lessons, subject
 
 ## Not included yet
 
-- **No search over memory.** A user's notes (50 at most) and the agent's active lessons (up to 30 shown) go into each run; subject history is read through its tool. There are no embeddings.
+- **Search over memory is opt-in.** A user's notes (50 at most) and the agent's active lessons (up to 30 shown) go into each run; subject history is read through its tool. With [analytics](analytics.md) on, the agent also gets `search_memory` (hybrid SQL + vector search over lessons, subject events and the person's own notes).
 - **No automatic extraction.** The agent remembers only through its tools. Nothing is mined from transcripts, and long conversations aren't summarised into memory before they're trimmed.
 - **No built-in scheduler.** Mark scheduled runs with `run_context(trigger="schedule")` from your own job or event handler (for example an Odoo automated action calling the agent's API).
 - **Screening uses the heuristic injection detector, not Prompt Shields, even in prod.** Recalled memory is still fenced as data, chat turns still pass the agent's Prompt Shields input guard, and lessons are reviewed by a person. See the package README for a workaround.
